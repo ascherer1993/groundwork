@@ -36,6 +36,24 @@
   --code-type: #7a5a00;
   --code-property: #2d6e8a;
 
+  /* Terminal ANSI colours */
+  --term-black: #1f1f1e;
+  --term-red: #c4372b;
+  --term-green: #2f8a3e;
+  --term-yellow: #a86b00;
+  --term-blue: #3f5bd8;
+  --term-magenta: #a1287a;
+  --term-cyan: #1f7f8c;
+  --term-white: #c9c9c5;
+  --term-bright-black: #6f6f6c;
+  --term-bright-red: #e0443a;
+  --term-bright-green: #3aa34d;
+  --term-bright-yellow: #c48a00;
+  --term-bright-blue: #5a74f0;
+  --term-bright-magenta: #c03d97;
+  --term-bright-cyan: #2a98a8;
+  --term-bright-white: #e3e3e1;
+
   --kind-note: var(--text-muted);
   --kind-page: #2d8a6e;
   --kind-bundle: #a35fd0;
@@ -78,6 +96,23 @@
     --code-function: #8cb4f5;
     --code-type: #e3c46c;
     --code-property: #7ec4dc;
+
+    --term-black: #3a3a3c;
+    --term-red: #ff7b6e;
+    --term-green: #5cc26e;
+    --term-yellow: #e3c46c;
+    --term-blue: #7b91ff;
+    --term-magenta: #e08bc6;
+    --term-cyan: #7ec4dc;
+    --term-white: #d4d4d0;
+    --term-bright-black: #75756f;
+    --term-bright-red: #ff9a8f;
+    --term-bright-green: #7ed68e;
+    --term-bright-yellow: #f0d68a;
+    --term-bright-blue: #9cadff;
+    --term-bright-magenta: #eeaad8;
+    --term-bright-cyan: #9fd8ea;
+    --term-bright-white: #ffffff;
 
     --kind-page: #5cc5a3;
     --kind-bundle: #c995ee;

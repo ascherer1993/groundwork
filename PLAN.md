@@ -48,7 +48,7 @@ groundwork/
     protocol/               # API request/response types shared by app / cli / dev server
     backend/                # request dispatch shared by every host; `dev-server` feature
                             # adds the WebSocket host for browser mode
-    terminal-daemon/        # PTY daemon binary, groundworkd (Phase 4)
+    terminal-daemon/        # groundworkd: PTY sessions that outlive the app (Phase 4)
     cli/                    # `groundwork` CLI binary (Phase 2)
   app/
     src-tauri/              # Tauri shell: `api` command, groundwork:// protocol for pages
@@ -628,6 +628,26 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
 - Persistence across app restarts; layout restore after a reboot
 - Claude Code ergonomics (Shift+Enter, links, notifications)
 - **Checkpoint:** use Groundwork instead of cmux for a few days
+- Built in two halves, with a check-in between:
+  1. **The daemon and terminal tabs** *(built, awaiting check-in)*.
+  2. Workspaces (each with its own tabs and splits, which the main area switches between; decided 2026-11-03), the Workspaces view and badges, the session manager, restore after a reboot, bell and OSC 9 notifications, and opening vault paths clicked in a terminal.
+- Built in the first half:
+  - **`groundworkd`** (`crates/terminal-daemon`) is a std-only threaded server on `<data dir>/groundworkd.sock`, speaking newline-delimited JSON.
+    - The backend starts it on first use from beside its own binary, in its own session (`setsid`), so it outlives the app. Quitting leaves terminals running (decided 2026-11-03).
+    - It exits after 10 seconds with no sessions and no clients. A lock file stops two from starting at once. A daemon speaking an older protocol is replaced if it has no sessions.
+    - Each session is a PTY plus a `vt100` emulator with 5,000 lines of scrollback. Attaching resizes the session and returns a snapshot: scrollback lines, then the exact screen and input modes.
+    - Output events carry a byte offset (`seq`), so a view drops what the snapshot already has and reattaches if it sees a gap.
+    - Closing a terminal hangs it up (SIGHUP), then kills its process groups after 2 seconds.
+    - Shells get `TERM=xterm-256color`, `TERM_PROGRAM=Groundwork`, `GROUNDWORK_TAB_ID`, `GROUNDWORK_VAULT`, the CLI's folder at the front of PATH, and `LANG` if unset. Variables from `npm`, Cargo, Tauri and a parent Claude Code session are stripped when the daemon starts.
+  - **Terminal tabs** live in the main dock for now. They come from ⌘T, "New terminal" in the palette, or the empty-dock buttons, and start in the vault root.
+    - Tabs are titled by the program's title, else the folder.
+    - Closing the tab ends the shell, and the shell exiting closes the tab. Switching vaults leaves terminals running.
+    - Opening a file from a terminal tab opens it in a new tab beside it.
+    - The layout persists, so terminals reattach after a reload or relaunch. If a session is gone, a new shell starts in the same folder.
+    - xterm.js 6 draws with WebGL when it's available, with colours from `tokens.css` (`--term-*`).
+    - Keyboard: Shift+Enter sends ESC CR (a newline in Claude Code), and ⌘ shortcuts go to the app. Web and OSC 8 links open in the browser.
+    - Input is sent one call at a time, so keystrokes stay in order.
+  - Not yet: the packaged `.app` doesn't bundle `groundworkd` (Phase 7 packaging), and the session list shows the foreground process by its executable name (Claude installed through npm shows as `node`).
 
 ### Phase 5 — Projects, tickets, worktrees, actions
 - Repos and components (`.groundwork/repos.yml`), project config (`.groundwork.yml`), trackers, and the machine-local repo mapping with first-run "locate repo"

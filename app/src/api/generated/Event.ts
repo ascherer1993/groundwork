@@ -4,4 +4,4 @@ import type { FileChange } from "./FileChange";
 /**
  * Pushed from the backend to the UI, serialized as `{ "event": "...", "payload": {...} }`.
  */
-export type Event = { "event": "vault.changed", "payload": { changes: Array<FileChange>, } } | { "event": "page.stateChanged", "payload": { path: string, } };
+export type Event = { "event": "vault.changed", "payload": { changes: Array<FileChange>, } } | { "event": "page.stateChanged", "payload": { path: string, } } | { "event": "terminal.output", "payload": { id: string, seq: number, data: string, } } | { "event": "terminal.title", "payload": { id: string, title: string, } } | { "event": "terminal.bell", "payload": { id: string, } } | { "event": "terminal.exit", "payload": { id: string, code: number | null, } } | { "event": "terminal.disconnected" };

@@ -44,7 +44,9 @@ pub struct EventHub {
 impl EventHub {
     pub fn new() -> Self {
         Self {
-            tx: broadcast::channel(256).0,
+            // Terminal output comes in bursts. A tab that falls behind
+            // anyway drops events, and its terminals catch up by attaching again.
+            tx: broadcast::channel(4096).0,
         }
     }
 

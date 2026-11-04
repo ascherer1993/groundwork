@@ -30,6 +30,7 @@ export function installShortcuts(): () => void {
       if (key === "d" && e.shiftKey) return (void openToday(), true);
       if (key === "f" && e.shiftKey) return (ui.searchFor(), true);
       if (key === "n" && !e.shiftKey) return (void ws.newNote(), true);
+      if (key === "t" && !e.shiftKey) return (void ws.openTerminal(), true);
       if (key === "e" && !e.shiftKey) return (ws.toggleReading(), true);
       if (key === "w" && !e.shiftKey) return (ws.closeActive(), true);
       if (key === "b" && e.shiftKey) return (ui.toggleRightPanel(), true);

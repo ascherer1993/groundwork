@@ -15,6 +15,8 @@ import type { SearchResult } from "./generated/SearchResult";
 import type { SetupStatus } from "./generated/SetupStatus";
 import type { TagCount } from "./generated/TagCount";
 import type { TaskChange } from "./generated/TaskChange";
+import type { TerminalInfo } from "./generated/TerminalInfo";
+import type { TerminalSnapshot } from "./generated/TerminalSnapshot";
 import type { Todo } from "./generated/Todo";
 import type { TodoFilter } from "./generated/TodoFilter";
 import type { Request } from "./generated/Request";
@@ -71,6 +73,12 @@ interface Results {
   "task.toggle": null;
   "os.reveal": null;
   "os.open": null;
+  "terminal.create": TerminalInfo;
+  "terminal.list": TerminalInfo[];
+  "terminal.attach": TerminalSnapshot;
+  "terminal.input": null;
+  "terminal.resize": null;
+  "terminal.kill": null;
 }
 
 type Method = Request["method"];
@@ -153,6 +161,17 @@ export const api = {
 
   reveal: (path: string) => call("os.reveal", { path }),
   openExternally: (path: string) => call("os.open", { path }),
+
+  /** Starts a shell in `cwd` (absolute; the vault root by default). */
+  createTerminal: (size: { cols: number; rows: number }, cwd?: string) =>
+    call("terminal.create", { ...size, cwd }),
+  terminals: () => call("terminal.list"),
+  attachTerminal: (id: string, cols: number, rows: number) =>
+    call("terminal.attach", { id, cols, rows }),
+  terminalInput: (id: string, data: string) => call("terminal.input", { id, data }),
+  resizeTerminal: (id: string, cols: number, rows: number) =>
+    call("terminal.resize", { id, cols, rows }),
+  killTerminal: (id: string) => call("terminal.kill", { id }),
 };
 
 export { ApiCallError } from "./transport";

@@ -11,6 +11,7 @@ dev-server = ["dep:axum", "dep:tokio", "dep:futures-util"]
 chrono = "0.4"
 groundwork-core.workspace = true
 groundwork-protocol.workspace = true
+groundwork-terminal-daemon.workspace = true
 serde.workspace = true
 getrandom = "0.3"
 mime_guess = "2"
@@ -20,6 +21,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync"]
 futures-util = { version = "0.3", default-features = false, features = ["sink"], optional = true }
 
 [dev-dependencies]
+base64 = "0.22"
 tempfile.workspace = true
 
 [[bin]]

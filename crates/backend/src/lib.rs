@@ -7,10 +7,11 @@
 #[cfg(feature = "dev-server")]
 pub mod dev_server;
 mod page_server;
+mod terminals;
 
 pub use page_server::PageFile;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use chrono::NaiveDate;
@@ -41,6 +42,7 @@ pub struct Backend {
     events: EventSink,
     /// See [`page_server`].
     page_token: String,
+    terminals: terminals::Terminals,
 }
 
 impl Backend {
@@ -48,6 +50,7 @@ impl Backend {
         Self {
             host,
             recent: RecentVaults::new(&data_dir),
+            terminals: terminals::Terminals::new(&data_dir, events.clone()),
             data_dir,
             open: Mutex::new(None),
             events,
@@ -305,7 +308,71 @@ impl Backend {
                 open_with_system(&[full.into_os_string()])?;
                 Ok(Value::Null)
             }
+
+            Request::TerminalCreate {
+                cwd,
+                command,
+                cols,
+                rows,
+            } => {
+                let vault = self.session().ok().map(|s| s.vault().root().to_path_buf());
+                let cwd = match cwd {
+                    Some(cwd) if Path::new(&cwd).is_absolute() => PathBuf::from(cwd),
+                    Some(cwd) => {
+                        return Err(ApiError::new(
+                            ErrorCode::BadRequest,
+                            format!("not an absolute folder: {cwd}"),
+                        ));
+                    }
+                    None => vault
+                        .clone()
+                        .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
+                        .unwrap_or_else(|| "/".into()),
+                };
+                let env = self.terminal_env(vault.as_deref());
+                to_value(self.terminals.create(
+                    cwd,
+                    command.unwrap_or_default(),
+                    env,
+                    cols,
+                    rows,
+                )?)
+            }
+            Request::TerminalList => to_value(self.terminals.list()?),
+            Request::TerminalAttach { id, cols, rows } => {
+                to_value(self.terminals.attach(id, cols, rows)?)
+            }
+            Request::TerminalInput { id, data } => {
+                self.terminals.input(id, data)?;
+                Ok(Value::Null)
+            }
+            Request::TerminalResize { id, cols, rows } => {
+                self.terminals.resize(id, cols, rows)?;
+                Ok(Value::Null)
+            }
+            Request::TerminalKill { id } => {
+                self.terminals.kill(id)?;
+                Ok(Value::Null)
+            }
         }
+    }
+
+    /// What every terminal gets on top of the daemon's environment: the
+    /// vault, and the `groundwork` CLI on PATH, so Claude Code sessions in
+    /// them work without "Set up Claude Code…".
+    fn terminal_env(&self, vault: Option<&Path>) -> Vec<(String, String)> {
+        let mut env = Vec::new();
+        if let Some(vault) = vault {
+            env.push(("GROUNDWORK_VAULT".into(), vault.display().to_string()));
+        }
+        if let Some(dir) = self.setup_env().cli.parent() {
+            let path = match std::env::var("PATH") {
+                Ok(path) if !path.is_empty() => format!("{}:{path}", dir.display()),
+                _ => dir.display().to_string(),
+            };
+            env.push(("PATH".into(), path));
+        }
+        env
     }
 
     /// Raw bytes of a vault file (a bundle serves its `index.html`), with a
@@ -445,7 +512,7 @@ mod tests {
     struct Harness {
         backend: Backend,
         events: mpsc::Receiver<Event>,
-        _data: tempfile::TempDir,
+        data: tempfile::TempDir,
         vault: tempfile::TempDir,
     }
 
@@ -476,9 +543,89 @@ mod tests {
         Harness {
             backend,
             events: rx,
-            _data: data,
+            data,
             vault,
         }
+    }
+
+    #[test]
+    fn terminals_start_in_the_vault_with_the_cli_on_path() {
+        let h = harness();
+        let socket = h.data.path().join("groundworkd.sock");
+        let daemon_socket = socket.clone();
+        std::thread::spawn(move || {
+            groundwork_terminal_daemon::server::run(groundwork_terminal_daemon::server::Options {
+                socket: daemon_socket,
+                idle_exit: Some(std::time::Duration::from_secs(5)),
+            })
+        });
+        while !socket.exists() {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        let script = r#"echo "vault=$GROUNDWORK_VAULT"; echo "first=${PATH%%:*}"; read x"#;
+        let info = h.call(json!({ "method": "terminal.create", "params": {
+            "command": ["/bin/sh", "-c", script], "cols": 100, "rows": 30,
+        }}));
+        let id = info["id"].as_str().unwrap().to_string();
+        let root = std::fs::canonicalize(h.vault.path()).unwrap();
+        assert_eq!(info["cwd"], root.display().to_string());
+        let listed = h.call(json!({ "method": "terminal.list" }));
+        assert_eq!(listed.as_array().unwrap().len(), 1);
+
+        h.call(
+            json!({ "method": "terminal.attach", "params": { "id": id, "cols": 100, "rows": 30 } }),
+        );
+        let cli_dir = SetupEnv::detect()
+            .cli
+            .parent()
+            .unwrap()
+            .display()
+            .to_string();
+        let expected = [
+            format!("vault={}", root.display()),
+            format!("first={cli_dir}"),
+        ];
+        let mut output = String::new();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !expected.iter().all(|e| output.contains(e.as_str())) {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            match h.events.recv_timeout(left) {
+                Ok(Event::TerminalOutput { id: from, data, .. }) if from == id => {
+                    use base64::Engine;
+                    let bytes = base64::engine::general_purpose::STANDARD
+                        .decode(data)
+                        .unwrap();
+                    output.push_str(&String::from_utf8_lossy(&bytes));
+                }
+                Ok(_) => {}
+                Err(_) => panic!("output so far: {output:?}"),
+            }
+        }
+
+        h.call(json!({ "method": "terminal.input", "params": { "id": id, "data": "\r" } }));
+        loop {
+            match h.events.recv_timeout(std::time::Duration::from_secs(10)) {
+                Ok(Event::TerminalExit { id: from, code }) if from == id => {
+                    assert_eq!(code, Some(0));
+                    break;
+                }
+                Ok(_) => {}
+                Err(_) => panic!("no exit"),
+            }
+        }
+        let err = h
+            .backend
+            .handle_value(json!({ "method": "terminal.kill", "params": { "id": id } }))
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+        let err = h
+            .backend
+            .handle_value(json!({ "method": "terminal.create", "params": {
+                "cwd": "relative/path", "cols": 80, "rows": 24,
+            }}))
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::BadRequest);
     }
 
     fn copy_dir(from: &std::path::Path, to: &std::path::Path) {

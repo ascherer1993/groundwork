@@ -34,6 +34,23 @@ export interface PanelParams {
   editTitle?: boolean;
 }
 
+/** A terminal tab's params. */
+export interface TerminalParams {
+  /** The session in `groundworkd`. */
+  terminal: string;
+  /** Where it started, for a replacement shell if the session is gone. */
+  cwd: string;
+}
+
+export function isTerminal(panel: IDockviewPanel): boolean {
+  return "terminal" in panel.params!;
+}
+
+/** A terminal tab's title: what the program set, else its folder's name. */
+export function terminalTitle(title: string, cwd: string): string {
+  return title.trim() || cwd.slice(cwd.lastIndexOf("/") + 1) || cwd;
+}
+
 export interface OpenOptions {
   newTab?: boolean;
   split?: "right" | "below";
@@ -62,6 +79,8 @@ interface WorkspaceState {
   forward(panelId?: string): void;
   closeActive(): void;
   newNote(folder?: string, opts?: OpenOptions): Promise<void>;
+  /** A shell in `cwd` (the vault root by default), in a new tab. */
+  openTerminal(cwd?: string): Promise<void>;
 }
 
 let panelCounter = 0;
@@ -91,6 +110,12 @@ export function paramsOf(panel: IDockviewPanel): PanelParams {
   return panel.params as unknown as PanelParams;
 }
 
+/** The active tab if it shows a file (not a terminal). */
+function activeFile(dock: DockviewApi | null | undefined): IDockviewPanel | undefined {
+  const panel = dock?.activePanel;
+  return panel && !isTerminal(panel) ? panel : undefined;
+}
+
 export const useWorkspace = create<WorkspaceState>((set, get) => ({
   dock: null,
   activePanelId: null,
@@ -113,7 +138,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     }
     const sync = () => {
       const panel = dock.activePanel;
-      const path = panel ? paramsOf(panel).path : null;
+      const path = panel && !isTerminal(panel) ? paramsOf(panel).path : null;
       set({ activePanelId: panel?.id ?? null, activePath: path });
       if (path) useVault.getState().revealInTree(path);
     };
@@ -136,6 +161,16 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     });
     // Don't lose a change made just before quitting or reloading.
     window.addEventListener("beforeunload", () => saveTimer && save());
+    // Closing a terminal tab ends its session, as closing a terminal window
+    // does. Not when the whole dock goes (switching vaults): those keep
+    // running and come back with the vault's layout.
+    dock.onDidRemovePanel((panel) => {
+      if (!isTerminal(panel)) return;
+      const { terminal } = panel.params as unknown as TerminalParams;
+      setTimeout(() => {
+        if (get().dock === dock) void api.killTerminal(terminal).catch(() => {});
+      });
+    });
   },
 
   open(path, opts = {}) {
@@ -145,10 +180,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       opts.subpath !== undefined || opts.line !== undefined || opts.offset !== undefined
         ? { subpath: opts.subpath, line: opts.line, offset: opts.offset, nonce: ++focusNonce }
         : undefined;
+    // A file opened from a terminal tab goes in a new tab beside it.
     const active = dock.activePanel;
+    const file = activeFile(dock);
 
-    if (active && !opts.newTab && !opts.split) {
-      const current = paramsOf(active);
+    if (file && !opts.newTab && !opts.split) {
+      const current = paramsOf(file);
       const params: PanelParams =
         current.path === path
           ? { ...current, focus: focus ?? current.focus, editTitle: opts.editTitle }
@@ -160,17 +197,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               focus,
               editTitle: opts.editTitle,
             };
-      update(active, params);
+      update(file, params);
       return;
     }
 
     const params: PanelParams = {
       path,
-      mode: active
-        ? paramsOf(active).mode === "reading"
-          ? "live"
-          : paramsOf(active).mode
-        : "live",
+      mode: file ? (paramsOf(file).mode === "reading" ? "live" : paramsOf(file).mode) : "live",
       back: [],
       forward: [],
       focus,
@@ -213,11 +246,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   setMode(panelId, mode) {
     const panel = get().dock?.getPanel(panelId);
-    if (panel) update(panel, { ...paramsOf(panel), mode, focus: undefined, editTitle: false });
+    if (panel && !isTerminal(panel))
+      update(panel, { ...paramsOf(panel), mode, focus: undefined, editTitle: false });
   },
 
   toggleReading() {
-    const panel = get().dock?.activePanel;
+    const panel = activeFile(get().dock);
     if (!panel) return;
     const params = paramsOf(panel);
     // Pages have two modes: the page itself (any mode but source) and source.
@@ -230,8 +264,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   back(panelId) {
     const dock = get().dock;
-    const panel = panelId ? dock?.getPanel(panelId) : dock?.activePanel;
-    if (!panel) return;
+    const panel = panelId ? dock?.getPanel(panelId) : activeFile(dock);
+    if (!panel || isTerminal(panel)) return;
     const p = paramsOf(panel);
     const prev = p.back[p.back.length - 1];
     if (!prev) return;
@@ -247,8 +281,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   forward(panelId) {
     const dock = get().dock;
-    const panel = panelId ? dock?.getPanel(panelId) : dock?.activePanel;
-    if (!panel) return;
+    const panel = panelId ? dock?.getPanel(panelId) : activeFile(dock);
+    if (!panel || isTerminal(panel)) return;
     const p = paramsOf(panel);
     const next = p.forward[0];
     if (!next) return;
@@ -264,6 +298,26 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   closeActive() {
     get().dock?.activePanel?.api.close();
+  },
+
+  async openTerminal(cwd) {
+    const dock = get().dock;
+    if (!dock) return;
+    try {
+      // The view resizes it to fit once it's on screen.
+      const info = await api.createTerminal({ cols: 100, rows: 30 }, cwd);
+      const params: TerminalParams = { terminal: info.id, cwd: info.cwd };
+      const active = dock.activePanel;
+      dock.addPanel({
+        id: `tab-${++panelCounter}`,
+        component: "terminal",
+        title: terminalTitle(info.title, info.cwd),
+        params: params as unknown as Record<string, unknown>,
+        position: active ? { referencePanel: active, direction: "within" } : undefined,
+      });
+    } catch (err) {
+      useUi.getState().notify(message(err));
+    }
   },
 
   async newNote(folder, opts = {}) {
@@ -290,7 +344,7 @@ function followChanges(changes: FileChange[]) {
   }
   if (!moves.size && !removed.size) return;
   const remap = (p: string) => moves.get(p) ?? p;
-  for (const panel of [...dock.panels]) {
+  for (const panel of dock.panels.filter((p) => !isTerminal(p))) {
     const p = paramsOf(panel);
     if (removed.has(p.path) && !moves.has(p.path)) {
       panel.api.close();

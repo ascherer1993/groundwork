@@ -391,6 +391,19 @@ input {
   margin-left: auto;
 }
 
+/* Terminal panel */
+
+.terminal-panel {
+  height: 100%;
+  box-sizing: border-box;
+  padding: 6px 0 0 10px;
+  background: var(--bg);
+}
+
+.terminal-view {
+  height: 100%;
+}
+
 /* File panel */
 
 .file-panel {

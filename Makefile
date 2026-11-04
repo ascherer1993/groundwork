@@ -12,8 +12,8 @@ browser: cli ## UI in a normal browser (http://localhost:1420) against the real 
 build: ## Release .app bundle
 	cd app && npm run tauri build
 
-cli: ## Build the `groundwork` CLI next to the app ("Set up Claude Code…" in the app links it onto PATH)
-	cargo build -q -p groundwork-cli
+cli: ## Build the `groundwork` CLI and the `groundworkd` terminal daemon next to the app ("Set up Claude Code…" links the CLI onto PATH)
+	cargo build -q -p groundwork-cli -p groundwork-terminal-daemon
 
 bindings: ## Regenerate TypeScript API types from Rust
 	cargo test -q -p groundwork-core -p groundwork-protocol export_bindings

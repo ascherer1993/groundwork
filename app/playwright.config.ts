@@ -7,11 +7,13 @@ import { defineConfig, devices } from "@playwright/test";
 // alongside a dev session. Machine-local state goes to a throwaway directory.
 const BACKEND_PORT = 1441;
 const UI_PORT = 1440;
-const dataDir = mkdtempSync(join(tmpdir(), "groundwork-e2e-"));
+// Workers re-read this file, so the first (runner) process picks the folders
+// and passes them on in the environment.
+process.env.GROUNDWORK_E2E_DATA ??= mkdtempSync(join(tmpdir(), "groundwork-e2e-"));
+const dataDir = process.env.GROUNDWORK_E2E_DATA;
 
 // "Set up Claude Code" runs against a fake `claude` and a throwaway bin
-// folder, never the real ones. Workers re-read this file, so the first
-// (runner) process picks the folder and passes it on in the environment.
+// folder, never the real ones.
 process.env.GROUNDWORK_E2E_SETUP ??= mkdtempSync(join(tmpdir(), "groundwork-e2e-setup-"));
 const setupDir = process.env.GROUNDWORK_E2E_SETUP;
 mkdirSync(join(setupDir, "claude-bin"), { recursive: true });
@@ -23,6 +25,8 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter: process.env.CI ? "github" : "list",
+  // Ends the terminal daemon the tests started, and any shells left in it.
+  globalTeardown: "./e2e/teardown.ts",
   use: {
     baseURL: `http://localhost:${UI_PORT}`,
     trace: "retain-on-failure",
@@ -40,13 +44,16 @@ export default defineConfig({
   projects: [{ name: "webkit", use: { ...devices["Desktop Safari"] } }],
   webServer: [
     {
-      // The CLI is built too: "Set up Claude Code" links to it.
-      command: `cargo build -q -p groundwork-cli && cargo run -q -p groundwork-backend --features dev-server --bin groundwork-dev-server -- --port ${BACKEND_PORT}`,
+      // The CLI is built too ("Set up Claude Code" links to it), and the
+      // terminal daemon, which the backend starts from beside itself.
+      command: `cargo build -q -p groundwork-cli -p groundwork-terminal-daemon && cargo run -q -p groundwork-backend --features dev-server --bin groundwork-dev-server -- --port ${BACKEND_PORT}`,
       port: BACKEND_PORT,
       env: {
         GROUNDWORK_DATA_DIR: dataDir,
         GROUNDWORK_CLAUDE: join(setupDir, "claude-bin/claude"),
         GROUNDWORK_BIN_DIR: join(setupDir, "bin"),
+        // Terminals run a plain shell, not the user's configured one.
+        SHELL: "/bin/sh",
       },
       // The first run compiles the backend.
       timeout: 300_000,

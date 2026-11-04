@@ -240,6 +240,35 @@ pub enum Request {
     /// → `null`: opens the file in its default app.
     #[serde(rename = "os.open")]
     OsOpen { path: String },
+
+    /// → `TerminalInfo`: starts `command` (the user's login shell by
+    /// default) in `cwd`, an absolute folder (the vault root by default).
+    #[serde(rename = "terminal.create")]
+    TerminalCreate {
+        #[ts(optional)]
+        cwd: Option<String>,
+        #[ts(optional)]
+        command: Option<Vec<String>>,
+        cols: u16,
+        rows: u16,
+    },
+    /// → `TerminalInfo[]`: every running terminal, oldest first.
+    #[serde(rename = "terminal.list")]
+    TerminalList,
+    /// → `TerminalSnapshot`: resizes the terminal, returns what's on screen,
+    /// and starts `terminal.output` events for it.
+    #[serde(rename = "terminal.attach")]
+    TerminalAttach { id: String, cols: u16, rows: u16 },
+    /// → `null`: types into the terminal.
+    #[serde(rename = "terminal.input")]
+    TerminalInput { id: String, data: String },
+    /// → `null`
+    #[serde(rename = "terminal.resize")]
+    TerminalResize { id: String, cols: u16, rows: u16 },
+    /// → `null`: hangs up the terminal's processes, as closing a terminal
+    /// window does.
+    #[serde(rename = "terminal.kill")]
+    TerminalKill { id: String },
 }
 
 /// Pushed from the backend to the UI, serialized as `{ "event": "...", "payload": {...} }`.
@@ -253,6 +282,57 @@ pub enum Event {
     /// A page's saved state changed, through Groundwork or outside it.
     #[serde(rename = "page.stateChanged")]
     PageStateChanged { path: String },
+    /// Output from an attached terminal, base64-encoded. `seq` is the offset
+    /// of its first byte in everything the terminal has written.
+    #[serde(rename = "terminal.output")]
+    TerminalOutput {
+        id: String,
+        #[ts(type = "number")]
+        seq: u64,
+        data: String,
+    },
+    /// The program in a terminal set its title.
+    #[serde(rename = "terminal.title")]
+    TerminalTitle { id: String, title: String },
+    #[serde(rename = "terminal.bell")]
+    TerminalBell { id: String },
+    /// A terminal's program exited; the terminal is gone.
+    #[serde(rename = "terminal.exit")]
+    TerminalExit { id: String, code: Option<i32> },
+    /// The connection to the terminal daemon was lost; attached terminals
+    /// need attaching again.
+    #[serde(rename = "terminal.disconnected")]
+    TerminalDisconnected,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TerminalInfo {
+    pub id: String,
+    /// The folder it started in.
+    pub cwd: String,
+    /// The program it started (`zsh`).
+    pub program: String,
+    /// What's running in the foreground (`zsh`, `claude`, `vim`).
+    pub process: Option<String>,
+    /// Set by the program; empty if never set.
+    pub title: String,
+    /// Seconds since the Unix epoch.
+    #[ts(type = "number")]
+    pub started: u64,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TerminalSnapshot {
+    /// Escape sequences that redraw the terminal on a blank one of the
+    /// attached size.
+    pub data: String,
+    /// Output events with a lower `seq` are already part of `data`.
+    #[ts(type = "number")]
+    pub seq: u64,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]

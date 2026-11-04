@@ -148,11 +148,12 @@ function commands(): Command[] {
     },
     { id: "back", label: "Go back", shortcut: "⌘[", run: () => ws.back() },
     { id: "forward", label: "Go forward", shortcut: "⌘]", run: () => ws.forward() },
+    { id: "new-terminal", label: "New terminal", shortcut: "⌘T", run: () => ws.openTerminal() },
     {
       id: "close-tab",
       label: "Close tab",
       shortcut: "⌘W",
-      when: hasActive,
+      when: () => !!ws.dock?.activePanel,
       run: () => ws.closeActive(),
     },
     {
