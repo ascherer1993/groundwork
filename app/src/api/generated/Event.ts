@@ -4,4 +4,4 @@ import type { FileChange } from "./FileChange";
 /**
  * Pushed from the backend to the UI, serialized as `{ "event": "...", "payload": {...} }`.
  */
-export type Event = { "event": "vault.changed", "payload": { changes: Array<FileChange>, } };
+export type Event = { "event": "vault.changed", "payload": { changes: Array<FileChange>, } } | { "event": "page.stateChanged", "payload": { path: string, } };

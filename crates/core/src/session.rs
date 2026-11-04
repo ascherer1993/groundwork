@@ -17,6 +17,7 @@ use ts_rs::TS;
 use crate::activity::{ActivityKind, ActivityLog, ActivitySource, machine_id};
 use crate::daily::DailySettings;
 use crate::index::{FileEntry, Index, NewFileLocation, Upsert, hash, link_name};
+use crate::pages;
 use crate::parse::{self, LinkKind, Task};
 use crate::template::{self, Rendered, TemplateSettings};
 use crate::todos::{self, TaskChange};
@@ -200,6 +201,10 @@ impl Session {
                     "---\ncreated: {}\n---\n",
                     Local::now().format("%Y-%m-%dT%H:%M")
                 );
+                &default
+            }
+            None if classify(path, false) == NodeKind::Page => {
+                default = starter_page(file_name(path));
                 &default
             }
             None => "",
@@ -508,6 +513,9 @@ impl Session {
 
         self.ensure_parent(to)?;
         fs::rename(&from_full, &to_full)?;
+        for (old, new) in &entries {
+            pages::move_state(self.vault.root(), old, new);
+        }
 
         let moved_entries: Vec<FileEntry> = entries
             .iter()
@@ -657,6 +665,9 @@ impl Session {
         }
         self.ensure_parent(&op.from)?;
         fs::rename(root.join(&op.to), root.join(&op.from))?;
+        for (old, new) in &op.entries {
+            pages::move_state(root, new, old);
+        }
 
         let mut index = self.index.write().unwrap();
         for (_, new) in &op.entries {
@@ -849,6 +860,34 @@ impl Session {
         Ok((id, changes))
     }
 
+    // ---- Page state ----------------------------------------------------
+
+    /// The state a page saved through the bridge; `null` if none.
+    pub fn page_state(&self, page: &str) -> Result<serde_json::Value> {
+        let page = self.page(page)?;
+        pages::read_state(self.vault.root(), &page)
+    }
+
+    /// Replaces a page's saved state.
+    pub fn set_page_state(&self, page: &str, state: &serde_json::Value) -> Result<()> {
+        let _guard = self.write_lock.lock().unwrap();
+        let page = self.page(page)?;
+        pages::write_state(self.vault.root(), &page, state)
+    }
+
+    /// Checks that `path` is a page in the vault.
+    fn page(&self, path: &str) -> Result<String> {
+        self.vault.resolve(path)?;
+        let path = path.trim_matches('/');
+        if pages::page_of(path).as_deref() != Some(path) {
+            return Err(CoreError::InvalidPath(format!("{path} isn't a page")));
+        }
+        if !self.vault.root().join(path).exists() {
+            return Err(CoreError::NotFound(path.to_string()));
+        }
+        Ok(path.to_string())
+    }
+
     // ---- File watcher --------------------------------------------------
 
     /// Applies changes seen by the file watcher (vault-relative paths).
@@ -1036,9 +1075,34 @@ impl Drop for Session {
     }
 }
 
+/// A new page: an empty document that follows light and dark mode.
+fn starter_page(name: &str) -> String {
+    let title = name.rsplit_once('.').map_or(name, |(base, _)| base);
+    let title = title
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    format!(
+        r#"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{title}</title>
+    <style>
+      :root {{ color-scheme: light dark; font-family: system-ui, sans-serif; }}
+    </style>
+  </head>
+  <body>
+    <h1>{title}</h1>
+  </body>
+</html>
+"#
+    )
+}
+
 /// Writes via a hidden temp file and a rename, so a crash never leaves a
 /// half-written note.
-fn atomic_write(path: &Path, text: &str) -> Result<()> {
+pub(crate) fn atomic_write(path: &Path, text: &str) -> Result<()> {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy())
@@ -1359,6 +1423,64 @@ mod tests {
         assert!(v.exists("Old.md") && !v.exists("Sub/New.md"));
         assert_eq!(v.session.index().backlinks("Old.md").len(), 1);
         assert!(v.session.undo_label().is_none());
+    }
+
+    #[test]
+    fn page_state_is_saved_and_follows_renames() {
+        let v = TestVault::new(&[
+            ("Pages/sketch.html", "<p>hi</p>"),
+            ("Pages/x.page/index.html", "<p>x</p>"),
+            ("Note.md", "text"),
+        ]);
+        let s = &v.session;
+        assert_eq!(
+            s.page_state("Pages/sketch.html").unwrap(),
+            serde_json::Value::Null
+        );
+        s.set_page_state("Pages/sketch.html", &serde_json::json!({ "n": 1 }))
+            .unwrap();
+        s.set_page_state("Pages/x.page", &serde_json::json!({ "n": 2 }))
+            .unwrap();
+        assert!(v.exists(".groundwork/page-state/Pages/sketch.html.json"));
+        assert!(v.exists("Pages/x.page/state.json"));
+        assert!(matches!(
+            s.set_page_state("Note.md", &serde_json::Value::Null),
+            Err(CoreError::InvalidPath(_))
+        ));
+        assert!(matches!(
+            s.page_state("Pages/missing.html"),
+            Err(CoreError::NotFound(_))
+        ));
+
+        // A folder move carries the single-file page's state along; undo brings it back.
+        s.rename("Pages", "Archive/Pages").unwrap();
+        assert_eq!(
+            s.page_state("Archive/Pages/sketch.html").unwrap(),
+            serde_json::json!({ "n": 1 })
+        );
+        assert_eq!(
+            s.page_state("Archive/Pages/x.page").unwrap(),
+            serde_json::json!({ "n": 2 })
+        );
+        s.undo().unwrap();
+        assert_eq!(
+            s.page_state("Pages/sketch.html").unwrap(),
+            serde_json::json!({ "n": 1 })
+        );
+    }
+
+    #[test]
+    fn new_pages_start_from_a_skeleton() {
+        let v = TestVault::new(&[]);
+        let (path, _) = v
+            .session
+            .create_from_link("Home.md", "Board & plans.html")
+            .unwrap();
+        assert_eq!(path, "Board & plans.html");
+        let text = v.read(&path);
+        assert!(text.starts_with("<!doctype html>"));
+        assert!(text.contains("<title>Board &amp; plans</title>"));
+        assert!(text.contains("color-scheme: light dark"));
     }
 
     #[test]

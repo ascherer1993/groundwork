@@ -13,6 +13,11 @@ export function displayName(name: string, kind: NodeKind): { base: string; ext: 
   return kind === "note" ? { base, ext: "" } : { base, ext };
 }
 
+/** An HTML page: a single `.html` file or a `.page` bundle. */
+export function isPagePath(path: string): boolean {
+  return /\.(html?|page)$/i.test(path);
+}
+
 /** Every ancestor folder of a vault-relative path, outermost first. */
 export function ancestors(path: string): string[] {
   const parts = path.split("/");

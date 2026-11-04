@@ -1,6 +1,6 @@
 ---
 name: groundwork
-description: Use when working in the user's Groundwork notes vault (an Obsidian-compatible folder of Markdown notes) — reading or writing notes, daily notes, todos, templates, or searching what they've written. Covers the vault's conventions and the `groundwork` CLI.
+description: Use when working in the user's Groundwork notes vault (an Obsidian-compatible folder of Markdown notes) — reading or writing notes, daily notes, todos, templates, interactive HTML pages, or searching what they've written. Covers the vault's conventions and the `groundwork` CLI.
 ---
 
 # Working in a Groundwork vault
@@ -48,6 +48,9 @@ groundwork todo add "text" [--due fri] [--priority p2] [--note <note>]   # defau
 groundwork todo done|cancel|reopen <id>
 groundwork todo reschedule <id> <date|none>
 groundwork todo priority <id> p1
+
+# HTML pages
+groundwork page state <page> [--set <json>|-]   # what a page saved; --set replaces it
 
 # Which vault, and what changed
 groundwork vault                        # the vault in use, and why
@@ -108,6 +111,33 @@ day
 ````
 
 In the app this renders as a live list for that note's date: overdue, due, carried over from earlier days, and done. Leave these blocks as they are. Todos aren't copied between days; the block shows them where they live.
+
+## HTML pages
+
+Groundwork shows HTML pages live, in a tab or embedded in a note. Build one when a note can't show what's needed: a dashboard, a demo, a comparison the user clicks through, a form whose answers you read back.
+
+- **A single file** `Name.html` (CSS and JS inline), or **a bundle**: a folder `Name.page/` with an `index.html` and any other files (scripts, CSS, data). A bundle shows as one item.
+- **Link** with the extension: `[[Name.html]]`, `[[Name.page]]`. **Embed** in a note with `![[Name.page]]`, which sizes itself to the content, or `![[Name.page|400]]` for 400 pixels tall.
+- **Write the files directly**; there's no `page create`. Open pages reload when their files change.
+- **Relative URLs load vault files:** `<script type="module" src="app.js">`, `fetch("data.json")`, `<img src="../diagram.png">`. Network access (CDNs, APIs) works unless `.groundwork/config.yml` sets `pages: { allow_network: false }`, but prefer no external dependencies so pages work offline.
+- **Pages are sandboxed.** They can't touch the app, and `localStorage` only lasts until the page reloads. Keep anything that should last in `groundwork.state`.
+- **Follow light and dark mode:** `:root { color-scheme: light dark; }`, plus `@media (prefers-color-scheme: dark)` for your own colours.
+- **Links to notes open in Groundwork:** `<a href="../Plan.md">` or `<a href="[[Plan]]">`. Web links open in the browser.
+
+The bridge, `window.groundwork`, is there before the page's own scripts run:
+
+```js
+groundwork.path                          // this page's vault path
+await groundwork.state.get()             // the saved state, or null
+await groundwork.state.set({ chosen: "B" })  // replace it; anything JSON can hold
+groundwork.onStateChange((state) => {})  // the state changed elsewhere (e.g. `page state --set`)
+await groundwork.readFile("data.csv")    // a vault file's text: relative to the page, "/" for the vault root
+await groundwork.navigate("[[Plan]]")    // open a note in Groundwork
+```
+
+**Reading back what the user did:** `groundwork page state <page>` prints the saved state. It's kept in `Name.page/state.json`, or `.groundwork/page-state/<path>.json` for a single file; `--json` says which. Shape the state so you can read it without the page: `{ "chosen": "Option B", "why": "..." }`, not indexes into a list. `--set` replaces the state, and an open page updates live.
+
+A typical flow: build the page, ask the user to open it in Groundwork and tell you when they're done, then run `groundwork page state`.
 
 ## Projects
 

@@ -3,10 +3,21 @@
   <head>
     <meta charset="utf-8" />
     <title>Login flow</title>
+    <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <h1>Login flow</h1>
     <label><input type="checkbox" id="seen" /> I've reviewed this</label>
-    <script src="app.js"></script>
+
+    <h2>Timings</h2>
+    <p class="hint">
+      These start from <code>timings.csv</code>. Your edits are saved in this page's state, not in
+      the CSV.
+    </p>
+    <div id="timings" aria-label="Timings"></div>
+    <button id="reset" type="button" hidden>Reset to the CSV</button>
+
+    <p><a href="../../Acme.md">Back to Acme</a> · <a href="[[2026-11-02 Kickoff]]">Kickoff notes</a></p>
+    <script type="module" src="app.js"></script>
   </body>
 </html>

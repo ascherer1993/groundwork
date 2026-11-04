@@ -19,6 +19,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::pages;
 use crate::parse::{self, Link, LinkKind, ParsedNote};
 use crate::tree::{NodeKind, classify, is_hidden};
 use crate::{CoreError, Result};
@@ -321,11 +322,18 @@ impl Index {
         } else {
             (None, None)
         };
+        let (size, mtime) = if kind == NodeKind::PageBundle {
+            bundle_signature(&full)
+        } else if meta.is_dir() {
+            (0, meta.modified().ok())
+        } else {
+            (meta.len(), meta.modified().ok())
+        };
         Ok(Some(FileEntry {
             path: path.to_string(),
             kind,
-            mtime: meta.modified().ok(),
-            size: if meta.is_dir() { 0 } else { meta.len() },
+            mtime,
+            size,
             hash,
             note,
         }))
@@ -720,6 +728,34 @@ fn read_link_settings(root: &Path) -> LinkSettings {
     }
 }
 
+/// A bundle's total size and latest modification time, over everything in
+/// it but its state file and hidden entries, so editing any file in a bundle
+/// counts as changing the page and saving its state doesn't.
+fn bundle_signature(dir: &Path) -> (u64, Option<SystemTime>) {
+    fn walk(dir: &Path, top: bool, size: &mut u64, mtime: &mut Option<SystemTime>) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if is_hidden(&name) || (top && name == pages::BUNDLE_STATE) {
+                continue;
+            }
+            let Ok(meta) = entry.metadata() else { continue };
+            if meta.is_dir() {
+                walk(&entry.path(), false, size, mtime);
+            } else {
+                *size += meta.len();
+                *mtime = (*mtime).max(meta.modified().ok());
+            }
+        }
+    }
+    // Not the folder's own mtime: adding the state file changes that.
+    let (mut size, mut mtime) = (0, None);
+    walk(dir, true, &mut size, &mut mtime);
+    (size, mtime)
+}
+
 /// Collects indexable files under `dir`: notes, pages, assets and `.page`
 /// bundles (as single entries). Hidden entries are skipped.
 fn collect(dir: &Path, rel: &str, out: &mut Vec<(String, NodeKind)>) -> Result<()> {
@@ -879,6 +915,19 @@ pub(crate) mod tests {
         let resolved: Vec<_> = out.iter().filter_map(|o| o.resolved.as_deref()).collect();
         assert!(resolved.contains(&"Projects/Acme/demos/login-flow.page"));
         assert!(resolved.contains(&"Projects/Acme/demos/sketch.html"));
+    }
+
+    #[test]
+    fn a_bundle_changes_with_its_files_but_not_its_state() {
+        let (dir, mut index) = temp_vault(&[
+            ("x.page/index.html", "<p>one</p>"),
+            ("x.page/js/app.js", "1"),
+        ]);
+        let upsert = |index: &mut Index| index.upsert("x.page").unwrap()[0].1;
+        fs::write(dir.path().join("x.page/js/app.js"), "12").unwrap();
+        assert_eq!(upsert(&mut index), Upsert::Modified);
+        fs::write(dir.path().join("x.page/state.json"), "{\"a\": 1}").unwrap();
+        assert_eq!(upsert(&mut index), Upsert::Unchanged);
     }
 
     #[test]

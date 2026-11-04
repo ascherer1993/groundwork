@@ -11,6 +11,8 @@ import { useWorkspace } from "../state/workspace";
 
 interface Data {
   path: string;
+  /** Unlinked mentions and outgoing links are for notes only. */
+  note: boolean;
   backlinks: Backlinks[];
   unlinked: Mention[];
   outgoing: OutgoingLink[];
@@ -33,19 +35,27 @@ function title(path: string) {
   return name.toLowerCase().endsWith(".md") ? displayName(name, "note").base : name;
 }
 
-/** Backlinks, unlinked mentions and outgoing links of the active note. */
+/**
+ * Backlinks, unlinked mentions and outgoing links of the active note. Other
+ * files (pages, images) get their backlinks.
+ */
 export function LinksPanel() {
   const path = useWorkspace((s) => s.activePath);
   const revision = useVault((s) => s.revision);
   const [data, setData] = useState<Data | null>(null);
 
   useEffect(() => {
-    if (!path || !path.toLowerCase().endsWith(".md")) return;
+    if (!path) return;
+    const note = path.toLowerCase().endsWith(".md");
     let cancelled = false;
     const timer = setTimeout(() => {
-      Promise.all([api.backlinks(path), api.unlinked(path), api.outgoing(path)])
+      Promise.all([
+        api.backlinks(path),
+        note ? api.unlinked(path) : [],
+        note ? api.outgoing(path) : [],
+      ])
         .then(([backlinks, unlinked, outgoing]) => {
-          if (!cancelled) setData({ path, backlinks, unlinked, outgoing });
+          if (!cancelled) setData({ path, note, backlinks, unlinked, outgoing });
         })
         .catch(() => {});
     }, 150);
@@ -56,7 +66,6 @@ export function LinksPanel() {
   }, [path, revision]);
 
   if (!path) return <p className="panel-empty muted">No file open.</p>;
-  if (!path.toLowerCase().endsWith(".md")) return <p className="panel-empty muted">Not a note.</p>;
   // Still loading: stay blank rather than flash a wrong message.
   if (!data || data.path !== path) return null;
 
@@ -98,55 +107,59 @@ export function LinksPanel() {
         ))}
       </Section>
 
-      <Section title="Unlinked mentions" count={data.unlinked.length} testId="unlinked" collapsed>
-        {data.unlinked.length === 0 && <p className="muted small">No unlinked mentions.</p>}
-        {data.unlinked.map((m, i) => (
-          <div key={`${m.source}:${m.range.start}:${i}`} className="link-group">
-            <div className="mention-row">
-              <button className="link-source" onClick={() => open(m.source, { line: m.line })}>
-                {title(m.source)}
-              </button>
-              <button
-                className="small-button"
-                onClick={() =>
-                  void api
-                    .linkMention(m.source, m.range.start, m.range.end, m.text, path)
-                    .catch((err) => useUi.getState().notify(message(err)))
-                }
-              >
-                Link
-              </button>
+      {data.note && (
+        <Section title="Unlinked mentions" count={data.unlinked.length} testId="unlinked" collapsed>
+          {data.unlinked.length === 0 && <p className="muted small">No unlinked mentions.</p>}
+          {data.unlinked.map((m, i) => (
+            <div key={`${m.source}:${m.range.start}:${i}`} className="link-group">
+              <div className="mention-row">
+                <button className="link-source" onClick={() => open(m.source, { line: m.line })}>
+                  {title(m.source)}
+                </button>
+                <button
+                  className="small-button"
+                  onClick={() =>
+                    void api
+                      .linkMention(m.source, m.range.start, m.range.end, m.text, path)
+                      .catch((err) => useUi.getState().notify(message(err)))
+                  }
+                >
+                  Link
+                </button>
+              </div>
+              <div className="link-context static">{plain(m.context)}</div>
             </div>
-            <div className="link-context static">{plain(m.context)}</div>
-          </div>
-        ))}
-      </Section>
+          ))}
+        </Section>
+      )}
 
-      <Section title="Outgoing links" count={outgoing.length} testId="outgoing">
-        {outgoing.length === 0 && <p className="muted small">No outgoing links.</p>}
-        {outgoing.map((o, i) => (
-          <button
-            key={i}
-            className={`outgoing${o.resolved ? "" : " is-unresolved"}`}
-            title={o.resolved ?? `${o.link.target} (not created yet)`}
-            onClick={(e) =>
-              void useWorkspace
-                .getState()
-                .openLink(
-                  path,
-                  o.link.subpath ? `${o.link.target}#${o.link.subpath}` : o.link.target,
-                  {
-                    newTab: e.metaKey,
-                    resolved: o.resolved ?? null,
-                  },
-                )
-            }
-          >
-            {o.resolved ? title(o.resolved) : o.link.target}
-            {o.link.subpath && <span className="muted"> › {o.link.subpath}</span>}
-          </button>
-        ))}
-      </Section>
+      {data.note && (
+        <Section title="Outgoing links" count={outgoing.length} testId="outgoing">
+          {outgoing.length === 0 && <p className="muted small">No outgoing links.</p>}
+          {outgoing.map((o, i) => (
+            <button
+              key={i}
+              className={`outgoing${o.resolved ? "" : " is-unresolved"}`}
+              title={o.resolved ?? `${o.link.target} (not created yet)`}
+              onClick={(e) =>
+                void useWorkspace
+                  .getState()
+                  .openLink(
+                    path,
+                    o.link.subpath ? `${o.link.target}#${o.link.subpath}` : o.link.target,
+                    {
+                      newTab: e.metaKey,
+                      resolved: o.resolved ?? null,
+                    },
+                  )
+              }
+            >
+              {o.resolved ? title(o.resolved) : o.link.target}
+              {o.link.subpath && <span className="muted"> › {o.link.subpath}</span>}
+            </button>
+          ))}
+        </Section>
+      )}
     </div>
   );
 }

@@ -9,7 +9,9 @@
 //! - server → client: `{ "id": 1, "result": ... }` or `{ "id": 1, "error": ApiError }`,
 //!   and events as `{ "event": ..., "payload": ... }`
 //!
-//! `GET /vault/<path>` serves raw vault files (images, pages).
+//! `GET /vault/<path>` serves raw vault files (images, embeds), and
+//! `GET /page/<token>/<path>` serves HTML pages and their files to page
+//! frames (see `page_server`).
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -76,6 +78,7 @@ pub async fn serve(backend: Arc<Backend>, hub: EventHub, port: u16) -> std::io::
     let app = Router::new()
         .route("/", get(upgrade))
         .route("/vault/{*path}", get(vault_file))
+        .route("/page/{*rest}", get(page_file))
         .with_state(state);
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -87,6 +90,32 @@ async fn vault_file(State(state): State<AppState>, Path(path): Path<String>) -> 
     let backend = state.backend.clone();
     match tokio::task::spawn_blocking(move || backend.read_bytes(&path)).await {
         Ok(Ok((bytes, mime))) => ([(header::CONTENT_TYPE, mime)], bytes).into_response(),
+        Ok(Err(e)) if e.code == ErrorCode::Forbidden => StatusCode::FORBIDDEN.into_response(),
+        _ => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn page_file(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(rest): Path<String>,
+) -> Response {
+    let host = headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("127.0.0.1");
+    let self_source = format!("http://{host}");
+    let backend = state.backend.clone();
+    match tokio::task::spawn_blocking(move || backend.page_file(&rest, &self_source)).await {
+        Ok(Ok(file)) => {
+            let mut response = ([(header::CONTENT_TYPE, file.mime)], file.bytes).into_response();
+            for (name, value) in file.headers {
+                if let Ok(value) = value.parse() {
+                    response.headers_mut().insert(name, value);
+                }
+            }
+            response
+        }
         Ok(Err(e)) if e.code == ErrorCode::Forbidden => StatusCode::FORBIDDEN.into_response(),
         _ => StatusCode::NOT_FOUND.into_response(),
     }

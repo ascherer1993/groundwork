@@ -5,6 +5,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// The fixture page's state, if someone used the page in the app.
+const PAGE_STATE: &str = "Projects/Acme/demos/login-flow.page/state.json";
+
 struct Vault {
     dir: tempfile::TempDir,
     data: tempfile::TempDir,
@@ -28,7 +31,10 @@ impl Vault {
         let dir = tempfile::tempdir().unwrap();
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/vault");
         copy_dir(&fixture, dir.path());
+        // Left over from using the fixture vault in the app.
         let _ = fs::remove_dir_all(dir.path().join(".groundwork/activity"));
+        let _ = fs::remove_dir_all(dir.path().join(".groundwork/page-state"));
+        let _ = fs::remove_file(dir.path().join(PAGE_STATE));
         Self {
             dir,
             data: tempfile::tempdir().unwrap(),
@@ -310,4 +316,43 @@ fn finds_the_vault_from_the_current_folder() {
         String::from_utf8(out.stdout).unwrap(),
         "Projects/Acme/Acme.md\n"
     );
+}
+
+#[test]
+fn reads_and_sets_page_state() {
+    let v = Vault::new();
+    assert_eq!(v.ok(&["page", "state", "login-flow.page"]), "null\n");
+    v.ok(&[
+        "page",
+        "state",
+        "login-flow.page",
+        "--set",
+        r#"{"reviewed": true}"#,
+    ]);
+    assert_eq!(
+        v.read("Projects/Acme/demos/login-flow.page/state.json"),
+        "{\n  \"reviewed\": true\n}\n"
+    );
+
+    // A single-file page keeps its state under .groundwork/.
+    let set = v.ok(&[
+        "page",
+        "state",
+        "Projects/Acme/demos/sketch.html",
+        "--set",
+        "[1, 2]",
+        "--json",
+    ]);
+    let set: serde_json::Value = serde_json::from_str(&set).unwrap();
+    assert_eq!(set["page"], "Projects/Acme/demos/sketch.html");
+    assert_eq!(
+        set["file"],
+        ".groundwork/page-state/Projects/Acme/demos/sketch.html.json"
+    );
+    assert_eq!(set["state"], serde_json::json!([1, 2]));
+
+    let (ok, _, err) = v.run(&["page", "state", "Welcome"]);
+    assert!(!ok && err.contains("isn't a page"), "{err}");
+    let (ok, _, err) = v.run(&["page", "state", "login-flow.page", "--set", "{nope"]);
+    assert!(!ok && err.contains("isn't JSON"), "{err}");
 }

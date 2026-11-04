@@ -252,14 +252,19 @@ Built in from the start: Open in VS Code, Reveal in Finder, Copy relative path, 
 - **Single file:** `foo.html`, with CSS and JS inline. Link with `[[foo.html]]`.
 - **Bundle:** `foo.page/index.html` plus assets. It shows as one item in the sidebar. Link with `[[foo.page]]`.
 - Extensions are required in links, matching Obsidian's convention for non-Markdown files. That avoids clashes with `foo.md`.
-- Pages are served through a custom `groundwork://` protocol, so relative assets and vault links resolve.
-- **Bridge API** injected as `window.groundwork`:
+- Pages are served at `/page/<token>/<vault path>`: on the `groundwork://` protocol in the app, on the dev server in browser mode. Relative assets and links resolve; bundles load with a trailing `/` so they stay inside the bundle. The token is random per launch.
+- **Sandboxed:** pages run in iframes with `sandbox` but without `allow-same-origin`, so they have an opaque origin. That matters because Tauri treats our own `groundwork://` scheme as a trusted origin for app commands, and the dev server accepts sockets from any localhost origin; an opaque origin gets neither. Page files are served with CORS open, so module scripts and `fetch` still work; the token stops other websites using that to read the vault through the dev server. `localStorage` doesn't exist in an opaque origin, so the bridge substitutes an in-memory one.
+- **Bridge API** injected as `window.groundwork` (the server puts the script first in every HTML document; it talks to the app with postMessage):
+  - `path`: the page's vault path
   - `navigate("[[Some Note]]")`
-  - `readFile(path)`
-  - `state.get()` and `state.set(obj)`, persisted to `foo.page/state.json` or to `.groundwork/page-state/<path>.json`
-  - `onStateChange`
-- Claude can read the state file to see what you clicked or chose.
-- Network access is controlled by a setting (on by default, so dashboards can fetch external data).
+  - `readFile(path)`: a vault file's text; paths are relative to the page, `/` for the vault root
+  - `state.get()` and `state.set(obj)`, persisted to `foo.page/state.json` or to `.groundwork/page-state/<path>.json` (moved along on rename)
+  - `onStateChange(cb)`: the state changed elsewhere (another view of the page, the CLI, Claude editing the file)
+- Links inside pages: vault files open in Groundwork (`<a href="../Plan.md">` or `<a href="[[Plan]]">`), other pages in the same bundle navigate in place, web links open in the browser. ⌘ shortcuts are forwarded to the app.
+- Open pages and embeds reload when their files change. A bundle counts as changed when any file in it changes, except `state.json`.
+- Embeds: `![[foo.page]]` sizes itself to the page (capped at 4000px); `![[foo.page|400]]` is 400px tall.
+- Claude reads the state with `groundwork page state <page>`, or the state file directly.
+- Network access: `pages: { allow_network: false }` in `.groundwork/config.yml` adds a Content Security Policy that allows only the page's own files, inline code and `data:`/`blob:` URLs. On by default, so dashboards can fetch external data.
 - Obsidian will show `[[foo.page]]` links as unresolved. That's acceptable.
 
 ### 4.9 Todos (Markdown task lines)
@@ -347,7 +352,7 @@ You type `!p1` and it turns into the marker. The CLI and agents always use the `
   - task lists with clickable checkboxes
   - tables
   - frontmatter shown as a properties panel
-- **Navigation:** Cmd-click a link to open it in a new tab, hover a link to preview it, and get autocomplete for `[[`.
+- **Navigation:** Cmd-click a link to open it in a new tab, hold ⌘ over a link to preview it (the preview closes once the pointer leaves both the link and the preview), and get autocomplete for `[[`.
 
 ### 5.3 Templates & daily notes
 
@@ -495,6 +500,7 @@ These commands work without the app running (they use files directly):
 - `search <q>` (full text) and `search --smart <q>` (qmd)
 - `template list` / `template show`
 - `daily [--date]`
+- `page state <page> [--set <json>|-]`: what an HTML page saved (§4.8)
 - `ticket create` / `ticket close` / `ticket restore` / `ticket list [--repo] [--project] [--status] [--component]`
 - `project list` / `project show` (with its code, open tickets and overview)
 - `repo list` / `repo show` (components, commands, docs, and which projects use each part)
@@ -590,7 +596,7 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
 - File context menu: Reveal in Finder, copy relative or absolute path, rename, delete (to the Trash)
 - **Checkpoint:** use it as your daily notes app next to Obsidian
 
-### Phase 2 — Templates, daily notes, search, CLI v1 *(built, awaiting checkpoint)*
+### Phase 2 — Templates, daily notes, search, CLI v1 *(done)*
 - Templates using the `{{…}}` syntax (date offsets, anchors, prompts)
 - Daily notes, command palette (Cmd+P), full-text search UI, tags pane
 - Todos: `@date` entry, automatic stamps, the `todos` block (day view with carry-over), Todos panel; todo events in the activity log
@@ -602,13 +608,19 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
   - The plugin lives in `claude-plugin/`, listed by the repo's `.claude-plugin/marketplace.json`. For now it has only the `groundwork` skill; hooks, `ask` and `notify` come with terminals.
   - "Set up Claude Code…" (§5.7) installs both and sets the CLI's default vault. It was pulled forward from Phase 7's "CLI install" so the checkpoint doesn't need manual setup.
 
-### Phase 3 — HTML pages
+### Phase 3 — HTML pages *(built, awaiting checkpoint)*
 - `groundwork://` protocol, page viewer with auto-reload, read-only source view
 - `.page` bundles shown as single items; `[[x.page]]` / `[[x.html]]` links, backlinks to pages; links inside pages open notes
 - `![[x.page]]` live interactive embeds with automatic height
 - Bridge API (`navigate`, `readFile`, `state`) and persisted page state; network setting
 - Skill update so Claude knows how to build pages and read their state
 - **Checkpoint:** Claude builds an interactive page; you use it and Claude reads the state back
+- Built:
+  - Serving and the bridge: `crates/backend/src/page_server.rs` and `bridge.js`; the app side is `app/src/lib/pages.ts`. State and settings: `crates/core/src/pages.rs`.
+  - `groundwork page state <page> [--set <json>|-]` reads and replaces state. `file.read` now returns text for any UTF-8 file (CSV, JSON), which `readFile` needs.
+  - New `.html` files start from a small skeleton that follows light and dark mode.
+  - The links panel shows backlinks for pages (and other files); outgoing links and unlinked mentions stay notes-only.
+  - Not verified in the packaged app yet: Playwright covers browser mode only, so the checkpoint should confirm pages, module scripts and state work in the desktop window.
 
 ### Phase 4 — Terminals & workspaces
 - `groundworkd` daemon, xterm.js tabs, splits
@@ -649,6 +661,7 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
 - MCP server wrapper
 - Real Jira API integration (status and title sync)
 - Graph view, themes, plugin system, other agents (Codex…), multi-repo tickets (one worktree per repo)
+- A CSV viewer you can edit (a table, not text). Until then, only notes are editable in the app; pages, CSVs and other files open read-only. Pages can't write vault files either: data a page lets you change lives in its state (the fixture's `login-flow.page` shows the pattern).
 - Search over HTML pages; ghostty-web terminal renderer; other platforms
 
 ---

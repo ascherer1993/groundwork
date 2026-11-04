@@ -9,6 +9,7 @@ pub mod dates;
 mod error;
 pub mod index;
 pub mod moment;
+pub mod pages;
 pub mod parse;
 pub mod recent;
 pub mod search;

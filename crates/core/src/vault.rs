@@ -31,7 +31,7 @@ pub struct FileContent {
     pub path: String,
     pub kind: NodeKind,
     pub size: u64,
-    /// UTF-8 text for notes and pages; absent for binary assets.
+    /// UTF-8 text for notes, pages and text files; absent for binary files.
     #[ts(optional)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
@@ -115,6 +115,10 @@ impl Vault {
                 }
                 Some(String::from_utf8_lossy(&fs::read(&file)?).into_owned())
             }
+            // Data files (CSV, JSON, …) that pages read: text if it's UTF-8.
+            NodeKind::Asset if size <= MAX_READ_BYTES => String::from_utf8(fs::read(&file)?)
+                .ok()
+                .filter(|t| !t.contains('\0')),
             _ => None,
         };
         Ok(FileContent {
@@ -175,7 +179,7 @@ mod tests {
     }
 
     #[test]
-    fn reads_notes_and_bundles() {
+    fn reads_notes_bundles_and_text_files() {
         let vault = fixture();
         let note = vault.read_file("Welcome.md").unwrap();
         assert_eq!(note.kind, NodeKind::Note);
@@ -186,6 +190,17 @@ mod tests {
             .unwrap();
         assert_eq!(bundle.kind, NodeKind::PageBundle);
         assert!(bundle.text.unwrap().contains("<html"));
+
+        // Text data files have text; binary files don't.
+        let csv = vault.read_file("Projects/Acme/demos/timings.csv").unwrap();
+        assert_eq!(
+            csv.text.as_deref(),
+            Some("step,ms\nlogin,120\nrefresh,40\n")
+        );
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a.bin"), [0u8, 159, 146, 150]).unwrap();
+        let binary = Vault::open(dir.path()).unwrap().read_file("a.bin").unwrap();
+        assert_eq!(binary.text, None);
     }
 
     #[test]

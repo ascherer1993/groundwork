@@ -13,6 +13,7 @@ use chrono::{DateTime, Duration, Local, NaiveDate};
 use clap::{Args, Parser, Subcommand};
 use groundwork_core::activity::{ActivitySource, read_events};
 use groundwork_core::dates::parse_natural;
+use groundwork_core::pages;
 use groundwork_core::session::with_created_property;
 use groundwork_core::setup::default_vault;
 use groundwork_core::todos::{DueFilter, StatusFilter, TaskChange, Todo, TodoFilter};
@@ -69,6 +70,9 @@ enum Command {
     /// List, add and update todos.
     #[command(subcommand)]
     Todo(TodoCommand),
+    /// HTML pages: read or set the state they save.
+    #[command(subcommand)]
+    Page(PageCommand),
     /// Which vault commands use, and why. Run this first if unsure.
     Vault,
     /// What changed in the vault, newest last.
@@ -81,6 +85,19 @@ enum Command {
         path: Option<String>,
         #[arg(long, default_value_t = 200)]
         limit: usize,
+    },
+}
+
+#[derive(Subcommand)]
+enum PageCommand {
+    /// Print the state a page saved (`groundwork.state`) as JSON, `null` if
+    /// none. `--json` adds the page and the file the state is kept in.
+    State {
+        /// A path or link name: `login-flow.page`, `Demos/sketch.html`.
+        page: String,
+        /// Replace the state with this JSON instead. `-` reads it from stdin.
+        #[arg(long, allow_hyphen_values = true)]
+        set: Option<String>,
     },
 }
 
@@ -262,6 +279,26 @@ fn resolve_note(session: &Session, note: &str) -> Fallible<String> {
         .ok_or_else(|| format!("no note named {note:?}"))
 }
 
+/// A page (`.html` file or `.page` bundle) given as a path or link name.
+fn resolve_page(session: &Session, page: &str) -> Fallible<String> {
+    let page = page.trim().trim_matches('/');
+    let path =
+        if session.vault().root().join(page).exists() && session.vault().resolve(page).is_ok() {
+            page.to_string()
+        } else {
+            session
+                .index()
+                .resolve(page, "")
+                .ok_or_else(|| format!("no page named {page:?}"))?
+        };
+    match pages::page_of(&path) {
+        Some(p) if p == path => Ok(path),
+        _ => Err(format!(
+            "{path} isn't a page (an .html file or a .page folder)"
+        )),
+    }
+}
+
 fn print_json(value: &impl Serialize) -> Fallible<()> {
     println!(
         "{}",
@@ -364,6 +401,32 @@ fn run(cli: Cli) -> Fallible<()> {
             }
             print!("{}", rendered.text);
             Ok(())
+        }
+        Command::Page(PageCommand::State { page, set }) => {
+            let page = resolve_page(&session, &page)?;
+            if let Some(text) = set {
+                let text = if text == "-" {
+                    let mut stdin = String::new();
+                    std::io::stdin()
+                        .read_to_string(&mut stdin)
+                        .map_err(|e| format!("reading the state from stdin: {e}"))?;
+                    stdin
+                } else {
+                    text
+                };
+                let state: serde_json::Value = serde_json::from_str(&text)
+                    .map_err(|e| format!("the state isn't JSON: {e}"))?;
+                session.set_page_state(&page, &state).map_err(err)?;
+            }
+            let state = session.page_state(&page).map_err(err)?;
+            if json {
+                return print_json(&serde_json::json!({
+                    "page": page,
+                    "file": pages::state_path(&page),
+                    "state": state,
+                }));
+            }
+            print_json(&state)
         }
         Command::Daily { date } => {
             let (path, _) = session.daily_note(date_arg(&date)?).map_err(err)?;

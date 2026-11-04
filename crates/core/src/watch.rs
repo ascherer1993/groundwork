@@ -7,6 +7,7 @@ use std::time::Duration;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
 
+use crate::pages;
 use crate::tree::is_hidden;
 use crate::{CoreError, Result};
 
@@ -17,6 +18,7 @@ pub struct VaultWatcher {
 /// Calls `on_change` with batches of changed vault-relative paths. Hidden
 /// paths are dropped (except `.obsidian/app.json`, which holds link settings),
 /// and anything inside a `.page` bundle is reported as the bundle itself.
+/// Page state files are reported as they are (see [`pages::page_for_state_path`]).
 pub fn watch(
     root: &Path,
     on_change: impl Fn(Vec<String>) + Send + 'static,
@@ -60,8 +62,9 @@ fn vault_path(root: &Path, path: &Path) -> Option<String> {
     if parts.is_empty() {
         return None;
     }
-    if parts == [".obsidian", "app.json"] {
-        return Some(parts.join("/"));
+    let joined = parts.join("/");
+    if joined == ".obsidian/app.json" || pages::page_for_state_path(&joined).is_some() {
+        return Some(joined);
     }
     if parts.iter().any(|p| is_hidden(p)) {
         return None;
@@ -85,6 +88,18 @@ mod tests {
         assert_eq!(p("/v/A/B.md").as_deref(), Some("A/B.md"));
         assert_eq!(p("/v/d/x.page/js/app.js").as_deref(), Some("d/x.page"));
         assert_eq!(p("/v/d/x.page").as_deref(), Some("d/x.page"));
+        assert_eq!(
+            p("/v/d/x.page/state.json").as_deref(),
+            Some("d/x.page/state.json")
+        );
+        assert_eq!(
+            p("/v/.groundwork/page-state/d/a.html.json").as_deref(),
+            Some(".groundwork/page-state/d/a.html.json")
+        );
+        assert_eq!(
+            p("/v/.groundwork/page-state/.a.html.json.groundwork-tmp"),
+            None
+        );
         assert_eq!(
             p("/v/.obsidian/app.json").as_deref(),
             Some(".obsidian/app.json")

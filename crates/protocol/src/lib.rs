@@ -120,6 +120,18 @@ pub enum Request {
         embed: Option<bool>,
     },
 
+    /// → `unknown`: the state a page saved through `groundwork.state`
+    /// (`null` if none).
+    #[serde(rename = "page.state")]
+    PageState { path: String },
+    /// → `null`: replaces a page's saved state.
+    #[serde(rename = "page.setState")]
+    PageSetState {
+        path: String,
+        #[ts(type = "unknown")]
+        state: serde_json::Value,
+    },
+
     /// → `FileContent`
     #[serde(rename = "file.read")]
     FileRead { path: String },
@@ -238,6 +250,9 @@ pub enum Event {
     /// Files changed, through Groundwork or outside it.
     #[serde(rename = "vault.changed")]
     VaultChanged { changes: Vec<FileChange> },
+    /// A page's saved state changed, through Groundwork or outside it.
+    #[serde(rename = "page.stateChanged")]
+    PageStateChanged { path: String },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -284,6 +299,8 @@ pub enum Host {
 pub struct AppInfo {
     pub version: String,
     pub host: Host,
+    /// The secret first segment of page URLs (`/page/<token>/<path>`).
+    pub page_token: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

@@ -1,18 +1,26 @@
-import { ArrowLeft, ArrowRight, BookOpen, Code, PencilLine } from "lucide-react";
+import { AppWindow, ArrowLeft, ArrowRight, BookOpen, Code, PencilLine } from "lucide-react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { FileContent } from "../api/generated/FileContent";
 import { vaultFileUrl } from "../lib/fileUrl";
+import { isPagePath } from "../lib/paths";
 import { isImage } from "../markdown/syntax";
-import { message } from "../state/vault";
+import { message, useVault } from "../state/vault";
 import { type PanelParams, useWorkspace, type ViewMode } from "../state/workspace";
 import { NoteView } from "./NoteView";
+import { PageView } from "./PageView";
 
 const MODES: { mode: ViewMode; label: string; Icon: typeof BookOpen }[] = [
   { mode: "live", label: "Live preview", Icon: PencilLine },
   { mode: "source", label: "Source", Icon: Code },
   { mode: "reading", label: "Reading", Icon: BookOpen },
+];
+
+/** A page shows as itself in every mode but source. */
+const PAGE_MODES: { mode: ViewMode; label: string; Icon: typeof BookOpen }[] = [
+  { mode: "reading", label: "Page", Icon: AppWindow },
+  { mode: "source", label: "Source", Icon: Code },
 ];
 
 function isNote(path: string) {
@@ -26,9 +34,12 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
   const goForward = useWorkspace((s) => s.forward);
   const setMode = useWorkspace((s) => s.setMode);
   const note = isNote(path);
+  const page = isPagePath(path);
+  const modes = note ? MODES : page ? PAGE_MODES : null;
+  const current = page && mode !== "source" ? "reading" : mode;
 
   return (
-    <article className="file-panel" aria-label={path}>
+    <article className="file-panel" aria-label={path} data-panel-id={panel.id}>
       <header className="file-header">
         <button
           className="icon"
@@ -53,16 +64,16 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
             </span>
           ))}
         </nav>
-        {note && (
+        {modes && (
           <div className="mode-switch" role="radiogroup" aria-label="View mode">
-            {MODES.map(({ mode: m, label, Icon }) => (
+            {modes.map(({ mode: m, label, Icon }) => (
               <button
                 key={m}
                 role="radio"
-                aria-checked={mode === m}
+                aria-checked={current === m}
                 aria-label={label}
-                title={`${label} (⌘E toggles reading)`}
-                className={`icon${mode === m ? " active" : ""}`}
+                title={`${label} (⌘E toggles ${page ? "source" : "reading"})`}
+                className={`icon${current === m ? " active" : ""}`}
                 onClick={() => setMode(panel.id, m)}
               >
                 <Icon size={14} />
@@ -74,6 +85,8 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
       <div className="file-body">
         {note ? (
           <NoteView path={path} mode={mode} focus={focus} editTitle={editTitle} />
+        ) : page && mode !== "source" ? (
+          <PageView path={path} />
         ) : (
           <OtherFile path={path} />
         )}
@@ -82,10 +95,12 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
   );
 }
 
-/** Images, pages (as source for now) and other files. */
+/** Images, the source of pages, and other files. */
 function OtherFile({ path }: { path: string }) {
   const [file, setFile] = useState<FileContent | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Show edits made elsewhere (Claude rewriting a page, say).
+  const revision = useVault((s) => s.revision);
 
   useEffect(() => {
     if (isImage(path)) return;
@@ -97,7 +112,7 @@ function OtherFile({ path }: { path: string }) {
     return () => {
       cancelled = true;
     };
-  }, [path]);
+  }, [path, revision]);
 
   if (isImage(path)) {
     return (
@@ -113,13 +128,9 @@ function OtherFile({ path }: { path: string }) {
       </p>
     );
   }
-  if (!file) return <div className="loading" aria-busy="true" />;
-  const isPage = file.kind === "page" || file.kind === "pageBundle";
+  if (!file || file.path !== path) return <div className="loading" aria-busy="true" />;
   return (
     <div className="source-view">
-      {isPage && (
-        <p className="notice">Interactive pages arrive in Phase 3. Showing the source for now.</p>
-      )}
       {file.text !== undefined ? (
         <pre className="file-text" data-testid="file-text">
           {file.text}

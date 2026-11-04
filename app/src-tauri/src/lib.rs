@@ -20,8 +20,9 @@ async fn api(backend: tauri::State<'_, Arc<Backend>>, request: Value) -> Result<
         .unwrap_or_else(|e| Err(ApiError::new(ErrorCode::Internal, e.to_string())))
 }
 
-/// Serves `groundwork://localhost/vault/<path>`: raw vault files for images,
-/// embeds and (later) HTML pages.
+/// Serves `groundwork://localhost/vault/<path>` (raw vault files for images
+/// and embeds) and `groundwork://localhost/page/<token>/<path>` (HTML pages
+/// and their files, for page frames).
 fn serve_vault_file(backend: &Backend, uri_path: &str) -> Response<Vec<u8>> {
     let not_found = || {
         Response::builder()
@@ -29,13 +30,27 @@ fn serve_vault_file(backend: &Backend, uri_path: &str) -> Response<Vec<u8>> {
             .body(Vec::new())
             .unwrap()
     };
+    let decode = |s: &str| {
+        percent_encoding::percent_decode_str(s)
+            .decode_utf8_lossy()
+            .into_owned()
+    };
+    if let Some(rest) = uri_path.strip_prefix("/page/") {
+        return match backend.page_file(&decode(rest), "groundwork:") {
+            Ok(file) => {
+                let mut response = Response::builder().header(header::CONTENT_TYPE, file.mime);
+                for (name, value) in file.headers {
+                    response = response.header(name, value);
+                }
+                response.body(file.bytes).unwrap()
+            }
+            Err(_) => not_found(),
+        };
+    }
     let Some(encoded) = uri_path.strip_prefix("/vault/") else {
         return not_found();
     };
-    let path = percent_encoding::percent_decode_str(encoded)
-        .decode_utf8_lossy()
-        .into_owned();
-    match backend.read_bytes(&path) {
+    match backend.read_bytes(&decode(encoded)) {
         Ok((bytes, mime)) => Response::builder()
             .header(header::CONTENT_TYPE, mime)
             .body(bytes)

@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../api/client";
+import { closePreview, enterPreview, leavePreview } from "../lib/linkPreview";
 import { attachContentHandlers, hydrate } from "../markdown/hydrate";
 import { renderMarkdown } from "../markdown/render";
 import { escapeHtml, extractSubpath, splitFrontmatter } from "../markdown/syntax";
@@ -209,7 +210,7 @@ function DialogForm({
   );
 }
 
-/** A floating preview of a linked note (hover in reading view, ⌘-hover in the editor). */
+/** A floating preview of a linked note, from ⌘-hovering a link (`lib/linkPreview.ts`). */
 function HoverPreview() {
   const hover = useUi((s) => s.hover);
   const show = useUi((s) => s.showHover);
@@ -259,9 +260,9 @@ function HoverPreview() {
 
   useEffect(() => {
     if (!hover) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && show(null);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closePreview();
     const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) show(null);
+      if (!ref.current?.contains(e.target as Node)) closePreview();
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("mousedown", onDown);
@@ -280,7 +281,8 @@ function HoverPreview() {
       className="hover-preview"
       role="tooltip"
       style={{ left: Math.max(8, left), top }}
-      onMouseLeave={() => show(null)}
+      onMouseEnter={enterPreview}
+      onMouseLeave={leavePreview}
     >
       <div ref={body} className="markdown-rendered" dangerouslySetInnerHTML={{ __html: html }} />
     </div>

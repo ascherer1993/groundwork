@@ -12,6 +12,7 @@ chrono = "0.4"
 groundwork-core.workspace = true
 groundwork-protocol.workspace = true
 serde.workspace = true
+getrandom = "0.3"
 mime_guess = "2"
 serde_json.workspace = true
 axum = { version = "0.8", features = ["ws"], optional = true }

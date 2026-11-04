@@ -4,6 +4,9 @@
  */
 import { api } from "../api/client";
 import { openExternalUrl, vaultFileUrl } from "../lib/fileUrl";
+import { closePreview, enterLink, leaveLink } from "../lib/linkPreview";
+import { createPageFrame } from "../lib/pages";
+import { isPagePath } from "../lib/paths";
 import { useUi } from "../state/ui";
 import { message } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
@@ -123,9 +126,12 @@ async function renderEmbed(
     }
     return;
   }
-  if (kind === "html" || kind === "htm" || kind === "page" || path.endsWith(".page")) {
-    el.className = "embed embed-card";
-    el.innerHTML = `<span>${escapeHtml(path.slice(path.lastIndexOf("/") + 1))}</span><span class="muted">Interactive page embeds arrive with HTML pages.</span><a class="internal-link" href="#" data-href="${escapeHtml(target)}" data-resolved="${escapeHtml(path)}">Open</a>`;
+  if (isPagePath(path)) {
+    // Live: `![[x.page]]` sizes itself to the page, `![[x.page|400]]` is 400px tall.
+    el.className = "embed embed-page";
+    el.innerHTML = `<div class="embed-header"><a class="internal-link" href="#" data-href="${escapeHtml(target)}" data-resolved="${escapeHtml(path)}">${escapeHtml(path.slice(path.lastIndexOf("/") + 1))}</a></div>`;
+    const height = alias && /^\d+$/.test(alias) ? Number(alias) : undefined;
+    el.append(createPageFrame(path, { embed: true, height }));
     return;
   }
   el.className = "embed embed-card";
@@ -143,35 +149,58 @@ function mountTodoBlocks(root: HTMLElement, source: string) {
 
 let mermaidCounter = 0;
 
-async function renderMermaid(root: HTMLElement): Promise<void> {
-  const blocks = [...root.querySelectorAll<HTMLElement>(".mermaid-block[data-source]")];
-  if (!blocks.length) return;
-  const mermaid = (await import("mermaid")).default;
-  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: "strict",
-    theme: dark ? "dark" : "default",
-  });
-  for (const block of blocks) {
-    const source = decodeURIComponent(block.dataset.source!);
-    block.removeAttribute("data-source");
-    try {
-      const { svg } = await mermaid.render(`mermaid-${++mermaidCounter}`, source);
-      block.innerHTML = svg;
-    } catch (err) {
-      block.classList.add("mermaid-error");
-      block.textContent = `Mermaid: ${message(err)}`;
+/**
+ * Mermaid isn't safe to run concurrently: overlapping renders (reading view
+ * and live preview hydrating at once, say) corrupt its state and leave its
+ * scratch elements in `<body>`. So every render goes through one queue.
+ */
+let mermaidQueue: Promise<void> = Promise.resolve();
+
+function renderMermaid(root: HTMLElement): Promise<void> {
+  // Claim the blocks now, before any await, so a second hydrate of the same
+  // root doesn't render them again.
+  const blocks = [...root.querySelectorAll<HTMLElement>(".mermaid-block[data-source]")].map(
+    (block) => {
+      const source = decodeURIComponent(block.dataset.source!);
+      block.removeAttribute("data-source");
+      return { block, source };
+    },
+  );
+  if (!blocks.length) return Promise.resolve();
+  const run = mermaidQueue.then(async () => {
+    const mermaid = (await import("mermaid")).default;
+    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: dark ? "dark" : "default",
+      // Errors show in the block, not as diagrams appended to the page.
+      suppressErrorRendering: true,
+    });
+    for (const { block, source } of blocks) {
+      // The view may have re-rendered while this waited its turn.
+      if (!block.isConnected) continue;
+      const id = `mermaid-${++mermaidCounter}`;
+      try {
+        const { svg } = await mermaid.render(id, source);
+        block.innerHTML = svg;
+      } catch (err) {
+        block.classList.add("mermaid-error");
+        block.textContent = `Mermaid: ${message(err)}`;
+      } finally {
+        // Mermaid's scratch container, which it can leave behind on failure.
+        document.getElementById(`d${id}`)?.remove();
+      }
     }
-  }
+  });
+  mermaidQueue = run.catch(() => {});
+  return run;
 }
 
 /** The file a rendered element came from. */
 function notePathOf(el: Element): string | null {
   return el.closest<HTMLElement>("[data-note-path]")?.dataset.notePath ?? null;
 }
-
-let hoverTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * Click and hover handling for rendered Markdown (reading view, embeds, hover
@@ -189,7 +218,7 @@ export function attachContentHandlers(root: HTMLElement, opts: { hover?: boolean
         newTab: e.metaKey || e.ctrlKey,
         resolved: link.dataset.resolved,
       });
-      useUi.getState().showHover(null);
+      closePreview();
       return;
     }
     if (link?.classList.contains("external-link")) {
@@ -215,25 +244,18 @@ export function attachContentHandlers(root: HTMLElement, opts: { hover?: boolean
     }
   };
 
+  // ⌘-hover previews (see `lib/linkPreview.ts`).
   const onOver = (e: MouseEvent) => {
     if (!opts.hover) return;
     const link = (e.target as HTMLElement).closest<HTMLAnchorElement>("a.internal-link");
     if (!link?.dataset.resolved) return;
-    const path = link.dataset.resolved;
     const { subpath } = splitTarget(link.dataset.href ?? "");
-    if (hoverTimer) clearTimeout(hoverTimer);
-    hoverTimer = setTimeout(() => {
-      const rect = link.getBoundingClientRect();
-      useUi.getState().showHover({ path, subpath, x: rect.left, y: rect.bottom + 6 });
-    }, 450);
+    enterLink({ el: link, path: link.dataset.resolved, subpath }, e.metaKey);
   };
 
   const onOut = (e: MouseEvent) => {
-    const link = (e.target as HTMLElement).closest("a.internal-link");
-    if (link && hoverTimer) {
-      clearTimeout(hoverTimer);
-      hoverTimer = null;
-    }
+    const link = (e.target as HTMLElement).closest<HTMLElement>("a.internal-link");
+    if (link && !link.contains(e.relatedTarget as Node | null)) leaveLink(link);
   };
 
   root.addEventListener("click", onClick);

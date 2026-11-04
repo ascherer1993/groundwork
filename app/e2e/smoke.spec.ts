@@ -24,7 +24,9 @@ test("open a vault, browse the tree, read a note", async ({ page }) => {
   await expect(bundle).toBeVisible();
   await expect(bundle).not.toHaveAttribute("aria-expanded");
   await bundle.click();
-  await expect(page.getByTestId("file-text")).toContainText("<h1>Login flow</h1>");
+  await expect(
+    page.frameLocator(".page-frame").getByRole("heading", { name: "Login flow" }),
+  ).toBeVisible();
 
   // The backend keeps the vault open across reloads.
   await page.reload();

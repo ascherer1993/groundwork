@@ -10,6 +10,7 @@ A macOS notes app (Tauri v2 + React) over an Obsidian-compatible vault, adding H
 - `crates/cli` (`groundwork-cli`): the `groundwork` command. It works on vault files directly through `Session::open_for_tool`, so the app needn't be running. `make dev` and `make browser` build it next to the app.
 - `claude-plugin/`: the Claude Code plugin (the `groundwork` skill), listed by `.claude-plugin/marketplace.json` at the repo root. Keep the skill in step with the CLI.
 - "Set up Claude Code…" (`crates/core/src/setup.rs`) links the CLI onto PATH, installs the plugin from this checkout, and sets the CLI's default vault. Claude Code reads the plugin live from this folder, so skill edits reach new sessions without reinstalling. Tests and e2e use the fake `fixtures/bin/claude`, never the real one.
+- HTML pages run in sandboxed iframes with no origin of their own; they reach the app only through the bridge (`crates/backend/src/bridge.js` ↔ `app/src/lib/pages.ts`). Never add `allow-same-origin` to page frames: our `groundwork://` scheme counts as a trusted origin for Tauri commands.
 - `app/src-tauri`: the desktop shell. It exposes one Tauri command, `api`, which forwards to `Backend`.
 - `app/src`: the React UI. Call the backend only through `api/client.ts`.
 - `app/e2e`: Playwright tests that run against browser mode.

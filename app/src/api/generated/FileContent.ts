@@ -3,6 +3,6 @@ import type { NodeKind } from "./NodeKind";
 
 export type FileContent = { path: string, kind: NodeKind, size: number, 
 /**
- * UTF-8 text for notes and pages; absent for binary assets.
+ * UTF-8 text for notes, pages and text files; absent for binary files.
  */
 text?: string, };

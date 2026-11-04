@@ -480,6 +480,19 @@ input {
   overflow: auto;
 }
 
+.page-view {
+  display: flex;
+  height: 100%;
+}
+
+.page-view .page-frame {
+  flex: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
 .asset-view {
   display: grid;
   place-items: center;

@@ -6,11 +6,15 @@
 
 #[cfg(feature = "dev-server")]
 pub mod dev_server;
+mod page_server;
+
+pub use page_server::PageFile;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use chrono::NaiveDate;
+use groundwork_core::pages;
 use groundwork_core::search;
 use groundwork_core::setup::{self, SetupEnv, SetupStatus};
 use groundwork_core::watch::{self, VaultWatcher};
@@ -35,6 +39,8 @@ pub struct Backend {
     recent: RecentVaults,
     open: Mutex<Option<OpenVault>>,
     events: EventSink,
+    /// See [`page_server`].
+    page_token: String,
 }
 
 impl Backend {
@@ -45,6 +51,7 @@ impl Backend {
             data_dir,
             open: Mutex::new(None),
             events,
+            page_token: page_server::new_token(),
         }
     }
 
@@ -60,6 +67,7 @@ impl Backend {
             Request::AppInfo => to_value(AppInfo {
                 version: env!("CARGO_PKG_VERSION").to_string(),
                 host: self.host,
+                page_token: self.page_token.clone(),
             }),
 
             Request::VaultRecent => to_value(self.recent.list()),
@@ -153,6 +161,13 @@ impl Backend {
                     alias.as_deref(),
                     embed.unwrap_or(false),
                 ))
+            }
+
+            Request::PageState { path } => Ok(self.session()?.page_state(&path)?),
+            Request::PageSetState { path, state } => {
+                self.session()?.set_page_state(&path, &state)?;
+                (self.events)(Event::PageStateChanged { path });
+                Ok(Value::Null)
             }
 
             Request::FileRead { path } => to_value(self.session()?.vault().read_file(&path)?),
@@ -330,6 +345,9 @@ impl Backend {
                 if !changes.is_empty() {
                     events(Event::VaultChanged { changes });
                 }
+                for path in paths.iter().filter_map(|p| pages::page_for_state_path(p)) {
+                    events(Event::PageStateChanged { path });
+                }
             }
         })
         .map_err(|e| eprintln!("groundwork: file watching unavailable: {e}"))
@@ -436,6 +454,13 @@ mod tests {
         let data = tempfile::tempdir().unwrap();
         let vault = tempfile::tempdir().unwrap();
         copy_dir(std::path::Path::new(FIXTURE), vault.path());
+        // Left over from using the fixture vault in the app.
+        let _ = std::fs::remove_dir_all(vault.path().join(".groundwork/page-state"));
+        let _ = std::fs::remove_file(
+            vault
+                .path()
+                .join("Projects/Acme/demos/login-flow.page/state.json"),
+        );
         let (tx, rx) = mpsc::channel();
         let tx = Mutex::new(tx);
         let backend = Backend::new(
@@ -520,7 +545,9 @@ mod tests {
         let outcome = h.call(json!({ "method": "file.rename", "params": {
             "from": "Contacts/Jane Doe.md", "to": "Contacts/Jane Smith.md" } }));
         assert_eq!(outcome["updatedNotes"].as_array().unwrap().len(), 5);
-        let Event::VaultChanged { changes } = h.events.try_recv().unwrap();
+        let Event::VaultChanged { changes } = h.events.try_recv().unwrap() else {
+            panic!("expected a vault change");
+        };
         assert!(
             changes
                 .iter()
@@ -559,13 +586,113 @@ mod tests {
         std::fs::write(h.vault.path().join("Welcome.md"), "changed outside").unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
-            let Event::VaultChanged { changes } = h
+            let event = h
                 .events
                 .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
                 .expect("no event within 5s");
-            if changes.iter().any(|c| c.path == "Welcome.md" && c.external) {
+            if let Event::VaultChanged { changes } = event
+                && changes.iter().any(|c| c.path == "Welcome.md" && c.external)
+            {
                 break;
             }
         }
+    }
+
+    fn page(h: &Harness, path: &str) -> Result<PageFile, ApiError> {
+        h.backend
+            .page_file(&format!("{}/{path}", h.backend.page_token), "groundwork:")
+    }
+
+    fn header<'a>(file: &'a PageFile, name: &str) -> Option<&'a str> {
+        file.headers
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| v.as_str())
+    }
+
+    #[test]
+    fn serves_pages_with_the_bridge() {
+        let h = harness();
+        let doc = page(&h, "Projects/Acme/demos/login-flow.page/").unwrap();
+        let html = String::from_utf8(doc.bytes.clone()).unwrap();
+        assert!(html.starts_with("<!doctype html>"));
+        assert!(html.contains("<head><script>"));
+        assert!(html.contains(r#""page":"Projects/Acme/demos/login-flow.page""#));
+        assert!(html.contains(&format!(r#""prefix":"/page/{}/""#, h.backend.page_token)));
+        assert_eq!(header(&doc, "Access-Control-Allow-Origin"), Some("*"));
+        assert_eq!(header(&doc, "Content-Security-Policy"), None);
+
+        // Scripts and other files are served as they are.
+        let script = page(&h, "Projects/Acme/demos/login-flow.page/app.js").unwrap();
+        let text = std::fs::read(
+            h.vault
+                .path()
+                .join("Projects/Acme/demos/login-flow.page/app.js"),
+        )
+        .unwrap();
+        assert_eq!(script.bytes, text);
+
+        let wrong = h
+            .backend
+            .page_file("0123/Projects/Acme/demos/sketch.html", "groundwork:");
+        assert_eq!(wrong.err().unwrap().code, ErrorCode::Forbidden);
+        assert_eq!(
+            page(&h, "../secret.html").err().unwrap().code,
+            ErrorCode::Forbidden
+        );
+
+        // A vault that turns network access off gets a policy on its documents.
+        std::fs::write(
+            h.vault.path().join(".groundwork/config.yml"),
+            "pages:\n  allow_network: false\n",
+        )
+        .unwrap();
+        let doc = page(&h, "Projects/Acme/demos/sketch.html").unwrap();
+        let policy = header(&doc, "Content-Security-Policy").unwrap();
+        assert!(policy.starts_with("default-src groundwork: "), "{policy}");
+    }
+
+    #[test]
+    fn page_state_round_trips_and_changes_are_pushed() {
+        let h = harness();
+        let path = "Projects/Acme/demos/login-flow.page";
+        let get = || {
+            h.backend
+                .handle_value(json!({ "method": "page.state", "params": { "path": path } }))
+                .unwrap()
+        };
+        assert_eq!(get(), Value::Null);
+        h.backend
+            .handle_value(json!({
+                "method": "page.setState",
+                "params": { "path": path, "state": { "reviewed": true } }
+            }))
+            .unwrap();
+        assert_eq!(get(), json!({ "reviewed": true }));
+
+        // Saving, and edits to the state file outside Groundwork, are both pushed.
+        let pushed = |h: &Harness| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                let event = h
+                    .events
+                    .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+                    .expect("no event within 5s");
+                if let Event::PageStateChanged { path: p } = event {
+                    assert_eq!(p, path);
+                    break;
+                }
+            }
+        };
+        pushed(&h);
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        while h.events.try_recv().is_ok() {}
+        std::fs::write(
+            h.vault.path().join(path).join("state.json"),
+            r#"{"reviewed": false}"#,
+        )
+        .unwrap();
+        pushed(&h);
+        assert_eq!(get(), json!({ "reviewed": false }));
     }
 }

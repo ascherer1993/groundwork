@@ -41,6 +41,8 @@ interface Results {
   "links.unlinked": Mention[];
   "links.linkMention": null;
   "links.format": string;
+  "page.state": unknown;
+  "page.setState": null;
   "file.read": FileContent;
   "file.write": WriteResult;
   "file.create": string;
@@ -111,6 +113,9 @@ export const api = {
     target: string,
     opts: { subpath?: string; alias?: string; embed?: boolean } = {},
   ) => call("links.format", { source, target, ...opts }),
+
+  pageState: (path: string) => call("page.state", { path }),
+  setPageState: (path: string, state: unknown) => call("page.setState", { path, state }),
 
   readFile: (path: string) => call("file.read", { path }),
   writeFile: (path: string, text: string) => call("file.write", { path, text }),

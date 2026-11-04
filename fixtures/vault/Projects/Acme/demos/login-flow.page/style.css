@@ -1,0 +1,60 @@
+/* Loaded by index.html with a relative link, like any website's stylesheet. */
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  --text: #1e3a8a;
+  --heading: #0f766e;
+  --card: #ecfdf5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #bfdbfe;
+    --heading: #5eead4;
+    --card: #134e4a;
+  }
+}
+
+body {
+  margin: 16px;
+  color: var(--text);
+}
+
+h1 {
+  color: var(--heading);
+}
+
+#timings {
+  width: fit-content;
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--card);
+}
+
+a {
+  color: var(--heading);
+}
+
+.hint {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.timing .step {
+  display: inline-block;
+  width: 70px;
+}
+
+.timing input {
+  width: 70px;
+  font: inherit;
+  color: inherit;
+}
+
+.was {
+  font-size: 13px;
+  opacity: 0.7;
+}

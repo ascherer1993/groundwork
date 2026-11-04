@@ -5,7 +5,7 @@ import type { DockviewApi, IDockviewPanel } from "dockview-react";
 import { create } from "zustand";
 import { api } from "../api/client";
 import type { FileChange } from "../api/generated/FileChange";
-import { displayName } from "../lib/paths";
+import { displayName, isPagePath } from "../lib/paths";
 import { splitTarget } from "../markdown/syntax";
 import { message, newNoteFolder, onVaultChange, useVault } from "./vault";
 import { useUi } from "./ui";
@@ -220,6 +220,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     const panel = get().dock?.activePanel;
     if (!panel) return;
     const params = paramsOf(panel);
+    // Pages have two modes: the page itself (any mode but source) and source.
+    if (isPagePath(params.path)) {
+      get().setMode(panel.id, params.mode === "source" ? "reading" : "source");
+      return;
+    }
     get().setMode(panel.id, params.mode === "reading" ? "live" : "reading");
   },
 

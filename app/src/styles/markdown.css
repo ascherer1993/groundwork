@@ -256,6 +256,16 @@ summary.callout-title {
   margin-bottom: 4px;
 }
 
+/* Also in live preview, outside .markdown-rendered. */
+.embed-header a.internal-link {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.embed-header a.internal-link:hover {
+  text-decoration: underline;
+}
+
 .embed-card {
   display: inline-flex;
   align-items: center;
@@ -264,6 +274,20 @@ summary.callout-title {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-sidebar);
+}
+
+.embed-page {
+  display: block;
+  margin: 0 0 0.85em;
+}
+
+/* Until the page reports its height. */
+.embed-page .page-frame {
+  display: block;
+  width: 100%;
+  height: 160px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 .embed-missing {
@@ -429,12 +453,18 @@ summary.callout-title {
   max-width: 100%;
 }
 
+/* Pages take the line's full width, as in reading view. */
+.cm-embed:has(.embed-page) {
+  display: block;
+}
+
 .cm-embed img {
   max-width: 100%;
   vertical-align: bottom;
 }
 
-.cm-embed .embed-note {
+.cm-embed .embed-note,
+.cm-embed .embed-page {
   display: block;
   font-family: var(--font-text);
 }

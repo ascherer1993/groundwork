@@ -31,6 +31,7 @@ import { useUi } from "../state/ui";
 import { message } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
 import { openExternalUrl } from "../lib/fileUrl";
+import { enterLink, leaveLink } from "../lib/linkPreview";
 import { wikilinkCompletions } from "./autocomplete";
 import { popupTheme } from "./popupTheme";
 import { createdStamps, todoCompletions } from "./todoInput";
@@ -164,24 +165,18 @@ function toggleCheckbox(view: EditorView, event: MouseEvent): boolean {
   return true;
 }
 
-let hoverTimer: ReturnType<typeof setTimeout> | null = null;
-
+/** ⌘-hover previews of links (see `lib/linkPreview.ts`). */
 const hoverPreview = EditorView.domEventHandlers({
   mouseover(event) {
     const el = (event.target as HTMLElement).closest<HTMLElement>(".cm-wikilink");
-    if (!el?.dataset.resolved || !(event.metaKey || event.ctrlKey)) return false;
+    if (!el?.dataset.resolved) return false;
     const { subpath } = splitTarget(el.dataset.href ?? "");
-    const path = el.dataset.resolved;
-    if (hoverTimer) clearTimeout(hoverTimer);
-    hoverTimer = setTimeout(() => {
-      const rect = el.getBoundingClientRect();
-      useUi.getState().showHover({ path, subpath, x: rect.left, y: rect.bottom + 6 });
-    }, 200);
+    enterLink({ el, path: el.dataset.resolved, subpath }, event.metaKey);
     return false;
   },
-  mouseout() {
-    if (hoverTimer) clearTimeout(hoverTimer);
-    hoverTimer = null;
+  mouseout(event) {
+    const el = (event.target as HTMLElement).closest<HTMLElement>(".cm-wikilink");
+    if (el && !el.contains(event.relatedTarget as Node | null)) leaveLink(el);
     return false;
   },
 });

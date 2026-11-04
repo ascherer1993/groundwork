@@ -47,6 +47,40 @@ test("clicking a link navigates; back returns", async ({ page }) => {
   await expect(page.getByLabel("Note title")).toHaveValue("Welcome");
 });
 
+test("link previews need ⌘ and close when the pointer leaves", async ({ page }) => {
+  await quickOpen(page, "Acme");
+  await page.keyboard.press("Meta+e");
+  const link = page
+    .getByTestId("reading-view")
+    .locator("a.internal-link", { hasText: "Jane Doe" })
+    .first();
+  const preview = page.locator(".hover-preview");
+
+  // A plain hover does nothing.
+  await link.hover();
+  await page.waitForTimeout(600);
+  await expect(preview).toHaveCount(0);
+
+  // Pressing ⌘ while over the link opens it; moving away closes it.
+  await page.keyboard.down("Meta");
+  await expect(preview).toContainText("Jane Doe");
+  await page.keyboard.up("Meta");
+  await page.mouse.move(5, 300);
+  await expect(preview).toHaveCount(0);
+
+  // Hovering with ⌘ held opens it too; the pointer can move onto the
+  // preview, and leaving the preview closes it.
+  await page.keyboard.down("Meta");
+  await link.hover();
+  await expect(preview).toBeVisible();
+  await page.keyboard.up("Meta");
+  await preview.hover();
+  await page.waitForTimeout(400);
+  await expect(preview).toBeVisible();
+  await page.mouse.move(5, 300);
+  await expect(preview).toHaveCount(0);
+});
+
 test("following a link to a missing note creates it", async ({ page }) => {
   await quickOpen(page, "Daily/2026-11-03");
   await page.keyboard.press("Meta+e");
