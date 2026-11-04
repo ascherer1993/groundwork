@@ -608,7 +608,7 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
   - The plugin lives in `claude-plugin/`, listed by the repo's `.claude-plugin/marketplace.json`. For now it has only the `groundwork` skill; hooks, `ask` and `notify` come with terminals.
   - "Set up Claude Code…" (§5.7) installs both and sets the CLI's default vault. It was pulled forward from Phase 7's "CLI install" so the checkpoint doesn't need manual setup.
 
-### Phase 3 — HTML pages *(built, awaiting checkpoint)*
+### Phase 3 — HTML pages *(done)*
 - `groundwork://` protocol, page viewer with auto-reload, read-only source view
 - `.page` bundles shown as single items; `[[x.page]]` / `[[x.html]]` links, backlinks to pages; links inside pages open notes
 - `![[x.page]]` live interactive embeds with automatic height
@@ -620,7 +620,7 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
   - `groundwork page state <page> [--set <json>|-]` reads and replaces state. `file.read` now returns text for any UTF-8 file (CSV, JSON), which `readFile` needs.
   - New `.html` files start from a small skeleton that follows light and dark mode.
   - The links panel shows backlinks for pages (and other files); outgoing links and unlinked mentions stay notes-only.
-  - Not verified in the packaged app yet: Playwright covers browser mode only, so the checkpoint should confirm pages, module scripts and state work in the desktop window.
+  - Playwright covers browser mode only; the checkpoint confirmed pages work in the desktop app.
 
 ### Phase 4 — Terminals & workspaces
 - `groundworkd` daemon, xterm.js tabs, splits
