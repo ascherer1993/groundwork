@@ -1129,6 +1129,58 @@ button.danger-button {
   inset: 0;
 }
 
+.terminals-side:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+}
+
+.terminal-docks {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.terminals-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 6px 0 4px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  font-size: 12px;
+}
+
+button.terminals-name {
+  gap: 3px;
+  padding: 2px 6px;
+  border-color: transparent;
+  background: transparent;
+  font-weight: 600;
+  color: var(--text);
+}
+
+button.terminals-name:hover {
+  background: var(--bg-hover);
+}
+
+.terminals-state {
+  margin-right: auto;
+  font-size: 11px;
+}
+
+.terminals-header button.icon {
+  margin-left: auto;
+}
+
+.terminals-header .terminals-state + button.icon {
+  margin-left: 0;
+}
+
+.terminals-header button.icon[aria-pressed="true"] {
+  color: var(--accent);
+}
+
 /* Workspaces view */
 
 .workspaces-panel {

@@ -143,8 +143,8 @@ test("closing a terminal tab ends its shell; app shortcuts work from it", async 
 
 test("notes, notes beside terminals, or terminals alone", async ({ page }) => {
   const views = page.getByRole("group", { name: "Main view" });
-  const notes = page.getByRole("region", { name: "Notes" });
-  const terminals = page.getByRole("region", { name: "Terminals" });
+  const notes = page.getByRole("region", { name: "Notes", exact: true });
+  const terminals = page.getByRole("region", { name: "Terminals", exact: true });
 
   // A terminal comes up beside the notes.
   await views.getByRole("button", { name: "Notes" }).click();

@@ -20,6 +20,7 @@ import { api } from "../api/client";
 import { promptDialog, type SidebarView, useUi } from "../state/ui";
 import { message, useVault } from "../state/vault";
 import { watchTerminals } from "../state/terminals";
+import { watchFollow } from "../state/follow";
 import { watchTickets } from "../state/tickets";
 import { useWorkspace, type View } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
@@ -121,6 +122,7 @@ export function VaultView() {
   useEffect(() => {
     watchTerminals();
     watchTickets();
+    watchFollow();
     void useWorkspaces.getState().load();
   }, [vault?.path]);
 

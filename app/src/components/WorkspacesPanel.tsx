@@ -114,7 +114,7 @@ function AreaRow({ area, name, folder }: { area: string; name: string; folder?: 
         className={`area-row${current ? " current" : ""}`}
         aria-current={current || undefined}
         title={folder}
-        onClick={() => useWorkspace.getState().showWorkspace(area)}
+        onClick={() => useWorkspaces.getState().pick(area)}
         onContextMenu={(e) => void menu(e)}
       >
         <span className="area-name">{name}</span>

@@ -168,6 +168,18 @@ function commands(): Command[] {
     },
     { id: "switch-workspace", label: "Switch workspace…", run: switchWorkspace },
     {
+      id: "pin-workspace",
+      label: "Pin terminals to this workspace",
+      when: () => !!ws.workspace && !ws.pinned,
+      run: () => ws.setPinned(true),
+    },
+    {
+      id: "unpin-workspace",
+      label: "Let terminals follow notes",
+      when: () => ws.pinned,
+      run: () => ws.setPinned(false),
+    },
+    {
       id: "workspaces",
       label: "Show workspaces and terminals",
       run: () => ui.setSidebarView("workspaces"),
@@ -338,7 +350,7 @@ async function terminalInFolder() {
 }
 
 /** Lists the workspaces, with their ⌘ number. */
-function switchWorkspace() {
+export function switchWorkspace() {
   useUi.getState().openPalette({
     placeholder: "Switch to…",
     items: useWorkspaces.getState().list.map((w, i) => ({
@@ -346,7 +358,7 @@ function switchWorkspace() {
       label: w.name,
       detail: w.cwd,
       hint: i < 9 ? `⌘${i + 1}` : undefined,
-      run: () => useWorkspace.getState().showWorkspace(w.id),
+      run: () => useWorkspaces.getState().pick(w.id),
     })),
   });
 }

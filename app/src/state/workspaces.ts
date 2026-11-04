@@ -23,6 +23,11 @@ interface WorkspacesState {
   load(): Promise<void>;
   /** Reloads the list (after the backend made or removed one), keeping the current one. */
   refresh(): Promise<void>;
+  /**
+   * Makes a workspace current, as chosen from the list or ⌘1…, with its note
+   * (if it has one) open beside its terminals.
+   */
+  pick(id: string): void;
   /** Resolves once a workspace's dock is mounted, so it can take tabs. */
   ready(id: string): Promise<boolean>;
   /** Asks for a name, creates the workspace, shows it and opens a terminal. */
@@ -43,10 +48,13 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
     useWorkspace.setState({ workspace: null, view: "note" });
     try {
       const list = await api.workspaces();
-      set({ list, loaded: true });
       const saved = savedView();
       const current = list.find((w) => w.id === saved.workspace) ?? list[0];
+      // Restored before `loaded`, which the terminals following the notes wait for.
+      set({ list });
+      useWorkspace.setState({ pinned: saved.pinned });
       useWorkspace.getState().showWorkspace(current?.id ?? null, current ? saved.view : "note");
+      set({ loaded: true });
     } catch (err) {
       set({ loaded: true });
       useUi.getState().notify(message(err));
@@ -61,6 +69,16 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
     } catch (err) {
       useUi.getState().notify(message(err));
     }
+  },
+
+  pick(id) {
+    const ws = useWorkspace.getState();
+    ws.showWorkspace(id);
+    const note = get().list.find((w) => w.id === id)?.note;
+    if (!note || ws.activePath === note) return;
+    const tab = ws.fileTab(note);
+    if (tab) tab.api.setActive();
+    else ws.open(note, { background: true });
   },
 
   async ready(id) {

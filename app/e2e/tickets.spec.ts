@@ -123,7 +123,7 @@ test("a ticket gets a worktree, a note and a workspace, and closes and restores"
   await bar(page).getByRole("button", { name: "Split" }).click();
   await expect(terminals(page)).toHaveCount(1);
   await bar(page).getByRole("button", { name: "Terminal" }).click();
-  await expect(page.getByRole("region", { name: "Notes" })).toBeHidden();
+  await expect(page.getByRole("region", { name: "Notes", exact: true })).toBeHidden();
   await expect(terminals(page)).toHaveCount(1);
   await page.keyboard.press("Control+Meta+2");
 

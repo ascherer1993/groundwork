@@ -6,8 +6,9 @@ import {
   themeLight,
 } from "dockview-react";
 import "dockview-react/dist/styles/dockview.css";
-import { FilePlus, Plus, Search, SquareTerminal } from "lucide-react";
+import { ChevronDown, FilePlus, Pin, PinOff, Plus, Search, SquareTerminal } from "lucide-react";
 import { createContext, useEffect, useRef, useState } from "react";
+import { switchWorkspace } from "../lib/commands";
 import { NOTES, useWorkspace } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
 import { useUi } from "../state/ui";
@@ -67,6 +68,41 @@ function Area({ area, layout, shown }: { area: string; layout?: unknown; shown: 
         />
       </div>
     </AreaContext.Provider>
+  );
+}
+
+/** Which workspace's terminals these are, and whether they follow the notes. */
+function TerminalsHeader({ name }: { name: string }) {
+  const pinned = useWorkspace((s) => s.pinned);
+  const split = useWorkspace((s) => s.view === "split");
+  return (
+    <header className="terminals-header">
+      <button
+        type="button"
+        className="terminals-name"
+        title="Switch workspace"
+        onClick={switchWorkspace}
+      >
+        {name} <ChevronDown size={12} />
+      </button>
+      {split && (
+        <span className="terminals-state muted">{pinned ? "Pinned" : "Following notes"}</span>
+      )}
+      <button
+        type="button"
+        className="icon"
+        aria-pressed={pinned}
+        aria-label={pinned ? "Unpin" : "Pin this workspace"}
+        title={
+          pinned
+            ? "Pinned: other notes don't change the terminals. Click to follow notes again."
+            : "Keep these terminals when other notes open"
+        }
+        onClick={() => useWorkspace.getState().setPinned(!pinned)}
+      >
+        {pinned ? <PinOff size={13} /> : <Pin size={13} />}
+      </button>
+    </header>
   );
 }
 
@@ -143,7 +179,7 @@ export function Workspace() {
     }
   };
   const focus = (side: "notes" | "terminals") => () => useWorkspace.getState().setFocused(side);
-  const hasCurrent = workspaces.some((w) => w.id === current);
+  const currentWorkspace = workspaces.find((w) => w.id === current);
 
   return (
     <div
@@ -167,11 +203,14 @@ export function Workspace() {
         onPointerDownCapture={focus("terminals")}
         onFocusCapture={focus("terminals")}
       >
-        {loaded &&
-          workspaces.map((w) => (
-            <Area key={w.id} area={w.id} layout={w.layout} shown={w.id === current} />
-          ))}
-        {loaded && !hasCurrent && <NoWorkspace />}
+        {currentWorkspace && <TerminalsHeader name={currentWorkspace.name} />}
+        <div className="terminal-docks">
+          {loaded &&
+            workspaces.map((w) => (
+              <Area key={w.id} area={w.id} layout={w.layout} shown={w.id === current} />
+            ))}
+          {loaded && !currentWorkspace && <NoWorkspace />}
+        </div>
       </section>
     </div>
   );

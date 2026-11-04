@@ -44,7 +44,7 @@ export function installShortcuts(): () => void {
       // ⌘1… the workspaces in order.
       if (/^[1-9]$/.test(key) && !e.shiftKey && !e.ctrlKey) {
         const id = useWorkspaces.getState().list[Number(key) - 1]?.id;
-        if (id) ws.showWorkspace(id);
+        if (id) useWorkspaces.getState().pick(id);
         return true;
       }
       if (key === "[") return (ws.back(), true);

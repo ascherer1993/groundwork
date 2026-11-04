@@ -71,6 +71,8 @@ export interface OpenOptions {
   /** Put the cursor here and focus the editor; past the end means the end. */
   offset?: number;
   editTitle?: boolean;
+  /** Leave the view as it is, even if the notes aren't on screen. */
+  background?: boolean;
 }
 
 /** The notes dock's key in `docks`. */
@@ -85,6 +87,8 @@ interface WorkspaceState {
   view: View;
   /** The workspace whose terminals show in the split and terminal views. */
   workspace: string | null;
+  /** Keeps the current workspace when other notes open (see `follow.ts`). */
+  pinned: boolean;
   /** Which side the last click or keypress went to, for ⌘W. */
   focused: "notes" | "terminals";
   /** Bumped when any dock's tabs change, for views that list them. */
@@ -104,6 +108,7 @@ interface WorkspaceState {
    */
   showWorkspace(id: string | null, view?: View): void;
   setFocused(side: "notes" | "terminals"): void;
+  setPinned(pinned: boolean): void;
   open(path: string, opts?: OpenOptions): void;
   openLink(
     source: string,
@@ -148,12 +153,14 @@ function layoutKey(): string | null {
   return vault ? `groundwork.layout:${vault.path}` : null;
 }
 
-function storageKey(name: "workspace" | "view"): string | null {
+type Remembered = "workspace" | "view" | "pinned";
+
+function storageKey(name: Remembered): string | null {
   const vault = useVault.getState().vault;
   return vault ? `groundwork.${name}:${vault.path}` : null;
 }
 
-function remember(name: "workspace" | "view", value: string | null) {
+function remember(name: Remembered, value: string | null) {
   try {
     const k = storageKey(name);
     if (!k) return;
@@ -164,7 +171,7 @@ function remember(name: "workspace" | "view", value: string | null) {
   }
 }
 
-function recall(name: "workspace" | "view"): string | null {
+function recall(name: Remembered): string | null {
   try {
     return localStorage.getItem(storageKey(name) ?? "");
   } catch {
@@ -172,12 +179,13 @@ function recall(name: "workspace" | "view"): string | null {
   }
 }
 
-/** The workspace and view last on screen in this vault. */
-export function savedView(): { workspace: string | null; view: View } {
+/** The workspace and view last on screen in this vault, and whether it was pinned. */
+export function savedView(): { workspace: string | null; view: View; pinned: boolean } {
   const view = recall("view");
   return {
     workspace: recall("workspace"),
     view: view === "split" || view === "terminal" ? view : "note",
+    pinned: recall("pinned") === "true",
   };
 }
 
@@ -220,6 +228,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   docks: {},
   view: "note",
   workspace: null,
+  pinned: false,
   focused: "notes",
   tabsVersion: 0,
   activePath: null,
@@ -342,11 +351,16 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     if (get().focused !== side) set({ focused: side });
   },
 
+  setPinned(pinned) {
+    set({ pinned });
+    remember("pinned", pinned ? "true" : null);
+  },
+
   open(path, opts = {}) {
     const dock = get().docks[NOTES];
     if (!dock) return;
     // Notes need to be on screen.
-    if (get().view === "terminal") get().setView("split");
+    if (get().view === "terminal" && !opts.background) get().setView("split");
     const focus =
       opts.subpath !== undefined || opts.line !== undefined || opts.offset !== undefined
         ? { subpath: opts.subpath, line: opts.line, offset: opts.offset, nonce: ++focusNonce }
