@@ -657,6 +657,7 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
   - **The daemon reports** the foreground program and the shell's folder (polled each second, sent when they change) and OSC 9 / OSC 777 notifications. Programs are named by `argv[0]`, so Claude installed through npm shows as `claude`, not `node`. Protocol 2; the app still uses a busy protocol-1 daemon, without these events. An attach at 0×0 follows a session without resizing it: views in hidden workspaces do that until they're first shown.
   - **Notifications** from a terminal you aren't looking at show a toast with "Show", and bounce the Dock icon when the window isn't focused.
   - **Restore after a reboot:** tabs save the shell's current folder as it changes, so a replacement shell starts where the old one was.
+  - **Choosing where a terminal starts** (added after the second half): "Open terminal here" on folders in the file tree, "New terminal in folder…" in the palette (vault folders, workspaces' folders, or any folder typed in), and "Change folder…" on a workspace's menu (new terminals start there; open ones stay put). Typed folders may start with `~`.
   - **Vault paths in terminal output are links:** vault-relative, absolute, or relative to the shell's folder, with spaces and an optional `:line`. They're found by looking for the vault's actual files in the line, so names with spaces work. The plugin's skill tells Claude to name files by path.
 - Not yet: the packaged `.app` doesn't bundle `groundworkd` (Phase 7 packaging).
 

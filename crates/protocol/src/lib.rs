@@ -242,7 +242,8 @@ pub enum Request {
     OsOpen { path: String },
 
     /// → `TerminalInfo`: starts `command` (the user's login shell by
-    /// default) in `cwd`, an absolute folder (the vault root by default).
+    /// default) in `cwd`, an absolute folder or `~/…` (the vault root by
+    /// default).
     #[serde(rename = "terminal.create")]
     TerminalCreate {
         #[ts(optional)]
@@ -276,7 +277,8 @@ pub enum Request {
     /// → `Workspace[]`: the open vault's workspaces.
     #[serde(rename = "workspace.list")]
     WorkspaceList,
-    /// → `Workspace`: `cwd` is an absolute folder (the vault root by default).
+    /// → `Workspace`: `cwd` is an absolute folder or `~/…` (the vault root by
+    /// default).
     #[serde(rename = "workspace.create")]
     WorkspaceCreate {
         name: String,

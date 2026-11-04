@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import { basename } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { FIXTURE_VAULT as VAULT } from "./fixtures";
 import { openVault } from "./helpers";
@@ -224,4 +226,65 @@ test("workspaces keep their own terminals, with badges and a session manager", a
   await expect(sessions.locator(".session").filter({ hasText: "in Acme API" })).toHaveCount(0, {
     timeout: 10_000,
   });
+});
+
+test("terminals open in a chosen folder", async ({ page }) => {
+  const tree = page.getByRole("tree", { name: "Files" });
+  /** Checks the active terminal's folder, then ends it. */
+  const isIn = async (name: string) => {
+    await expect(tab(page, new RegExp(`^${name}$`))).toBeVisible();
+    await expect.poll(() => screen(page)).toMatch(prompt);
+    await run(page, 'echo "in $(basename "$PWD")"');
+    await expect.poll(() => screen(page)).toMatch(new RegExp(`^in ${name}$`, "m"));
+    await run(page, "exit");
+    await expect(tab(page, new RegExp(`^${name}$`))).toHaveCount(0);
+  };
+
+  // From a folder in the file tree.
+  await tree
+    .getByRole("treeitem", { name: "Projects" })
+    .locator("> button")
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Open terminal here" }).click();
+  await isIn("Projects");
+
+  // From the palette: a vault folder, or any folder typed in.
+  const inFolder = async (choice: string) => {
+    await page.keyboard.press("Meta+p");
+    await page.keyboard.type("New terminal in folder");
+    await page.keyboard.press("Enter");
+    await expect(page.getByPlaceholder("New terminal in…")).toBeVisible();
+    await page.keyboard.type(choice);
+    await page.keyboard.press("Enter");
+  };
+  await inFolder("Contacts");
+  await isIn("Contacts");
+  await inFolder("Another folder");
+  const dialog = page.getByRole("dialog", { name: "Folder" });
+  await dialog.getByRole("textbox").fill("~");
+  await dialog.getByRole("button", { name: "Open" }).click();
+  await isIn(basename(homedir()));
+
+  // A workspace's folder can change; new terminals start there.
+  await page.getByRole("tab", { name: "Workspaces" }).click();
+  const panel = page.locator(".workspaces-panel");
+  await panel.getByRole("button", { name: "New workspace" }).click();
+  const create = page.getByRole("dialog", { name: "New workspace" });
+  await create.getByLabel("Name").fill("Moving");
+  await create.getByRole("button", { name: "Create" }).click();
+  await isIn("vault");
+  const moving = panel.locator(".area-item").filter({ hasText: "Moving" });
+  await moving.locator(".area-row").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Change folder…" }).click();
+  const change = page.getByRole("dialog", { name: "Change folder" });
+  await change.getByLabel("Folder").fill(`${VAULT}/Daily`);
+  await change.getByRole("button", { name: "Change" }).click();
+  await expect(moving.locator(".area-folder")).toHaveText("vault/Daily");
+  await page.keyboard.press("Meta+t");
+  await isIn("Daily");
+
+  await moving.locator(".area-row").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Delete…" }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(moving).toHaveCount(0);
 });

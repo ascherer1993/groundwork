@@ -1,8 +1,9 @@
 import { api } from "../api/client";
+import type { TreeNode } from "../api/generated/TreeNode";
 import { undoLast } from "../components/NoteView";
 import { editorFor } from "../editor/active";
 import { insertRendered } from "../editor/templates";
-import { formDialog, type PaletteItem, useUi } from "../state/ui";
+import { formDialog, type PaletteItem, promptDialog, useUi } from "../state/ui";
 import { message, newNoteFolder, useVault } from "../state/vault";
 import { NOTES, useWorkspace } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
@@ -150,6 +151,7 @@ function commands(): Command[] {
     { id: "back", label: "Go back", shortcut: "⌘[", run: () => ws.back() },
     { id: "forward", label: "Go forward", shortcut: "⌘]", run: () => ws.forward() },
     { id: "new-terminal", label: "New terminal", shortcut: "⌘T", run: () => ws.openTerminal() },
+    { id: "new-terminal-in", label: "New terminal in folder…", run: terminalInFolder },
     {
       id: "new-workspace",
       label: "New workspace…",
@@ -191,7 +193,43 @@ function commands(): Command[] {
   ];
 }
 
-/** ⌘P */
+/** Lists the vault's folders and the workspaces' to start a terminal in, or asks for another. */
+function terminalInFolder() {
+  const vault = useVault.getState().vault;
+  const tree = useVault.getState().tree;
+  if (!vault) return;
+  const folders: string[] = [];
+  const walk = (node: TreeNode) => {
+    if (node.kind !== "folder") return;
+    folders.push(node.path);
+    node.children?.forEach(walk);
+  };
+  if (tree) walk(tree);
+  const open = (cwd: string) => useWorkspace.getState().openTerminal(cwd);
+  const items: PaletteItem[] = folders.map((path) => ({
+    id: `vault:${path}`,
+    label: path || vault.name,
+    detail: path ? undefined : "vault root",
+    run: () => open(path ? `${vault.path}/${path}` : vault.path),
+  }));
+  for (const w of useWorkspaces.getState().list) {
+    items.push({ id: `workspace:${w.id}`, label: w.cwd, detail: w.name, run: () => open(w.cwd) });
+  }
+  items.push({
+    id: "other",
+    label: "Another folder…",
+    run: async () => {
+      const cwd = await promptDialog({ title: "Folder", value: "~/", confirmLabel: "Open" });
+      if (cwd?.trim()) await open(cwd.trim());
+    },
+  });
+  useUi.getState().openPalette({
+    placeholder: "New terminal in…",
+    recentKey: "terminal-folders",
+    items,
+  });
+}
+
 /** Lists the notes and the workspaces, with their ⌘ number. */
 function switchWorkspace() {
   const areas = [

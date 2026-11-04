@@ -24,6 +24,8 @@ interface WorkspacesState {
   /** Asks for a name, creates the workspace, shows it and opens a terminal. */
   create(): Promise<void>;
   rename(id: string): Promise<void>;
+  /** Where its new terminals start; open ones stay where they are. */
+  changeFolder(id: string): Promise<void>;
   /** After confirming, ends its terminals and forgets it. */
   remove(id: string): Promise<void>;
 }
@@ -80,6 +82,23 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
     if (!name?.trim() || name.trim() === workspace?.name) return;
     try {
       const updated = await api.updateWorkspace(id, { name: name.trim() });
+      set((s) => ({ list: s.list.map((w) => (w.id === id ? updated : w)) }));
+    } catch (err) {
+      useUi.getState().notify(message(err));
+    }
+  },
+
+  async changeFolder(id) {
+    const workspace = get().list.find((w) => w.id === id);
+    const cwd = await formDialog({
+      title: "Change folder",
+      message: "New terminals start in this folder. Open ones stay where they are.",
+      fields: [{ label: "Folder", value: workspace?.cwd ?? "" }],
+      confirmLabel: "Change",
+    }).then((values) => values?.[0]?.trim());
+    if (!cwd || cwd === workspace?.cwd) return;
+    try {
+      const updated = await api.updateWorkspace(id, { cwd });
       set((s) => ({ list: s.list.map((w) => (w.id === id ? updated : w)) }));
     } catch (err) {
       useUi.getState().notify(message(err));

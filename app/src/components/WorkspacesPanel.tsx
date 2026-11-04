@@ -85,6 +85,10 @@ function AreaRow({ area, name, folder }: { area: string; name: string; folder?: 
         action: () => switchAnd(area, () => useWorkspace.getState().openTerminal()),
       },
       { label: "Rename…", action: () => void useWorkspaces.getState().rename(area) },
+      {
+        label: "Change folder…",
+        action: () => void useWorkspaces.getState().changeFolder(area),
+      },
       "separator",
       {
         label: "Delete…",

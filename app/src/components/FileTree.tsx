@@ -85,6 +85,7 @@ function menuFor(node: TreeNode): MenuEntry[] {
             });
           }),
       },
+      { label: "Open terminal here", action: () => void ws.openTerminal(absolute) },
       "separator",
     );
   } else {

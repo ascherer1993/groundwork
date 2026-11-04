@@ -128,13 +128,25 @@ fn valid_name(name: &str) -> Result<String> {
     Ok(name.to_string())
 }
 
+/// A typed folder with a leading `~` meaning the home folder.
+pub fn expand_home(path: &str) -> PathBuf {
+    let rest = match path.strip_prefix('~') {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => rest,
+        _ => return PathBuf::from(path),
+    };
+    match std::env::var_os("HOME") {
+        Some(home) => PathBuf::from(format!("{}{rest}", home.to_string_lossy())),
+        None => PathBuf::from(path),
+    }
+}
+
 /// The folder's real path, as shells report it (`/var` is `/private/var`).
 fn valid_folder(cwd: &str) -> Result<String> {
-    let path = Path::new(cwd);
+    let path = expand_home(cwd.trim());
     if !path.is_absolute() || !path.is_dir() {
         return Err(CoreError::InvalidPath(format!("no folder at {cwd}")));
     }
-    Ok(fs::canonicalize(path)?.display().to_string())
+    Ok(fs::canonicalize(&path)?.display().to_string())
 }
 
 fn new_id(name: &str) -> String {
@@ -182,5 +194,19 @@ mod tests {
 
         store.delete(&a.id).unwrap();
         assert_eq!(store.list(), [b]);
+    }
+
+    #[test]
+    fn a_leading_tilde_is_the_home_folder() {
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(expand_home("~"), PathBuf::from(&home));
+        assert_eq!(expand_home("~/dev"), PathBuf::from(format!("{home}/dev")));
+        assert_eq!(expand_home("~bob/dev"), PathBuf::from("~bob/dev"));
+        assert_eq!(expand_home("/tmp/~"), PathBuf::from("/tmp/~"));
+        let canonical = fs::canonicalize(&home).unwrap();
+        assert_eq!(
+            valid_folder(" ~ ").unwrap(),
+            canonical.display().to_string()
+        );
     }
 }

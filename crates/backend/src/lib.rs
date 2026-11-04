@@ -19,6 +19,7 @@ use groundwork_core::pages;
 use groundwork_core::search;
 use groundwork_core::setup::{self, SetupEnv, SetupStatus};
 use groundwork_core::watch::{self, VaultWatcher};
+use groundwork_core::workspaces;
 use groundwork_core::{FileChange, RecentVaults, Session, Vault};
 use groundwork_protocol::{
     ApiError, AppInfo, CreatedNote, ErrorCode, Event, Host, RenderedTemplate, Request, WriteResult,
@@ -317,12 +318,12 @@ impl Backend {
                 rows,
             } => {
                 let vault = self.session().ok().map(|s| s.vault().root().to_path_buf());
-                let cwd = match cwd {
-                    Some(cwd) if Path::new(&cwd).is_absolute() => PathBuf::from(cwd),
+                let cwd = match cwd.map(|cwd| workspaces::expand_home(cwd.trim())) {
+                    Some(cwd) if cwd.is_absolute() => cwd,
                     Some(cwd) => {
                         return Err(ApiError::new(
                             ErrorCode::BadRequest,
-                            format!("not an absolute folder: {cwd}"),
+                            format!("not an absolute folder: {}", cwd.display()),
                         ));
                     }
                     None => vault
