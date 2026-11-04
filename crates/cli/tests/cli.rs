@@ -88,6 +88,52 @@ fn notes_links_and_search() {
         backlinks.contains("Daily/2026-11-03.md:10: - [ ] Ask [[Jane Doe]]"),
         "{backlinks}"
     );
+    // Pages link to notes too.
+    let backlinks = v.ok(&["backlinks", "2026-11-02 Kickoff"]);
+    assert!(
+        backlinks.contains("Projects/Acme/demos/login-flow.page:20: Back to Acme · Kickoff notes"),
+        "{backlinks}"
+    );
+    let links = v.ok(&["links", "login-flow.page"]);
+    assert_eq!(
+        links,
+        "Projects/Acme/Acme.md\nProjects/Acme/Meetings/2026-11-02 Kickoff.md\n"
+    );
+
+    // The whole vault in two calls.
+    let files = v.ok(&["files"]);
+    assert!(files.contains("Welcome.md\n"), "{files}");
+    assert!(
+        files.contains("Projects/Acme/demos/login-flow.page (page)\n"),
+        "{files}"
+    );
+    assert!(
+        !files.contains("index.html") && !files.contains(".obsidian"),
+        "{files}"
+    );
+    assert!(!files.lines().any(|l| l == "Projects"), "{files}");
+    let demos = v.ok(&["files", "--path", "Projects/Acme/demos/"]);
+    assert_eq!(demos.lines().count(), 4, "{demos}");
+    let all = v.ok(&["links", "--all"]);
+    assert!(
+        all.contains("Welcome.md -> Contacts/Jane Doe.md\n"),
+        "{all}"
+    );
+    assert!(
+        all.contains(
+            "Projects/Acme/demos/Demo review.md -> Projects/Acme/demos/login-flow.page (embed)\n"
+        ),
+        "{all}"
+    );
+    assert!(
+        all.contains(
+            "Projects/Acme/demos/login-flow.page -> Projects/Acme/Meetings/2026-11-02 Kickoff.md\n"
+        ),
+        "{all}"
+    );
+    let (ok, _, err) = v.run(&["links"]);
+    assert!(!ok && err.contains("<NOTE>"), "{err}");
+
     let found = v.ok(&["search", "auth", "migration"]);
     assert!(found.starts_with("Daily/2026-11-03.md:10: "), "{found}");
 
@@ -355,4 +401,32 @@ fn reads_and_sets_page_state() {
     assert!(!ok && err.contains("isn't a page"), "{err}");
     let (ok, _, err) = v.run(&["page", "state", "login-flow.page", "--set", "{nope"]);
     assert!(!ok && err.contains("isn't JSON"), "{err}");
+}
+
+#[test]
+fn the_plugin_hook_speaks_only_inside_groundwork() {
+    let plugin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../claude-plugin");
+    let hooks: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(plugin.join("hooks/hooks.json")).unwrap())
+            .unwrap();
+    let command = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+        .as_str()
+        .unwrap();
+    assert_eq!(command, "\"${CLAUDE_PLUGIN_ROOT}/hooks/session-start\"");
+
+    let run = |tab: Option<&str>| {
+        let mut cmd = Command::new(plugin.join("hooks/session-start"));
+        cmd.env("GROUNDWORK_VAULT", "/Users/me/Notes")
+            .env_remove("GROUNDWORK_TAB_ID");
+        if let Some(tab) = tab {
+            cmd.env("GROUNDWORK_TAB_ID", tab);
+        }
+        let out = cmd.output().unwrap();
+        assert!(out.status.success());
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let inside = run(Some("t0123"));
+    assert!(inside.contains("The vault is /Users/me/Notes."), "{inside}");
+    assert!(inside.contains("load the groundwork skill"), "{inside}");
+    assert_eq!(run(None), "");
 }

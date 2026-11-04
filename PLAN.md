@@ -476,6 +476,7 @@ Daily notes follow `daily-notes.json`. Cmd+Shift+D opens today's note. Daily not
 - **Plugin** (`claude-plugin/`), installed through a local plugin marketplace:
   - **Skill `groundwork`:** what the vault is, the conventions, the CLI commands, the templates, and how to ask the user something.
   - **Hooks:** SessionStart, UserPromptSubmit, Stop and Notification each call `groundwork hook <event>`. Outside a Groundwork tab (`GROUNDWORK_TAB_ID` unset) the hook does nothing.
+  - *Pulled forward in Phase 4:* the plugin's SessionStart hook (`claude-plugin/hooks/session-start`, a shell script for now) tells Claude in a Groundwork tab that it's inside Groundwork, which vault is open beside it, and to load the skill before touching the vault. The first real session in a Groundwork terminal didn't know what the app renders, so it checked Mermaid by running the app's source.
   - **What the hooks give us:** each tab's Claude session id and a live state (working, waiting for input, finished). SessionStart also adds the `groundwork context` summary for the tab's ticket or project.
 - **Fork:** the tab menu's "Fork session" opens a new tab in the same cwd running `claude --resume <id> --fork-session`.
 - **Inbox ("waiting on me"):**
@@ -496,7 +497,8 @@ Daily notes follow `daily-notes.json`. Cmd+Shift+D opens today's note. Daily not
 These commands work without the app running (they use files directly):
 
 - `note`: `create [--template]`, `read`, `move` (with link rewriting), `list`
-- `links` / `backlinks <note>`
+- `links` / `backlinks <note>`: for notes and pages (a page's `<a href>` links to vault files count). `links --all` lists every link in the vault.
+- `files [--path <folder>]`: every note, page and file, as the file tree lists them
 - `search <q>` (full text) and `search --smart <q>` (qmd)
 - `template list` / `template show`
 - `daily [--date]`
@@ -620,6 +622,7 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
   - `groundwork page state <page> [--set <json>|-]` reads and replaces state. `file.read` now returns text for any UTF-8 file (CSV, JSON), which `readFile` needs.
   - New `.html` files start from a small skeleton that follows light and dark mode.
   - The links panel shows backlinks for pages (and other files); outgoing links and unlinked mentions stay notes-only.
+  - Added in Phase 4: links *from* pages are indexed too. A page's `<a href>`s to vault files count as backlinks: wikilink hrefs, and relative paths resolved from the document (a bundle's are inside it). Renaming doesn't rewrite them, since rename only edits notes.
   - Playwright covers browser mode only; the checkpoint confirmed pages work in the desktop app.
 
 ### Phase 4 — Terminals & workspaces

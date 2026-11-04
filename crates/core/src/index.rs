@@ -24,6 +24,9 @@ use crate::parse::{self, Link, LinkKind, ParsedNote};
 use crate::tree::{NodeKind, classify, is_hidden};
 use crate::{CoreError, Result};
 
+/// Pages bigger than this aren't searched for links.
+const MAX_PAGE_BYTES: u64 = 2 * 1024 * 1024;
+
 #[derive(Debug, Clone)]
 pub struct FileEntry {
     pub path: String,
@@ -33,6 +36,9 @@ pub struct FileEntry {
     /// Content hash, for notes only.
     pub hash: Option<String>,
     pub note: Option<ParsedNote>,
+    /// Links to other files, for pages (see [`pages::links`]). Rename leaves
+    /// them alone: it rewrites notes only.
+    pub page_links: Vec<Link>,
 }
 
 /// How new links are written, from `.obsidian/app.json`.
@@ -322,6 +328,13 @@ impl Index {
         } else {
             (None, None)
         };
+        let page_links = match kind {
+            NodeKind::Page | NodeKind::PageBundle => self
+                .read_page(path)
+                .map(|html| pages::links(&html, path))
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        };
         let (size, mtime) = if kind == NodeKind::PageBundle {
             bundle_signature(&full)
         } else if meta.is_dir() {
@@ -336,6 +349,7 @@ impl Index {
             size,
             hash,
             note,
+            page_links,
         }))
     }
 
@@ -433,21 +447,70 @@ impl Index {
     // ---- Queries -------------------------------------------------------
 
     pub fn outgoing(&self, source: &str) -> Vec<OutgoingLink> {
-        self.note(source)
-            .map(|note| {
-                note.links
-                    .iter()
-                    .map(|link| OutgoingLink {
-                        link: link.clone(),
-                        resolved: self.resolve_link(link, source),
-                    })
-                    .collect()
+        let Some(entry) = self.files.get(source) else {
+            return Vec::new();
+        };
+        if let Some(note) = &entry.note {
+            return note
+                .links
+                .iter()
+                .map(|link| OutgoingLink {
+                    link: link.clone(),
+                    resolved: self.resolve_link(link, source),
+                })
+                .collect();
+        }
+        entry
+            .page_links
+            .iter()
+            .map(|link| OutgoingLink {
+                link: link.clone(),
+                resolved: self.resolve_page_link(link, source),
             })
-            .unwrap_or_default()
+            .collect()
     }
 
-    /// Every note linking to `target`, with the line each link is on.
+    /// A page's relative links are already vault paths; its wikilinks resolve
+    /// like a note's.
+    fn resolve_page_link(&self, link: &Link, source: &str) -> Option<String> {
+        match link.kind {
+            LinkKind::Wiki => self.resolve(&link.target, source),
+            LinkKind::Markdown => self.lookup_exact(&link.target),
+        }
+    }
+
+    /// Every note and page linking to `target`, with the line each link is on.
     pub fn backlinks(&self, target: &str) -> Vec<Backlinks> {
+        let mut out = self.note_backlinks(target);
+        for (source, entry) in &self.files {
+            let refs: Vec<&Link> = entry
+                .page_links
+                .iter()
+                .filter(|l| self.resolve_page_link(l, source).as_deref() == Some(target))
+                .collect();
+            if refs.is_empty() {
+                continue;
+            }
+            let html = self.read_page(source).unwrap_or_default();
+            out.push(Backlinks {
+                source: source.clone(),
+                links: refs
+                    .into_iter()
+                    .map(|l| LinkRef {
+                        line: l.line,
+                        range: l.range.clone(),
+                        embed: false,
+                        subpath: l.subpath.clone(),
+                        context: pages::plain_text(&line_context(&html, l.range.start)),
+                    })
+                    .collect(),
+            });
+        }
+        out.sort_by(|a, b| a.source.cmp(&b.source));
+        out
+    }
+
+    fn note_backlinks(&self, target: &str) -> Vec<Backlinks> {
         let mut out = Vec::new();
         for (source, note) in self.notes() {
             let refs: Vec<&Link> = note
@@ -610,6 +673,22 @@ impl Index {
         &self.root
     }
 
+    /// A page's document: the file, or a bundle's `index.html`.
+    fn read_page(&self, path: &str) -> Option<String> {
+        let full = self.root.join(path);
+        let file = if full.is_dir() {
+            full.join("index.html")
+        } else {
+            full
+        };
+        if fs::metadata(&file).ok()?.len() > MAX_PAGE_BYTES {
+            return None;
+        }
+        fs::read(file)
+            .ok()
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+    }
+
     pub(crate) fn read_text(&self, path: &str) -> Option<String> {
         fs::read(self.root.join(path))
             .ok()
@@ -642,7 +721,7 @@ pub(crate) fn parent(path: &str) -> &str {
 }
 
 /// Joins `base` and `rel`, resolving `.` and `..`. `None` if it escapes the root.
-fn join_normalized(base: &str, rel: &str) -> Option<String> {
+pub(crate) fn join_normalized(base: &str, rel: &str) -> Option<String> {
     let mut parts: Vec<&str> = base.split('/').filter(|p| !p.is_empty()).collect();
     for part in rel.split('/') {
         match part {
@@ -868,6 +947,38 @@ pub(crate) mod tests {
         assert_eq!(r("", "Root.md").as_deref(), Some("Root.md"));
         assert_eq!(r("Missing", "Root.md"), None);
         assert_eq!(r("../../../Root", "A/Note.md"), None);
+    }
+
+    #[test]
+    fn pages_link_to_notes() {
+        let index = fixture();
+        let kickoff = index.backlinks("Projects/Acme/Meetings/2026-11-02 Kickoff.md");
+        let page = kickoff
+            .iter()
+            .find(|b| b.source == "Projects/Acme/demos/login-flow.page")
+            .expect("the page links to the kickoff note");
+        assert_eq!(page.links[0].context, "Back to Acme · Kickoff notes");
+
+        let acme: Vec<String> = index
+            .backlinks("Projects/Acme/Acme.md")
+            .into_iter()
+            .map(|b| b.source)
+            .collect();
+        assert!(acme.contains(&"Projects/Acme/demos/login-flow.page".to_string()));
+        assert!(acme.contains(&"Projects/Acme/demos/sketch.html".to_string()));
+
+        let outgoing: Vec<_> = index
+            .outgoing("Projects/Acme/demos/login-flow.page")
+            .into_iter()
+            .map(|l| l.resolved)
+            .collect();
+        assert_eq!(
+            outgoing,
+            [
+                Some("Projects/Acme/Acme.md".to_string()),
+                Some("Projects/Acme/Meetings/2026-11-02 Kickoff.md".to_string()),
+            ]
+        );
     }
 
     #[test]

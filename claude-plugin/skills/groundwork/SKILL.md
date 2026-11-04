@@ -15,6 +15,23 @@ All paths in output are relative to the vault root.
 
 Add `--json` to any command for machine-readable output. Prefer it when you'll parse the result.
 
+## What the user sees
+
+Groundwork is a desktop app. It shows the vault as a file tree, notes in tabs (live preview, source or reading view), a backlinks panel, and terminal tabs. You may be running in one of those terminals: `$TERM_PROGRAM` is `Groundwork` there. Files you write show up in the app as soon as you save them, so the user never needs to reload.
+
+- **The file tree is what `groundwork files` lists.** Hidden folders (`.obsidian/`, `.groundwork/`) and the files inside a `.page` bundle aren't shown. They're app config and page internals, so leave them out when you describe or map the vault.
+- **Notes render the way Obsidian renders them:**
+  - wikilinks and `![[embeds]]`, including embedded pages
+  - callouts (`> [!note]`) and footnotes
+  - math (`$x^2$`, `$$…$$`)
+  - highlighted code blocks
+  - Mermaid diagrams in ```` ```mermaid ```` blocks
+  - tasks, and `todos` blocks (see Daily notes)
+
+  Write these directly. Don't read Groundwork's source code or install tools to check that something renders. If a diagram is unusual, ask the user how it looks.
+- **Links to notes that don't exist yet are normal**, as in Obsidian: clicking one creates the note. A daily note linking to the previous day's note is a common example. Call these "not created yet", not "broken".
+- **For an overview of the whole vault**, run `groundwork files` and `groundwork links --all` (add `--json` to parse them). Don't walk the folders with `find`, or call `note info` once per note.
+
 ## Rules
 
 - **Never touch `.obsidian/`.** It belongs to Obsidian. Groundwork's own config is in `.groundwork/`; don't edit that either unless asked.
@@ -33,8 +50,10 @@ groundwork note read <note>             # print a note (name, link text or path)
 groundwork note path <note>             # resolve a name to its vault path
 groundwork note info <note> [--json]    # properties, tags, headings, links, backlinks, todos
 groundwork note create <path> [--template <t>] [--var Label=value]... [--date <d>] [--text <text>|-]
-groundwork links <note>                 # outgoing links (missing targets marked)
-groundwork backlinks <note>             # path:line: context for every link to the note
+groundwork links <note>                 # outgoing links of a note or page (missing targets marked)
+groundwork backlinks <note>             # path:line: context for every link to it, from notes and pages
+groundwork files [--path <folder>]      # every note, page and file, as the file tree shows them
+groundwork links --all                  # every link in the vault: source -> target
 groundwork search <words...> [--limit N]
 
 # Templates and daily notes
@@ -122,7 +141,7 @@ Groundwork shows HTML pages live, in a tab or embedded in a note. Build one when
 - **Relative URLs load vault files:** `<script type="module" src="app.js">`, `fetch("data.json")`, `<img src="../diagram.png">`. Network access (CDNs, APIs) works unless `.groundwork/config.yml` sets `pages: { allow_network: false }`, but prefer no external dependencies so pages work offline.
 - **Pages are sandboxed.** They can't touch the app, and `localStorage` only lasts until the page reloads. Keep anything that should last in `groundwork.state`.
 - **Follow light and dark mode:** `:root { color-scheme: light dark; }`, plus `@media (prefers-color-scheme: dark)` for your own colours.
-- **Links to notes open in Groundwork:** `<a href="../Plan.md">` or `<a href="[[Plan]]">`. Web links open in the browser.
+- **Links to notes open in Groundwork:** `<a href="../Plan.md">` or `<a href="[[Plan]]">`. Web links open in the browser. These links count as backlinks, but renaming a note doesn't rewrite them, so check a page's links after a rename.
 
 The bridge, `window.groundwork`, is there before the page's own scripts run:
 

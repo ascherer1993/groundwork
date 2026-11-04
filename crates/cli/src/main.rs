@@ -17,7 +17,8 @@ use groundwork_core::pages;
 use groundwork_core::session::with_created_property;
 use groundwork_core::setup::default_vault;
 use groundwork_core::todos::{DueFilter, StatusFilter, TaskChange, Todo, TodoFilter};
-use groundwork_core::{CoreError, RecentVaults, Session, Vault, data_dir, search};
+
+use groundwork_core::{CoreError, NodeKind, RecentVaults, Session, Vault, data_dir, search};
 use serde::Serialize;
 
 #[derive(Parser)]
@@ -45,9 +46,22 @@ enum Command {
     /// Read, create and inspect notes.
     #[command(subcommand)]
     Note(NoteCommand),
-    /// A note's outgoing links and where they point.
-    Links { note: String },
-    /// Notes linking to a note, with the linking lines.
+    /// Every note, page and other file, as the app's file tree lists them:
+    /// hidden folders and the insides of `.page` bundles are left out.
+    Files {
+        /// Only files under this folder.
+        #[arg(long)]
+        path: Option<String>,
+    },
+    /// A note's or page's outgoing links and where they point; with `--all`,
+    /// every link in the vault.
+    Links {
+        #[arg(required_unless_present = "all")]
+        note: Option<String>,
+        #[arg(long, conflicts_with = "note")]
+        all: bool,
+    },
+    /// Notes and pages linking to a note or page, with the linking lines.
     Backlinks { note: String },
     /// Full-text search. Words must all appear; supports "phrases",
     /// -exclude, path:folder and #tag.
@@ -336,7 +350,33 @@ fn run(cli: Cli) -> Fallible<()> {
     let json = cli.json;
     match cli.command {
         Command::Note(cmd) => note(&session, cmd, json),
-        Command::Links { note } => {
+        Command::Files { path } => {
+            let prefix = path.map(|p| format!("{}/", p.trim_matches('/')));
+            let files: Vec<_> = session
+                .index()
+                .summaries()
+                .into_iter()
+                .filter(|f| f.kind != NodeKind::Folder)
+                .filter(|f| {
+                    prefix
+                        .as_ref()
+                        .is_none_or(|p| f.path.starts_with(p.as_str()))
+                })
+                .collect();
+            if json {
+                return print_json(&files);
+            }
+            for f in files {
+                match f.kind {
+                    NodeKind::Page | NodeKind::PageBundle => println!("{} (page)", f.path),
+                    _ => println!("{}", f.path),
+                }
+            }
+            Ok(())
+        }
+        Command::Links {
+            note: Some(note), ..
+        } => {
             let path = resolve_note(&session, &note)?;
             let links = session.index().outgoing(&path);
             if json {
@@ -344,8 +384,37 @@ fn run(cli: Cli) -> Fallible<()> {
             }
             for l in links {
                 match l.resolved {
-                    Some(to) => println!("{to}"),
+                    Some(to) => println!("{to}{}", if l.link.embed { " (embed)" } else { "" }),
                     None => println!("{} (missing)", l.link.target),
+                }
+            }
+            Ok(())
+        }
+        Command::Links { note: None, .. } => {
+            #[derive(Serialize)]
+            struct Source {
+                source: String,
+                links: Vec<groundwork_core::index::OutgoingLink>,
+            }
+            let index = session.index();
+            let all: Vec<Source> = index
+                .paths()
+                .map(|p| Source {
+                    source: p.to_string(),
+                    links: index.outgoing(p),
+                })
+                .filter(|s| !s.links.is_empty())
+                .collect();
+            if json {
+                return print_json(&all);
+            }
+            for s in all {
+                for l in s.links {
+                    match l.resolved {
+                        Some(to) if l.link.embed => println!("{} -> {to} (embed)", s.source),
+                        Some(to) => println!("{} -> {to}", s.source),
+                        None => println!("{} -> {} (missing)", s.source, l.link.target),
+                    }
                 }
             }
             Ok(())

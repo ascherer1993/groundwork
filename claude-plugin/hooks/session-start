@@ -1,0 +1,11 @@
+#!/bin/sh
+# Claude Code's SessionStart hook: what it prints becomes context. In a
+# Groundwork terminal (which sets GROUNDWORK_TAB_ID) it tells Claude where it
+# is, so it reaches for the skill before working on notes. Anywhere else it
+# prints nothing. Phase 6 replaces it with `groundwork hook session-start`.
+[ -n "$GROUNDWORK_TAB_ID" ] || exit 0
+
+cat <<TEXT
+This session is running in a terminal tab inside Groundwork, the user's notes app (an Obsidian-compatible vault with HTML pages and terminals). The vault is ${GROUNDWORK_VAULT:-the one \`groundwork vault\` reports}. It's open beside this terminal, and notes you write appear there as you save them.
+Before reading, writing or describing anything in the vault (notes, todos, daily notes, templates, HTML pages), load the groundwork skill. It covers the vault's conventions, what the app shows and renders, and the \`groundwork\` CLI, which is already on PATH.
+TEXT

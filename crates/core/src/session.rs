@@ -1347,6 +1347,16 @@ mod tests {
     }
 
     #[test]
+    fn rename_leaves_pages_alone() {
+        let page = r#"<a href="Old.md">old</a> <a href="[[Old]]">old</a>"#;
+        let v = TestVault::new(&[("Old.md", "# Old\n"), ("Demo.page/index.html", page)]);
+        assert_eq!(v.session.index().backlinks("Old.md").len(), 1);
+        let (outcome, _) = v.session.rename("Old.md", "New.md").unwrap();
+        assert_eq!(outcome.updated_links, 0);
+        assert_eq!(v.read("Demo.page/index.html"), page);
+    }
+
+    #[test]
     fn moving_into_a_duplicate_name_uses_paths() {
         // After the move there are two "Note"s, so links must become explicit.
         let v = TestVault::new(&[
