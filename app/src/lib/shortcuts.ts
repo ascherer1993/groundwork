@@ -1,7 +1,7 @@
 import { undoLast } from "../components/NoteView";
 import { useUi } from "../state/ui";
 import { useVault } from "../state/vault";
-import { NOTES, useWorkspace } from "../state/workspace";
+import { useWorkspace } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
 import { openCommandPalette, openToday } from "./commands";
 
@@ -35,11 +35,16 @@ export function installShortcuts(): () => void {
       if (key === "e" && !e.shiftKey) return (ws.toggleReading(), true);
       if (key === "w" && !e.shiftKey) return (ws.closeActive(), true);
       if (key === "b" && e.shiftKey) return (ui.toggleRightPanel(), true);
-      // ⌘1 shows the notes, ⌘2… the workspaces in order.
-      if (/^[1-9]$/.test(key) && !e.shiftKey) {
-        const areas = [NOTES, ...useWorkspaces.getState().list.map((w) => w.id)];
-        const area = areas[Number(key) - 1];
-        if (area) ws.setArea(area);
+      // ⌃⌘1–3: notes, notes and terminals, terminals.
+      if (e.ctrlKey && /^Digit[1-3]$/.test(e.code)) {
+        const views = ["note", "split", "terminal"] as const;
+        ws.setView(views[Number(e.code.slice(5)) - 1]!);
+        return true;
+      }
+      // ⌘1… the workspaces in order.
+      if (/^[1-9]$/.test(key) && !e.shiftKey && !e.ctrlKey) {
+        const id = useWorkspaces.getState().list[Number(key) - 1]?.id;
+        if (id) ws.showWorkspace(id);
         return true;
       }
       if (key === "[") return (ws.back(), true);

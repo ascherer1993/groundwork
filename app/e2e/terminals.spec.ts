@@ -11,9 +11,13 @@ test.beforeEach(async ({ page }) => {
   await openVault(page, VAULT);
 });
 
+/** The current workspace's dock, when the terminals are on screen. */
+const TERMINALS = ".terminals-side:not([hidden]) .area:not([hidden])";
+const VIEW = `${TERMINALS} .dv-active-group .terminal-view`;
+
 /** What the active terminal shows, scrollback included. */
 function screen(page: Page): Promise<string> {
-  return page.locator(".area:not([hidden]) .dv-active-group .terminal-view").evaluate((el) => {
+  return page.locator(VIEW).evaluate((el) => {
     type Buffer = {
       length: number;
       getLine(i: number): { translateToString(trim: boolean): string } | undefined;
@@ -32,8 +36,6 @@ async function run(page: Page, command: string) {
   await page.keyboard.type(command);
   await page.keyboard.press("Enter");
 }
-
-const VIEW = ".area:not([hidden]) .dv-active-group .terminal-view";
 
 /** Clicks text shown in the active terminal. */
 async function clickText(page: Page, text: string) {
@@ -70,8 +72,12 @@ async function clickText(page: Page, text: string) {
 }
 
 const prompt = /\$ ?$/m;
+/** A tab of the current workspace's terminals. */
 const tab = (page: Page, name: string | RegExp) =>
-  page.locator(".area:not([hidden]) .dv-tab").filter({ hasText: name });
+  page.locator(`${TERMINALS} .dv-tab`).filter({ hasText: name });
+/** A tab of the notes. */
+const noteTab = (page: Page, name: string | RegExp) =>
+  page.locator(".notes-side:not([hidden]) .dv-tab").filter({ hasText: name });
 
 test("a terminal runs a shell in the vault and comes back after a reload", async ({ page }) => {
   await page.keyboard.press("Meta+t");
@@ -103,7 +109,7 @@ test("a terminal runs a shell in the vault and comes back after a reload", async
   await page.reload();
   await expect(tab(page, "Build logs")).toBeVisible();
   await expect.poll(() => screen(page)).toContain("in vault as Groundwork with the vault");
-  await page.locator(".area:not([hidden]) .dv-active-group .terminal-view").click();
+  await page.locator(VIEW).click();
   await run(page, 'echo "$MARK"');
   await expect.poll(() => screen(page)).toMatch(/^still-here$/m);
 
@@ -124,9 +130,9 @@ test("closing a terminal tab ends its shell; app shortcuts work from it", async 
   await expect(page.getByRole("dialog", { name: "Quick switcher" })).toBeVisible();
   await page.keyboard.press("Escape");
 
-  await page.locator(".area:not([hidden]) .dv-active-group .terminal-view").click();
+  await page.locator(VIEW).click();
   await page.keyboard.press("Meta+w");
-  await expect(page.locator(".area:not([hidden]) .terminal-view")).toHaveCount(0);
+  await expect(page.locator(`${TERMINALS} .terminal-view`)).toHaveCount(0);
 
   await page.keyboard.press("Meta+t");
   await expect.poll(() => screen(page)).toMatch(prompt);
@@ -135,16 +141,48 @@ test("closing a terminal tab ends its shell; app shortcuts work from it", async 
   await run(page, "exit");
 });
 
-test("opening a note from a terminal tab opens it beside the terminal", async ({ page }) => {
+test("notes, notes beside terminals, or terminals alone", async ({ page }) => {
+  const views = page.getByRole("group", { name: "Main view" });
+  const notes = page.getByRole("region", { name: "Notes" });
+  const terminals = page.getByRole("region", { name: "Terminals" });
+
+  // A terminal comes up beside the notes.
+  await views.getByRole("button", { name: "Notes" }).click();
+  await expect(terminals).toBeHidden();
   await page.keyboard.press("Meta+t");
   await expect.poll(() => screen(page)).toMatch(prompt);
+  await expect(notes).toBeVisible();
+  await expect(views.getByRole("button", { name: "Split" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  // Notes open on their own side, never among the terminals.
   await page.keyboard.press("Meta+o");
   await page.keyboard.type("Welcome");
   await page.keyboard.press("Enter");
-  await expect(tab(page, "Welcome")).toBeVisible();
+  await expect(noteTab(page, "Welcome")).toBeVisible();
+  await expect(tab(page, "Welcome")).toHaveCount(0);
   await expect(tab(page, /^vault$/)).toBeVisible();
-  await tab(page, /^vault$/).click();
+
+  // Terminals alone; opening a note brings the notes back beside them.
+  await page.keyboard.press("Control+Meta+3");
+  await expect(notes).toBeHidden();
+  await expect(tab(page, /^vault$/)).toBeVisible();
+  await page
+    .getByRole("tree", { name: "Files" })
+    .getByRole("treeitem", { name: "Welcome" })
+    .click();
+  await expect(notes).toBeVisible();
+  await expect(terminals).toBeVisible();
+
+  // ⌘W closes the tab on the side last used.
+  await page.locator(VIEW).click();
   await page.keyboard.press("Meta+w");
+  await expect(tab(page, /^vault$/)).toHaveCount(0);
+  await expect(noteTab(page, "Welcome")).toBeVisible();
+  await page.keyboard.press("Control+Meta+1");
+  await expect(terminals).toBeHidden();
 });
 
 test("workspaces keep their own terminals, with badges and a session manager", async ({ page }) => {
@@ -162,17 +200,19 @@ test("workspaces keep their own terminals, with badges and a session manager", a
   await run(page, 'echo "at $(basename "$PWD") in ${GROUNDWORK_WORKSPACE_ID%%-*}"');
   await expect.poll(() => screen(page)).toContain("at Acme in ws");
 
-  // Vault paths in the output open the file, here beside the terminal.
+  // Vault paths in the output open the file, among the notes.
   await run(page, 'echo "see Meetings/2026-11-02 Kickoff.md"');
   await expect.poll(() => screen(page)).toMatch(/^see Meetings/m);
   await clickText(page, "Meetings/2026-11-02 Kickoff.md");
-  await expect(tab(page, "2026-11-02 Kickoff")).toBeVisible();
-  await tab(page, /^Acme$/).click();
+  await expect(noteTab(page, "2026-11-02 Kickoff")).toBeVisible();
 
-  // The notes have their own tabs; ⌘2 comes back, and so does a reload.
+  // Each workspace has its own terminals: ⌘1… switch between them, and a
+  // reload comes back to the same one.
+  const acmeRow = panel.locator(".area-item").filter({ hasText: "Acme API" }).locator(".area-row");
+  await expect(acmeRow).toHaveClass(/current/);
   await page.keyboard.press("Meta+1");
   await expect(tab(page, /^Acme$/)).toHaveCount(0);
-  await expect(panel.locator(".area-row.current")).toContainText("Notes");
+  await expect(acmeRow).not.toHaveClass(/current/);
   await page.keyboard.press("Meta+2");
   await expect(tab(page, /^Acme$/)).toBeVisible();
   await page.reload();
@@ -183,7 +223,7 @@ test("workspaces keep their own terminals, with badges and a session manager", a
   await page.getByRole("tab", { name: "Workspaces" }).click();
   await page.locator(VIEW).click();
   await run(page, "sleep 1; printf '\\033]9;Tests passed\\007'");
-  await page.keyboard.press("Meta+1");
+  await page.keyboard.press("Control+Meta+1");
   const acme = panel.locator(".area-item").filter({ hasText: "Acme API" });
   await expect(acme.locator(".area-row").getByRole("status")).toHaveAttribute(
     "aria-label",
@@ -202,7 +242,7 @@ test("workspaces keep their own terminals, with badges and a session manager", a
     "aria-label",
     "Running",
   );
-  await page.keyboard.press("Meta+1");
+  await page.keyboard.press("Control+Meta+1");
   await expect(acme.locator(".area-row").getByRole("status")).toHaveAttribute(
     "aria-label",
     "Finished",
@@ -222,7 +262,6 @@ test("workspaces keep their own terminals, with badges and a session manager", a
   await expect(page.getByText("Its terminal will end.")).toBeVisible();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(acme).toHaveCount(0);
-  await expect(panel.locator(".area-row.current")).toContainText("Notes");
   await expect(sessions.locator(".session").filter({ hasText: "in Acme API" })).toHaveCount(0, {
     timeout: 10_000,
   });

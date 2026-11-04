@@ -1080,11 +1080,39 @@ button.danger-button {
   bottom: 4px;
 }
 
-/* Workspaces: the main area shows one at a time */
+/* The main area: notes, terminals, or both side by side */
 
 .areas {
-  position: relative;
+  display: flex;
   height: 100%;
+}
+
+.side {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.side[hidden] {
+  display: none;
+}
+
+.view-split .notes-side {
+  flex: none;
+  width: var(--notes-width, 50%);
+}
+
+.side-divider {
+  flex: none;
+  width: 5px;
+  margin: 0 -2px;
+  z-index: 2;
+  cursor: col-resize;
+  background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat;
+}
+
+.side-divider:hover {
+  background: linear-gradient(var(--accent), var(--accent)) center / 1px 100% no-repeat;
 }
 
 .area {
@@ -1094,6 +1122,11 @@ button.danger-button {
 
 .area[hidden] {
   display: none;
+}
+
+.no-workspace {
+  position: absolute;
+  inset: 0;
 }
 
 /* Workspaces view */
@@ -1520,4 +1553,16 @@ label.check input {
   padding: 6px 10px 2px;
   font-size: 11px;
   color: var(--text-faint);
+}
+
+/* Notes · Split · Terminals, at the foot of the sidebar */
+
+.view-switch {
+  display: flex;
+  margin: 6px 8px 8px;
+}
+
+.view-switch button {
+  flex: 1;
+  justify-content: center;
 }

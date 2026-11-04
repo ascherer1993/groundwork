@@ -1,8 +1,9 @@
 /**
  * Tabs and splits (dockview) for files and terminals, per-tab history, and
- * link navigation. The main area shows one "area" at a time: the notes
- * layout, or a workspace's own layout (see `workspaces.ts`). Each area has
- * its own dock; `dock` is the one on screen.
+ * link navigation. Notes (and pages) live in one dock; each workspace has a
+ * dock of its own for its terminals (see `workspaces.ts`). The view decides
+ * what's on screen: the notes, the notes beside the current workspace's
+ * terminals, or the terminals alone.
  */
 import type { DockviewApi, IDockviewPanel } from "dockview-react";
 import { create } from "zustand";
@@ -72,19 +73,23 @@ export interface OpenOptions {
   editTitle?: boolean;
 }
 
-/** The notes area: the layout that isn't a workspace's. */
+/** The notes dock's key in `docks`. */
 export const NOTES = "notes";
 
+/** Notes alone, notes beside terminals, or terminals alone. */
+export type View = "note" | "split" | "terminal";
+
 interface WorkspaceState {
-  /** The dock on screen. */
-  dock: DockviewApi | null;
-  /** Every mounted area's dock, by area. */
+  /** The notes dock and each workspace's, by workspace id. */
   docks: Record<string, DockviewApi>;
-  /** `NOTES`, or the id of the workspace on screen. */
-  area: string;
+  view: View;
+  /** The workspace whose terminals show in the split and terminal views. */
+  workspace: string | null;
+  /** Which side the last click or keypress went to, for ⌘W. */
+  focused: "notes" | "terminals";
   /** Bumped when any dock's tabs change, for views that list them. */
   tabsVersion: number;
-  activePanelId: string | null;
+  /** The file in the notes dock's active tab. */
   activePath: string | null;
 
   /**
@@ -92,8 +97,13 @@ interface WorkspaceState {
    * Returns the cleanup to run when it unmounts.
    */
   attach(dock: DockviewApi, area: string, layout?: unknown): () => void;
-  /** Puts an area on screen. */
-  setArea(area: string): void;
+  setView(view: View): void;
+  /**
+   * Makes a workspace the current one. Its terminals come on screen (beside
+   * the notes, if only notes were showing) unless `view` says otherwise.
+   */
+  showWorkspace(id: string | null, view?: View): void;
+  setFocused(side: "notes" | "terminals"): void;
   open(path: string, opts?: OpenOptions): void;
   openLink(
     source: string,
@@ -107,18 +117,18 @@ interface WorkspaceState {
   closeActive(): void;
   newNote(folder?: string, opts?: OpenOptions): Promise<void>;
   /**
-   * A shell in `cwd` in a new tab of the area on screen. By default it starts
-   * in the workspace's folder, or the vault root in the notes area. `run` is
-   * typed into it.
+   * A shell in `cwd` in a new tab of the current workspace (made if there's
+   * none), which comes on screen. By default it starts in the workspace's
+   * folder. `run` is typed into it.
    */
   openTerminal(cwd?: string, opts?: TerminalOptions): Promise<void>;
-  /** Shows a running terminal in a new tab of the area on screen. */
-  addTerminal(info: TerminalInfo, opts?: TerminalOptions): void;
-  /** The tab showing `path` in an area, if one does. */
-  fileTab(area: string, path: string): IDockviewPanel | undefined;
+  /** Shows a running terminal in a new tab of the current workspace. */
+  addTerminal(info: TerminalInfo, opts?: TerminalOptions): Promise<void>;
+  /** The notes dock's tab showing `path`, if one does. */
+  fileTab(path: string): IDockviewPanel | undefined;
   /** Shows a running terminal (by session id) in a tab, if one has it. */
   showTerminal(id: string): boolean;
-  /** Every terminal in a tab, with the area it's in. */
+  /** Every terminal in a tab, with the workspace it's in. */
   terminalTabs(): { area: string; panel: IDockviewPanel; terminal: string }[];
 }
 
@@ -138,24 +148,48 @@ function layoutKey(): string | null {
   return vault ? `groundwork.layout:${vault.path}` : null;
 }
 
-function areaKey(): string | null {
+function storageKey(name: "workspace" | "view"): string | null {
   const vault = useVault.getState().vault;
-  return vault ? `groundwork.area:${vault.path}` : null;
+  return vault ? `groundwork.${name}:${vault.path}` : null;
 }
 
-/** The area last on screen in this vault. */
-export function savedArea(): string {
+function remember(name: "workspace" | "view", value: string | null) {
   try {
-    return localStorage.getItem(areaKey() ?? "") ?? NOTES;
+    const k = storageKey(name);
+    if (!k) return;
+    if (value === null) localStorage.removeItem(k);
+    else localStorage.setItem(k, value);
   } catch {
-    return NOTES;
+    // Not remembered; the defaults show next time.
   }
 }
 
-/** Where terminals in an area start by default. */
-let areaFolders: (area: string) => string | undefined = () => undefined;
-export function setAreaFolders(fn: (area: string) => string | undefined) {
-  areaFolders = fn;
+function recall(name: "workspace" | "view"): string | null {
+  try {
+    return localStorage.getItem(storageKey(name) ?? "");
+  } catch {
+    return null;
+  }
+}
+
+/** The workspace and view last on screen in this vault. */
+export function savedView(): { workspace: string | null; view: View } {
+  const view = recall("view");
+  return {
+    workspace: recall("workspace"),
+    view: view === "split" || view === "terminal" ? view : "note",
+  };
+}
+
+/** How workspaces start terminals, and make one when there's none (`workspaces.ts`). */
+interface WorkspaceHooks {
+  folder(id: string): string | undefined;
+  /** A new workspace for terminals in `cwd`, mounted and ready. */
+  make(cwd?: string): Promise<string | null>;
+}
+let hooks: WorkspaceHooks = { folder: () => undefined, make: async () => null };
+export function setWorkspaceHooks(h: WorkspaceHooks) {
+  hooks = h;
 }
 
 function update(panel: IDockviewPanel, params: PanelParams) {
@@ -171,18 +205,23 @@ export function paramsOf(panel: IDockviewPanel): PanelParams {
   return panel.params as unknown as PanelParams;
 }
 
-/** The active tab if it shows a file (not a terminal). */
-function activeFile(dock: DockviewApi | null | undefined): IDockviewPanel | undefined {
-  const panel = dock?.activePanel;
-  return panel && !isTerminal(panel) ? panel : undefined;
+/** The current workspace, or a new one for terminals in `cwd` if there's none. */
+async function terminalWorkspace(cwd?: string): Promise<string | null> {
+  const { workspace, docks } = useWorkspace.getState();
+  return workspace && docks[workspace] ? workspace : hooks.make(cwd);
+}
+
+/** The notes dock's active tab. */
+function activeFile(): IDockviewPanel | undefined {
+  return useWorkspace.getState().docks[NOTES]?.activePanel;
 }
 
 export const useWorkspace = create<WorkspaceState>((set, get) => ({
-  dock: null,
   docks: {},
-  area: NOTES,
+  view: "note",
+  workspace: null,
+  focused: "notes",
   tabsVersion: 0,
-  activePanelId: null,
   activePath: null,
 
   attach(dock, area, layout) {
@@ -201,21 +240,27 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       } catch {
         dock.clear();
       }
+      // Notes hold files and workspaces terminals; older layouts mixed them.
+      // (Before the listeners below, so a terminal moved out keeps running.)
+      for (const panel of [...dock.panels]) {
+        if ((area === NOTES) === isTerminal(panel)) dock.removePanel(panel);
+      }
     }
     for (const panel of dock.panels) {
       const n = Number(panel.id.replace(/^tab-/, ""));
       if (n > panelCounter) panelCounter = n;
     }
     set((s) => ({ docks: { ...s.docks, [area]: dock } }));
-    const sync = () => {
-      if (get().area !== area) return;
-      const panel = dock.activePanel;
-      const path = panel && !isTerminal(panel) ? paramsOf(panel).path : null;
-      set({ dock, activePanelId: panel?.id ?? null, activePath: path });
-      if (path) useVault.getState().revealInTree(path);
-    };
-    sync();
-    listeners.push(dock.onDidActivePanelChange(sync));
+    if (area === NOTES) {
+      const sync = () => {
+        const panel = dock.activePanel;
+        const path = panel ? paramsOf(panel).path : null;
+        set({ activePath: path });
+        if (path) useVault.getState().revealInTree(path);
+      };
+      sync();
+      listeners.push(dock.onDidActivePanelChange(sync));
+    }
     const touch = () => !disposed && set((s) => ({ tabsVersion: s.tabsVersion + 1 }));
     listeners.push(
       dock.onDidAddPanel((panel) => {
@@ -240,11 +285,16 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         // Storage can be unavailable; layout just won't persist.
       }
     };
+    // Tabs opening or closing save at once (a workspace's layout goes to the
+    // backend, which a quit could cut off); drags and resizes settle first.
+    let saved = dock.panels.length;
     listeners.push(
       dock.onDidLayoutChange(() => {
         touch();
         if (saveTimer) clearTimeout(saveTimer);
-        saveTimer = setTimeout(save, 300);
+        const now = dock.panels.length !== saved;
+        saved = dock.panels.length;
+        saveTimer = setTimeout(save, now ? 0 : 300);
       }),
     );
     // Don't lose a change made just before quitting or reloading.
@@ -271,35 +321,38 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       set((s) => {
         const docks = { ...s.docks };
         if (docks[area] === dock) delete docks[area];
-        return { docks, dock: s.dock === dock ? null : s.dock };
+        return { docks };
       });
     };
   },
 
-  setArea(area) {
-    const dock = get().docks[area] ?? null;
-    const panel = dock?.activePanel;
-    const path = panel && !isTerminal(panel) ? paramsOf(panel).path : null;
-    set({ area, dock, activePanelId: panel?.id ?? null, activePath: path });
-    if (path) useVault.getState().revealInTree(path);
-    try {
-      const k = areaKey();
-      if (k) localStorage.setItem(k, area);
-    } catch {
-      // Not remembered; the notes area shows next time.
-    }
+  setView(view) {
+    set({ view, focused: view === "terminal" ? "terminals" : "notes" });
+    remember("view", view);
+  },
+
+  showWorkspace(id, view) {
+    set({ workspace: id });
+    remember("workspace", id);
+    if (view) get().setView(view);
+    else if (id && get().view === "note") get().setView("split");
+  },
+
+  setFocused(side) {
+    if (get().focused !== side) set({ focused: side });
   },
 
   open(path, opts = {}) {
-    const dock = get().dock;
+    const dock = get().docks[NOTES];
     if (!dock) return;
+    // Notes need to be on screen.
+    if (get().view === "terminal") get().setView("split");
     const focus =
       opts.subpath !== undefined || opts.line !== undefined || opts.offset !== undefined
         ? { subpath: opts.subpath, line: opts.line, offset: opts.offset, nonce: ++focusNonce }
         : undefined;
-    // A file opened from a terminal tab goes in a new tab beside it.
     const active = dock.activePanel;
-    const file = activeFile(dock);
+    const file = active;
 
     if (file && !opts.newTab && !opts.split) {
       const current = paramsOf(file);
@@ -362,13 +415,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   },
 
   setMode(panelId, mode) {
-    const panel = get().dock?.getPanel(panelId);
-    if (panel && !isTerminal(panel))
-      update(panel, { ...paramsOf(panel), mode, focus: undefined, editTitle: false });
+    const panel = get().docks[NOTES]?.getPanel(panelId);
+    if (panel) update(panel, { ...paramsOf(panel), mode, focus: undefined, editTitle: false });
   },
 
   toggleReading() {
-    const panel = activeFile(get().dock);
+    const panel = activeFile();
     if (!panel) return;
     const params = paramsOf(panel);
     // Pages have two modes: the page itself (any mode but source) and source.
@@ -380,9 +432,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   },
 
   back(panelId) {
-    const dock = get().dock;
-    const panel = panelId ? dock?.getPanel(panelId) : activeFile(dock);
-    if (!panel || isTerminal(panel)) return;
+    const panel = panelId ? get().docks[NOTES]?.getPanel(panelId) : activeFile();
+    if (!panel) return;
     const p = paramsOf(panel);
     const prev = p.back[p.back.length - 1];
     if (!prev) return;
@@ -397,9 +448,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   },
 
   forward(panelId) {
-    const dock = get().dock;
-    const panel = panelId ? dock?.getPanel(panelId) : activeFile(dock);
-    if (!panel || isTerminal(panel)) return;
+    const panel = panelId ? get().docks[NOTES]?.getPanel(panelId) : activeFile();
+    if (!panel) return;
     const p = paramsOf(panel);
     const next = p.forward[0];
     if (!next) return;
@@ -414,19 +464,19 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   },
 
   closeActive() {
-    get().dock?.activePanel?.api.close();
+    const { view, focused, workspace, docks } = get();
+    const terminals = view === "terminal" || (view === "split" && focused === "terminals");
+    const dock = terminals ? (workspace ? docks[workspace] : undefined) : docks[NOTES];
+    dock?.activePanel?.api.close();
   },
 
   async openTerminal(cwd, opts = {}) {
-    const area = get().area;
     try {
+      const id = await terminalWorkspace(cwd);
+      if (!id) return;
       // The view resizes it to fit once it's on screen.
-      const info = await api.createTerminal(
-        { cols: 100, rows: 30 },
-        cwd ?? areaFolders(area),
-        area === NOTES ? undefined : area,
-      );
-      get().addTerminal(info, opts);
+      const info = await api.createTerminal({ cols: 100, rows: 30 }, cwd ?? hooks.folder(id), id);
+      await get().addTerminal(info, opts);
       // The shell reads it once it starts.
       if (opts.run) await api.terminalInput(info.id, `${opts.run}\r`);
     } catch (err) {
@@ -434,9 +484,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     }
   },
 
-  addTerminal(info, opts = {}) {
-    const dock = get().dock;
-    if (!dock) return;
+  async addTerminal(info, opts = {}) {
+    const id = await terminalWorkspace(info.cwd);
+    const dock = id ? get().docks[id] : undefined;
+    if (!id || !dock) return;
+    get().showWorkspace(id);
+    get().setFocused("terminals");
     const params: TerminalParams = { terminal: info.id, cwd: info.cwd };
     const active = dock.activePanel;
     dock.addPanel({
@@ -448,8 +501,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     });
   },
 
-  fileTab(area, path) {
-    return get().docks[area]?.panels.find((p) => !isTerminal(p) && paramsOf(p).path === path);
+  fileTab(path) {
+    return get().docks[NOTES]?.panels.find((p) => paramsOf(p).path === path);
   },
 
   showTerminal(id) {
@@ -457,7 +510,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       .terminalTabs()
       .find((t) => t.terminal === id);
     if (!tab) return false;
-    get().setArea(tab.area);
+    get().showWorkspace(tab.area);
     tab.panel.api.setActive();
     return true;
   },
@@ -486,7 +539,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
 /** Keeps open tabs pointing at files that moved, and closes tabs of deleted files. */
 function followChanges(changes: FileChange[]) {
-  for (const dock of Object.values(useWorkspace.getState().docks)) followChangesIn(dock, changes);
+  const notes = useWorkspace.getState().docks[NOTES];
+  if (notes) followChangesIn(notes, changes);
 }
 
 function followChangesIn(dock: DockviewApi, changes: FileChange[]) {
@@ -498,7 +552,7 @@ function followChangesIn(dock: DockviewApi, changes: FileChange[]) {
   }
   if (!moves.size && !removed.size) return;
   const remap = (p: string) => moves.get(p) ?? p;
-  for (const panel of dock.panels.filter((p) => !isTerminal(p))) {
+  for (const panel of dock.panels) {
     const p = paramsOf(panel);
     if (removed.has(p.path) && !moves.has(p.path)) {
       panel.api.close();

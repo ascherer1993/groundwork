@@ -66,13 +66,17 @@ export function TerminalPanel({ api: panel, params }: IDockviewPanelProps<Termin
 
   // Whether it's on screen, for its badge: seen output isn't news.
   useEffect(() => {
+    const onScreen = (s: { workspace: string | null; view: string }) =>
+      s.workspace === area && s.view !== "note";
     const report = () =>
       useTerminals
         .getState()
-        .setVisible(session.current, panel.isVisible && useWorkspace.getState().area === area);
+        .setVisible(session.current, panel.isVisible && onScreen(useWorkspace.getState()));
     report();
     const visibility = panel.onDidVisibilityChange(report);
-    const unsubscribe = useWorkspace.subscribe((s, before) => s.area !== before.area && report());
+    const unsubscribe = useWorkspace.subscribe(
+      (s, before) => onScreen(s) !== onScreen(before) && report(),
+    );
     return () => {
       visibility.dispose();
       unsubscribe();

@@ -17,7 +17,7 @@ import type { Ticket } from "../api/generated/Ticket";
 import { openExternalUrl } from "../lib/fileUrl";
 import { confirmDialog, formDialog, useUi } from "./ui";
 import { message, onVaultChange, useVault } from "./vault";
-import { isTerminal, NOTES, type TerminalParams, useWorkspace } from "./workspace";
+import { isTerminal, type TerminalParams, useWorkspace, type View } from "./workspace";
 import { useWorkspaces } from "./workspaces";
 
 interface TicketsState {
@@ -166,42 +166,37 @@ async function openCreated(created: CreatedTicket) {
   await showSplit(created.ticket.path, workspace.id, setupLine(created.setup));
 }
 
-/** Note · Split · Workspace: which one is on screen for a note with a workspace. */
-export type NoteMode = "note" | "split" | "workspace";
-
-export function noteMode(path: string, workspace: string): NoteMode {
+/**
+ * Note · Split · Terminal for a note with a workspace: the view on screen,
+ * counting split and terminal only while its workspace is the current one.
+ */
+export function noteMode(workspace: string): View {
   const ws = useWorkspace.getState();
-  if (ws.area !== workspace) return "note";
-  return ws.fileTab(workspace, path) ? "split" : "workspace";
+  return ws.workspace === workspace ? ws.view : "note";
 }
 
-/** The note in the notes area. */
+/** The note alone. */
 export function showNote(path: string) {
-  useWorkspace.getState().setArea(NOTES);
+  useWorkspace.getState().setView("note");
   useWorkspace.getState().open(path);
 }
 
-/** The note's workspace, with a terminal if it has none. */
+/** The note's workspace's terminals alone, with a terminal if it has none. */
 export async function showWorkspace(workspace: string) {
   const ws = useWorkspace.getState();
-  ws.setArea(workspace);
-  const dock = ws.docks[workspace];
-  if (dock && !dock.panels.some(isTerminal)) await ws.openTerminal();
+  ws.showWorkspace(workspace, "terminal");
+  if (!ws.docks[workspace]?.panels.length) await ws.openTerminal();
 }
 
-/** The note beside the workspace's terminals. `run` goes to a new terminal. */
+/** The note beside its workspace's terminals. `run` goes to a new terminal. */
 export async function showSplit(path: string, workspace: string, run?: string) {
   const ws = useWorkspace.getState();
-  ws.setArea(workspace);
-  const dock = ws.docks[workspace];
-  if (!dock) return;
-  const tab = ws.fileTab(workspace, path);
+  if (!ws.docks[workspace]) return;
+  ws.showWorkspace(workspace, "split");
+  const tab = ws.fileTab(path);
   if (tab) tab.api.setActive();
-  else if (dock.panels.length === 0) ws.open(path);
-  else ws.open(path, { split: "left" });
-  if (run || !dock.panels.some(isTerminal)) {
-    await ws.openTerminal(undefined, { split: "right", run });
-  }
+  else ws.open(path);
+  if (run || !ws.docks[workspace]!.panels.length) await ws.openTerminal(undefined, { run });
 }
 
 /** Closes a ticket after confirming, saying what would be lost. */
@@ -235,12 +230,8 @@ export async function closeTicket(path: string): Promise<void> {
     danger: warnings.length > 0,
   });
   if (!ok) return;
-  // Its tabs close as their terminals end; take them off screen first.
+  // Its tabs close as their terminals end, and another workspace takes its place.
   const workspace = ticket?.workspace;
-  if (workspace && useWorkspace.getState().area === workspace) {
-    useWorkspace.getState().setArea(NOTES);
-    useWorkspace.getState().open(path);
-  }
   const terminals = workspace
     ? (useWorkspace.getState().docks[workspace]?.panels ?? [])
         .filter(isTerminal)
@@ -297,7 +288,7 @@ export async function runAction(action: Action, note?: string): Promise<void> {
       case "terminal": {
         const workspace = note ? ticketAt(note)?.workspace : undefined;
         const ws = useWorkspace.getState();
-        if (workspace && ws.docks[workspace]) ws.setArea(workspace);
+        if (workspace && ws.docks[workspace]) ws.showWorkspace(workspace);
         await ws.openTerminal(action.cwd, { run: action.run });
         return;
       }

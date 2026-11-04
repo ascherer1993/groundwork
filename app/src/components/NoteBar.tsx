@@ -5,7 +5,6 @@ import type { Action } from "../api/generated/Action";
 import type { GitState } from "../api/generated/GitState";
 import {
   closeTicket,
-  type NoteMode,
   noteMode,
   restoreTicket,
   runAction,
@@ -63,8 +62,8 @@ export function NoteBar({ path }: { path: string }) {
   const linked = useLinkedWorkspace(path);
   const workspaceId = ticket?.workspace ?? linked;
   const workspace = useWorkspaces((s) => s.list.find((w) => w.id === workspaceId));
-  useWorkspace((s) => s.area);
-  useWorkspace((s) => s.tabsVersion);
+  useWorkspace((s) => s.view);
+  useWorkspace((s) => s.workspace);
   const [git, setGit] = useState<GitState | null>(null);
   const [actions, setActions] = useState<Action[]>([]);
   const active = !!ticket && ticket.status !== "closed";
@@ -98,7 +97,7 @@ export function NoteBar({ path }: { path: string }) {
   }, [path, isTicket, worktreePath, active]);
 
   if (!ticket && !workspace) return null;
-  const mode: NoteMode | null = workspace ? noteMode(path, workspace.id) : null;
+  const mode = workspace ? noteMode(workspace.id) : null;
   const quick = actions.filter((a) => a.id === "open-ticket" || a.id === "open-vscode");
   const summary = git?.exists ? gitSummary(git) : null;
 
@@ -137,7 +136,7 @@ export function NoteBar({ path }: { path: string }) {
       <span className="note-bar-spacer" />
       {workspace && mode && (
         <div className="segmented" role="group" aria-label="View">
-          {(["note", "split", "workspace"] as const).map((m) => (
+          {(["note", "split", "terminal"] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -150,7 +149,7 @@ export function NoteBar({ path }: { path: string }) {
                     : showWorkspace(workspace.id))
               }
             >
-              {m === "note" ? "Note" : m === "split" ? "Split" : "Workspace"}
+              {m === "note" ? "Note" : m === "split" ? "Split" : "Terminal"}
             </button>
           ))}
         </div>

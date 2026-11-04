@@ -7,7 +7,7 @@
 import { api, transport } from "../api/client";
 import { CONTENT_RESIZED } from "../markdown/todos";
 import { message, onVaultChange } from "../state/vault";
-import { useWorkspace } from "../state/workspace";
+import { NOTES, useWorkspace } from "../state/workspace";
 import { openExternalUrl, pageFileUrl } from "./fileUrl";
 
 /** No `allow-same-origin`: that would give pages the app's API. */
@@ -70,7 +70,7 @@ export function createPageFrame(
 /** Makes the tab holding `frame` the active one, so links and shortcuts act on it. */
 function activatePanelOf(frame: HTMLIFrameElement) {
   const id = frame.closest<HTMLElement>("[data-panel-id]")?.dataset.panelId;
-  const panel = id ? useWorkspace.getState().dock?.getPanel(id) : undefined;
+  const panel = id ? useWorkspace.getState().docks[NOTES]?.getPanel(id) : undefined;
   if (panel && !panel.api.isActive) panel.api.setActive();
 }
 

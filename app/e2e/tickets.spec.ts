@@ -34,10 +34,14 @@ test.beforeEach(async ({ page }) => {
   await openVault(page, VAULT);
 });
 
+/** The current workspace's terminals, when they're on screen. */
+const TERMINALS = ".terminals-side:not([hidden]) .area:not([hidden]) .terminal-view";
+const NOTES = ".notes-side:not([hidden])";
+
 /** What the active terminal shows. */
 function screen(page: Page): Promise<string> {
   return page
-    .locator(".area:not([hidden]) .terminal-view")
+    .locator(TERMINALS)
     .first()
     .evaluate((el) => {
       type Buffer = {
@@ -61,8 +65,9 @@ async function command(page: Page, name: string) {
 }
 
 const tab = (page: Page, name: string | RegExp) =>
-  page.locator(".area:not([hidden]) .dv-tab").filter({ hasText: name });
-const bar = (page: Page) => page.locator(".area:not([hidden]) .note-bar").first();
+  page.locator(`${NOTES} .dv-tab`).filter({ hasText: name });
+const bar = (page: Page) => page.locator(`${NOTES} .note-bar`).first();
+const terminals = (page: Page) => page.locator(TERMINALS);
 
 test("a ticket gets a worktree, a note and a workspace, and closes and restores", async ({
   page,
@@ -86,7 +91,7 @@ test("a ticket gets a worktree, a note and a workspace, and closes and restores"
 
   // The workspace: the note beside a terminal running the setup.
   await expect(tab(page, "TEAM-200 Fix signup")).toBeVisible();
-  await expect(page.locator(".area:not([hidden]) .terminal-view")).toHaveCount(1);
+  await expect(terminals(page)).toHaveCount(1);
   // The echoed command can be garbled by the terminal resizing, so npm's own output counts too.
   await expect.poll(() => screen(page)).toMatch(/npm install|^npm /m);
   expect(existsSync(join(WORKTREE, "apps/web/index.js"))).toBe(true);
@@ -107,16 +112,20 @@ test("a ticket gets a worktree, a note and a workspace, and closes and restores"
     "true",
   );
 
-  // Note · Split · Workspace.
+  // Note · Split · Terminal.
   await bar(page).getByRole("button", { name: "Note" }).click();
-  await expect(page.locator(".area:not([hidden]) .terminal-view")).toHaveCount(0);
+  await expect(terminals(page)).toHaveCount(0);
   await expect(tab(page, "TEAM-200 Fix signup")).toBeVisible();
   await expect(bar(page).getByRole("button", { name: "Note" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
   await bar(page).getByRole("button", { name: "Split" }).click();
-  await expect(page.locator(".area:not([hidden]) .terminal-view")).toHaveCount(1);
+  await expect(terminals(page)).toHaveCount(1);
+  await bar(page).getByRole("button", { name: "Terminal" }).click();
+  await expect(page.getByRole("region", { name: "Notes" })).toBeHidden();
+  await expect(terminals(page)).toHaveCount(1);
+  await page.keyboard.press("Control+Meta+2");
 
   // Actions for its code.
   await bar(page).getByRole("button", { name: "Actions" }).click();
@@ -154,7 +163,7 @@ test("a ticket gets a worktree, a note and a workspace, and closes and restores"
   await bar(page).getByRole("button", { name: "Restore" }).click();
   await expect.poll(() => existsSync(join(WORKTREE, "apps/web/index.js"))).toBe(true);
   await expect(bar(page)).toContainText("Active");
-  await expect(page.locator(".area:not([hidden]) .terminal-view")).toHaveCount(1);
+  await expect(terminals(page)).toHaveCount(1);
 });
 
 test("tickets blocks, adding a worktree to a note, and workspaces for any note", async ({
@@ -165,7 +174,7 @@ test("tickets blocks, adding a worktree to a note, and workspaces for any note",
     "# Board\n\n```tickets\nproject: this\n```\n",
   );
   await quickOpen(page, "Board");
-  const block = page.locator(".area:not([hidden]) .tickets-view");
+  const block = page.locator(`${NOTES} .tickets-view`);
   await expect(block).toContainText("TEAM-123 Fix login");
   await expect(block).toContainText("TEAM-200 Fix signup");
   await block.getByText("TEAM-123 Fix login").click();
@@ -188,7 +197,7 @@ test("tickets blocks, adding a worktree to a note, and workspaces for any note",
   await bar(page).getByRole("button", { name: "Note" }).click();
   await quickOpen(page, "Jane Doe");
   await command(page, "Open this note’s workspace");
-  await expect(page.locator(".area:not([hidden]) .terminal-view")).toHaveCount(1);
+  await expect(terminals(page)).toHaveCount(1);
   await expect(bar(page).getByRole("button", { name: "Split" })).toHaveAttribute(
     "aria-pressed",
     "true",

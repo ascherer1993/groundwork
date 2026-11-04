@@ -13,7 +13,7 @@ import {
 } from "../state/terminals";
 import { confirmDialog, useUi } from "../state/ui";
 import { message, useVault } from "../state/vault";
-import { NOTES, useWorkspace } from "../state/workspace";
+import { useWorkspace } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
 
 const LABELS: Record<TerminalState, string> = {
@@ -68,7 +68,7 @@ function isClaude(process: string | null | undefined, title?: string): boolean {
 /** One workspace (or the notes area): its terminal tabs and their states. */
 function AreaRow({ area, name, folder }: { area: string; name: string; folder?: string }) {
   useWorkspace((s) => s.tabsVersion);
-  const current = useWorkspace((s) => s.area === area);
+  const current = useWorkspace((s) => s.workspace === area && s.view !== "note");
   const byId = useTerminals((s) => s.byId);
   const root = useVault((s) => s.vault?.path);
   const tabs = useWorkspace
@@ -76,10 +76,8 @@ function AreaRow({ area, name, folder }: { area: string; name: string; folder?: 
     .terminalTabs()
     .filter((t) => t.area === area);
   const states = tabs.map((t) => stateOf(byId[t.terminal]));
-  const workspace = area !== NOTES;
 
   const menu = async (e: React.MouseEvent) => {
-    if (!workspace) return;
     e.preventDefault();
     const { clientX: x, clientY: y } = e;
     // A ticket's workspace offers a terminal in each component it touches.
@@ -116,7 +114,7 @@ function AreaRow({ area, name, folder }: { area: string; name: string; folder?: 
         className={`area-row${current ? " current" : ""}`}
         aria-current={current || undefined}
         title={folder}
-        onClick={() => useWorkspace.getState().setArea(area)}
+        onClick={() => useWorkspace.getState().showWorkspace(area)}
         onContextMenu={(e) => void menu(e)}
       >
         <span className="area-name">{name}</span>
@@ -144,7 +142,7 @@ function AreaRow({ area, name, folder }: { area: string; name: string; folder?: 
 }
 
 function switchAnd(area: string, then: () => unknown) {
-  useWorkspace.getState().setArea(area);
+  useWorkspace.getState().showWorkspace(area);
   void then();
 }
 
@@ -212,11 +210,7 @@ function Sessions() {
           const process = live?.process ?? t.process ?? t.program;
           const cwd = live?.cwd ?? t.cwd;
           const tab = tabs.find((x) => x.terminal === t.id);
-          const where = tab
-            ? tab.area === NOTES
-              ? "in Notes"
-              : `in ${names[tab.area] ?? "a workspace"}`
-            : "not in a tab";
+          const where = tab ? `in ${names[tab.area] ?? "a workspace"}` : "not in a tab";
           return (
             <li key={t.id} className="session">
               <input
@@ -362,7 +356,6 @@ export function WorkspacesPanel() {
         </div>
       )}
       <ul className="area-list" aria-label="Workspaces">
-        <AreaRow area={NOTES} name="Notes" />
         {names.map((name) => (
           <li key={name || "all"} className="area-group">
             {grouped && name && <div className="area-group-name">{name}</div>}

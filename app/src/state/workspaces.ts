@@ -1,7 +1,8 @@
 /**
  * Workspaces: named sets of terminal tabs and splits with a folder, each
- * with its own layout that the main area switches to (`workspace.ts` holds
- * the docks). Kept per vault in the data folder, since they're machine-local.
+ * with its own layout (`workspace.ts` holds the docks). One is current: its
+ * terminals are the ones on screen beside or instead of the notes. Kept per
+ * vault in the data folder, since they're machine-local.
  */
 import { create } from "zustand";
 import { api } from "../api/client";
@@ -10,9 +11,8 @@ import { confirmDialog, formDialog, promptDialog, useUi } from "./ui";
 import { message, useVault } from "./vault";
 import {
   isTerminal,
-  NOTES,
-  savedArea,
-  setAreaFolders,
+  savedView,
+  setWorkspaceHooks,
   type TerminalParams,
   useWorkspace,
 } from "./workspace";
@@ -21,7 +21,7 @@ interface WorkspacesState {
   list: Workspace[];
   loaded: boolean;
   load(): Promise<void>;
-  /** Reloads the list (after the backend made or removed one), keeping the area. */
+  /** Reloads the list (after the backend made or removed one), keeping the current one. */
   refresh(): Promise<void>;
   /** Resolves once a workspace's dock is mounted, so it can take tabs. */
   ready(id: string): Promise<boolean>;
@@ -40,12 +40,13 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
 
   async load() {
     set({ list: [], loaded: false });
-    useWorkspace.setState({ area: NOTES });
+    useWorkspace.setState({ workspace: null, view: "note" });
     try {
       const list = await api.workspaces();
       set({ list, loaded: true });
-      const area = savedArea();
-      useWorkspace.getState().setArea(list.some((w) => w.id === area) ? area : NOTES);
+      const saved = savedView();
+      const current = list.find((w) => w.id === saved.workspace) ?? list[0];
+      useWorkspace.getState().showWorkspace(current?.id ?? null, current ? saved.view : "note");
     } catch (err) {
       set({ loaded: true });
       useUi.getState().notify(message(err));
@@ -56,10 +57,7 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
     try {
       const list = await api.workspaces();
       set({ list });
-      const area = useWorkspace.getState().area;
-      if (area !== NOTES && !list.some((w) => w.id === area)) {
-        useWorkspace.getState().setArea(NOTES);
-      }
+      leaveIfGone(list);
     } catch (err) {
       useUi.getState().notify(message(err));
     }
@@ -89,8 +87,8 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
       const workspace = await api.createWorkspace(name.trim(), cwd?.trim() || undefined);
       set((s) => ({ list: [...s.list, workspace] }));
       // Its dock mounts on the next render; then it can take a terminal.
-      await new Promise((resolve) => setTimeout(resolve));
-      useWorkspace.getState().setArea(workspace.id);
+      await get().ready(workspace.id);
+      useWorkspace.getState().showWorkspace(workspace.id);
       await useWorkspace.getState().openTerminal();
     } catch (err) {
       useUi.getState().notify(message(err));
@@ -147,8 +145,8 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
     if (!ok) return;
     try {
       await api.deleteWorkspace(id);
-      if (useWorkspace.getState().area === id) useWorkspace.getState().setArea(NOTES);
       set((s) => ({ list: s.list.filter((w) => w.id !== id) }));
+      leaveIfGone(get().list);
       await Promise.all(terminals.map((t) => api.killTerminal(t).catch(() => {})));
     } catch (err) {
       useUi.getState().notify(message(err));
@@ -156,4 +154,30 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
   },
 }));
 
-setAreaFolders((area) => useWorkspaces.getState().list.find((w) => w.id === area)?.cwd);
+/** If the current workspace is gone, another takes its place (or only notes show). */
+function leaveIfGone(list: Workspace[]) {
+  const ws = useWorkspace.getState();
+  if (!ws.workspace || list.some((w) => w.id === ws.workspace)) return;
+  const next = list[0]?.id ?? null;
+  ws.showWorkspace(next, next ? undefined : "note");
+}
+
+const baseName = (path: string) => path.replace(/\/+$/, "").split("/").pop() || path;
+
+setWorkspaceHooks({
+  folder: (id) => useWorkspaces.getState().list.find((w) => w.id === id)?.cwd,
+  // A terminal with no workspace to go in gets one named after its folder.
+  async make(cwd) {
+    const folder = cwd ?? useVault.getState().vault?.path;
+    try {
+      const workspace = await api.createWorkspace(folder ? baseName(folder) : "Terminals", folder);
+      useWorkspaces.setState((s) => ({ list: [...s.list, workspace] }));
+      if (!(await useWorkspaces.getState().ready(workspace.id))) return null;
+      useWorkspace.getState().showWorkspace(workspace.id);
+      return workspace.id;
+    } catch (err) {
+      useUi.getState().notify(message(err));
+      return null;
+    }
+  },
+});

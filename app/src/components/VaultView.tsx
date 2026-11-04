@@ -1,8 +1,10 @@
 import {
   ArrowLeftRight,
   CalendarDays,
+  Columns2,
   FilePlus,
   Files,
+  FileText,
   FolderPlus,
   Hash,
   ListTodo,
@@ -19,7 +21,7 @@ import { promptDialog, type SidebarView, useUi } from "../state/ui";
 import { message, useVault } from "../state/vault";
 import { watchTerminals } from "../state/terminals";
 import { watchTickets } from "../state/tickets";
-import { useWorkspace } from "../state/workspace";
+import { useWorkspace, type View } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
 import { FileTree } from "./FileTree";
 import { LinksPanel } from "./LinksPanel";
@@ -43,6 +45,32 @@ async function newFolder() {
   } catch (err) {
     useUi.getState().notify(message(err));
   }
+}
+
+const MAIN_VIEWS: { id: View; label: string; title: string; icon: typeof Files }[] = [
+  { id: "note", label: "Notes", title: "Notes only (⌃⌘1)", icon: FileText },
+  { id: "split", label: "Split", title: "Notes and terminals (⌃⌘2)", icon: Columns2 },
+  { id: "terminal", label: "Terminals", title: "Terminals only (⌃⌘3)", icon: SquareTerminal },
+];
+
+/** Notes · Split · Terminals, for the whole window. */
+function ViewSwitch() {
+  const view = useWorkspace((s) => s.view);
+  return (
+    <div className="view-switch segmented" role="group" aria-label="Main view">
+      {MAIN_VIEWS.map(({ id, label, title, icon: Icon }) => (
+        <button
+          key={id}
+          type="button"
+          title={title}
+          aria-pressed={view === id}
+          onClick={() => useWorkspace.getState().setView(id)}
+        >
+          <Icon size={13} /> {label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 const VIEWS: { id: SidebarView; label: string; icon: typeof Files }[] = [
@@ -83,7 +111,9 @@ export function VaultView() {
   const tree = useVault((s) => s.tree);
   const closeVault = useVault((s) => s.closeVault);
   const newNote = useWorkspace((s) => s.newNote);
-  const rightOpen = useUi((s) => s.rightPanelOpen);
+  // The links panel is about notes, so it isn't shown beside terminals alone.
+  const notesShown = useWorkspace((s) => s.view !== "terminal");
+  const rightOpen = useUi((s) => s.rightPanelOpen) && notesShown;
   const toggleRight = useUi((s) => s.toggleRightPanel);
   const setSwitcher = useUi((s) => s.setSwitcher);
 
@@ -155,6 +185,7 @@ export function VaultView() {
           {sidebarView === "workspaces" && <WorkspacesPanel />}
           {sidebarView === "tickets" && <TicketsPanel />}
         </div>
+        <ViewSwitch />
       </aside>
       <main className="content">
         <Workspace key={vault?.path} />
@@ -164,15 +195,17 @@ export function VaultView() {
           <LinksPanel />
         </aside>
       )}
-      <button
-        className="icon right-toggle"
-        aria-label="Toggle links panel"
-        title="Toggle links panel (⌘⇧B)"
-        aria-pressed={rightOpen}
-        onClick={toggleRight}
-      >
-        <PanelRight size={14} />
-      </button>
+      {notesShown && (
+        <button
+          className="icon right-toggle"
+          aria-label="Toggle links panel"
+          title="Toggle links panel (⌘⇧B)"
+          aria-pressed={rightOpen}
+          onClick={toggleRight}
+        >
+          <PanelRight size={14} />
+        </button>
+      )}
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { editorFor } from "../editor/active";
 import { insertRendered } from "../editor/templates";
 import { formDialog, type PaletteItem, promptDialog, useUi } from "../state/ui";
 import { message, newNoteFolder, useVault } from "../state/vault";
-import { NOTES, useWorkspace } from "../state/workspace";
+import { useWorkspace } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
 import {
   closeTicket,
@@ -204,8 +204,20 @@ function commands(): Command[] {
       id: "close-tab",
       label: "Close tab",
       shortcut: "⌘W",
-      when: () => !!ws.dock?.activePanel,
       run: () => ws.closeActive(),
+    },
+    { id: "view-note", label: "Show notes only", shortcut: "⌃⌘1", run: () => ws.setView("note") },
+    {
+      id: "view-split",
+      label: "Show notes and terminals",
+      shortcut: "⌃⌘2",
+      run: () => ws.setView("split"),
+    },
+    {
+      id: "view-terminal",
+      label: "Show terminals only",
+      shortcut: "⌃⌘3",
+      run: () => ws.setView("terminal"),
     },
     {
       id: "toggle-right",
@@ -288,8 +300,8 @@ async function terminalInFolder() {
   const open = (cwd: string) => useWorkspace.getState().openTerminal(cwd);
   const items: PaletteItem[] = [];
   // In a ticket's workspace: the components it touches, in its worktree.
-  const area = useWorkspace.getState().area;
-  const note = useWorkspaces.getState().list.find((w) => w.id === area)?.note;
+  const current = useWorkspace.getState().workspace;
+  const note = useWorkspaces.getState().list.find((w) => w.id === current)?.note;
   if (note) {
     const context = await api.context({ note }).catch(() => null);
     for (const c of context?.components ?? []) {
@@ -325,20 +337,16 @@ async function terminalInFolder() {
   });
 }
 
-/** Lists the notes and the workspaces, with their ⌘ number. */
+/** Lists the workspaces, with their ⌘ number. */
 function switchWorkspace() {
-  const areas = [
-    { id: NOTES, name: "Notes", cwd: undefined as string | undefined },
-    ...useWorkspaces.getState().list,
-  ];
   useUi.getState().openPalette({
     placeholder: "Switch to…",
-    items: areas.map((a, i) => ({
-      id: a.id,
-      label: a.name,
-      detail: a.cwd,
+    items: useWorkspaces.getState().list.map((w, i) => ({
+      id: w.id,
+      label: w.name,
+      detail: w.cwd,
       hint: i < 9 ? `⌘${i + 1}` : undefined,
-      run: () => useWorkspace.getState().setArea(a.id),
+      run: () => useWorkspace.getState().showWorkspace(w.id),
     })),
   });
 }
