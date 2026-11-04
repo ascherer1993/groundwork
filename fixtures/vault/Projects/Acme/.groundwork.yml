@@ -1,0 +1,9 @@
+name: Acme
+overview: Acme.md
+work_folder: Work
+code:
+  - acme-platform:web
+  - acme-platform:auth-lambda
+tickets:
+  match:
+    jira_components: [Acme]

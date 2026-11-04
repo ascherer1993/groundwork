@@ -1,0 +1,32 @@
+# Build output (app/ and app/src-tauri/ have their own ignores too)
+/target
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Test output
+test-results/
+playwright-report/
+blob-report/
+coverage/
+
+# The fixture vault: activity logs that tests write, and Obsidian's per-user
+# state if you open it in Obsidian
+fixtures/vault/.groundwork/activity/
+fixtures/vault/.obsidian/workspace*.json
+fixtures/vault/.obsidian/cache
+fixtures/vault/.trash/
+
+# Local settings and secrets
+.env
+.env.*
+.claude/settings.local.json
+*.local
+
+# Editors and OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+*.log

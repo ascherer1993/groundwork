@@ -1,0 +1,5 @@
+{
+  "name": "groundwork",
+  "description": "Work in a Groundwork vault (Obsidian-compatible notes, daily notes, todos, templates) through the groundwork CLI.",
+  "version": "0.1.0"
+}

@@ -1,0 +1,10 @@
+# Vault-level Groundwork settings.
+pages:
+  allow_network: true
+
+trackers:
+  - id: jira-team
+    key_pattern: "TEAM-\\d+"
+    url: "https://example.atlassian.net/browse/{{key}}"
+    note_name: "{{key}} {{title}}"
+    template: Templates/Ticket.md

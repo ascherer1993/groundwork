@@ -1,0 +1,679 @@
+/* Rendered Markdown (reading view, widgets, embeds, hover previews) and the editor's live preview. */
+
+.reading-view {
+  overflow: auto;
+}
+
+.reading-view > .markdown-rendered {
+  max-width: var(--line-width);
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+.reading-view > .properties {
+  width: calc(min(100%, var(--line-width)) - 64px);
+  margin: 4px auto 18px;
+}
+
+.reading-view > .markdown-rendered {
+  padding-bottom: 40vh;
+}
+
+.markdown-rendered {
+  font-family: var(--font-text);
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-wrap: break-word;
+}
+
+.markdown-rendered :is(h1, h2, h3, h4, h5, h6) {
+  margin: 1.4em 0 0.4em;
+  line-height: 1.3;
+  font-weight: 650;
+  color: var(--text-heading);
+}
+
+.markdown-rendered h1 {
+  font-size: 1.75em;
+}
+.markdown-rendered h2 {
+  font-size: 1.45em;
+}
+.markdown-rendered h3 {
+  font-size: 1.2em;
+}
+.markdown-rendered h4 {
+  font-size: 1.05em;
+}
+.markdown-rendered :is(h5, h6) {
+  font-size: 1em;
+  color: var(--text-muted);
+}
+
+.markdown-rendered :is(p, ul, ol, blockquote, pre, table, .callout, .mermaid-block) {
+  margin: 0 0 0.85em;
+}
+
+.markdown-rendered :is(ul, ol) {
+  padding-left: 1.6em;
+}
+
+.markdown-rendered li > :is(ul, ol) {
+  margin-bottom: 0;
+}
+
+.markdown-rendered li:has(> .task-checkbox) {
+  list-style: none;
+  margin-left: -1.4em;
+}
+
+.task-checkbox {
+  width: 14px;
+  height: 14px;
+  margin: 0 0.45em 0 0;
+  vertical-align: -2px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.markdown-rendered li:has(> .task-checkbox:checked),
+.markdown-rendered li[data-task="-"] {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.markdown-rendered a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.markdown-rendered a:hover {
+  text-decoration: underline;
+}
+
+.markdown-rendered a.external-link::after {
+  content: "↗";
+  margin-left: 1px;
+  font-size: 0.8em;
+  color: var(--text-faint);
+}
+
+.internal-link.is-unresolved,
+.cm-wikilink.is-unresolved {
+  opacity: 0.6;
+  text-decoration: underline dotted;
+}
+
+.tag,
+.cm-tag {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.88em;
+}
+
+.markdown-rendered a.tag:hover {
+  text-decoration: none;
+}
+
+mark,
+.cm-highlight {
+  background: var(--highlight);
+  color: inherit;
+  border-radius: 2px;
+}
+
+.markdown-rendered code {
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+  background: var(--code-bg);
+  font: 0.88em var(--font-mono);
+}
+
+.markdown-rendered pre {
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--code-bg);
+  overflow: auto;
+}
+
+.markdown-rendered pre code {
+  padding: 0;
+  background: none;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.markdown-rendered blockquote {
+  padding: 0 0 0 14px;
+  border-left: 3px solid var(--border);
+  color: var(--text-muted);
+}
+
+.markdown-rendered hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.6em 0;
+}
+
+.markdown-rendered table {
+  border-collapse: collapse;
+  font-size: 0.94em;
+}
+
+.markdown-rendered :is(th, td) {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+}
+
+.markdown-rendered th {
+  background: var(--bg-sidebar);
+  font-weight: 600;
+}
+
+.markdown-rendered img {
+  max-width: 100%;
+}
+
+.markdown-rendered .footnotes {
+  font-size: 0.9em;
+  color: var(--text-muted);
+}
+
+.markdown-rendered .flash,
+.flash {
+  animation: flash 1.2s ease;
+}
+
+@keyframes flash {
+  0%,
+  40% {
+    background: var(--highlight);
+  }
+}
+
+/* Callouts */
+
+.callout {
+  --callout: 79, 107, 237;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border-left: 3px solid rgb(var(--callout));
+  background: rgba(var(--callout), 0.08);
+}
+
+.callout[data-callout-group="tip"] {
+  --callout: 0, 168, 168;
+}
+.callout[data-callout-group="success"] {
+  --callout: 46, 160, 67;
+}
+.callout[data-callout-group="question"] {
+  --callout: 224, 145, 30;
+}
+.callout[data-callout-group="warning"] {
+  --callout: 236, 117, 0;
+}
+.callout[data-callout-group="danger"] {
+  --callout: 220, 60, 60;
+}
+.callout[data-callout-group="example"] {
+  --callout: 140, 90, 220;
+}
+.callout[data-callout-group="quote"] {
+  --callout: 140, 140, 140;
+}
+
+.callout-title {
+  font-weight: 650;
+  color: rgb(var(--callout));
+}
+
+summary.callout-title {
+  cursor: pointer;
+}
+
+.markdown-rendered .callout-content > :last-child {
+  margin-bottom: 0;
+}
+
+.callout-content > :first-child {
+  margin-top: 0.3em;
+}
+
+/* Embeds */
+
+.embed-note {
+  display: block;
+  margin: 0 0 0.85em;
+  padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--accent);
+}
+
+.embed-header {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.embed-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-sidebar);
+}
+
+.embed-missing {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.mermaid-block {
+  display: flex;
+  justify-content: center;
+}
+
+.mermaid-block svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid-error {
+  color: var(--danger);
+  font: 12px var(--font-mono);
+  white-space: pre-wrap;
+}
+
+/* Properties */
+
+.properties,
+.cm-properties {
+  margin: 4px 0 18px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.properties-title {
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+
+.property {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.property-key {
+  color: var(--text-muted);
+}
+
+.property-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.property-value a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+/* Editor live preview */
+
+.cm-content[data-mode="live"] {
+  font-size: 15px;
+}
+
+.cm-content[data-mode="source"] {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+}
+
+.cm-content[data-mode="live"] .cm-heading-line {
+  font-weight: 650;
+  color: var(--text-heading);
+  line-height: 1.35;
+}
+
+.cm-content[data-mode="live"] .cm-h1 {
+  font-size: 1.75em;
+  padding-top: 0.5em !important;
+}
+.cm-content[data-mode="live"] .cm-h2 {
+  font-size: 1.45em;
+  padding-top: 0.45em !important;
+}
+.cm-content[data-mode="live"] .cm-h3 {
+  font-size: 1.2em;
+  padding-top: 0.35em !important;
+}
+.cm-content[data-mode="live"] .cm-h4 {
+  font-size: 1.05em;
+}
+
+.cm-content .cm-codeblock-line {
+  background: var(--code-bg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 0 12px !important;
+}
+
+.cm-content[data-mode="live"] .cm-quote-line {
+  border-left: 3px solid var(--border);
+  padding-left: 14px !important;
+  color: var(--text-muted);
+}
+
+.cm-content .cm-frontmatter-line {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.cm-wikilink,
+.cm-md-link {
+  color: var(--link);
+  cursor: pointer;
+}
+
+.cm-wikilink:hover,
+.cm-md-link:hover {
+  text-decoration: underline;
+}
+
+.cm-wikilink-source {
+  color: var(--link);
+}
+
+.cm-comment {
+  color: var(--text-faint);
+}
+
+.cm-blockref-hidden {
+  font-size: 0.8em;
+  color: var(--text-faint);
+  opacity: 0.6;
+}
+
+.cm-bullet {
+  display: inline-block;
+  width: 0.8em;
+  color: var(--text-muted);
+}
+
+.cm-hr {
+  display: inline-block;
+  width: 100%;
+  border-top: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.cm-task-checkbox {
+  margin-right: 0.4em;
+}
+
+.cm-embed {
+  display: inline-block;
+  max-width: 100%;
+}
+
+.cm-embed img {
+  max-width: 100%;
+  vertical-align: bottom;
+}
+
+.cm-embed .embed-note {
+  display: block;
+  font-family: var(--font-text);
+}
+
+.cm-rendered-block {
+  padding: 2px 0;
+  cursor: text;
+}
+
+.cm-rendered-block.markdown-rendered > :last-child {
+  margin-bottom: 0;
+}
+
+.cm-math-block {
+  padding: 4px 0;
+  text-align: center;
+  cursor: text;
+}
+
+.cm-properties .property-value a {
+  cursor: pointer;
+}
+
+/*
+ * CodeMirror measures block widgets by their border box, so they can't have
+ * outer margins: the editor's map of line positions would drift and clicks
+ * would land on the wrong line. Space them with padding instead.
+ */
+.cm-properties {
+  margin: 0;
+  padding: 8px 0 18px;
+  border-bottom: none;
+}
+
+/* The divider sits above the bottom padding, where the margin used to be. */
+.cm-properties::after {
+  content: "";
+  display: block;
+  margin-top: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cm-rendered-block > :first-child {
+  margin-top: 0;
+}
+
+/* Todo metadata: priority and dates on a small line under the task. */
+
+/* Inline-block on a full-width line: block children would inherit the done
+   task's strikethrough, which CSS can't turn off. */
+.task-meta,
+.cm-task-meta {
+  display: inline-block;
+  width: 100%;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-faint);
+  text-decoration: none;
+}
+
+.cm-task-meta {
+  /* Line up with the task text: past the checkbox, its margin and a space. */
+  padding: 0 0 3px calc(14px + 0.65em);
+}
+
+.task-meta {
+  padding-bottom: 2px;
+}
+
+.markdown-rendered li:has(> .task-checkbox) .task-meta {
+  padding-left: calc(14px + 0.45em);
+}
+
+.task-meta-sep {
+  opacity: 0.6;
+}
+
+.task-priority.p0 {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.task-priority.p1 {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.task-meta-item.is-overdue {
+  color: var(--danger);
+}
+
+.task-meta-item.is-due-today {
+  color: var(--accent);
+  font-weight: 550;
+}
+
+.cm-task-closed {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* Live todo lists (`todos` blocks and the Todos view) */
+
+.todos-view {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.4;
+  /* Inside the editor, text would otherwise keep the editor's pre-wrap. */
+  white-space: normal;
+}
+
+.todos-view .todos-section h4 {
+  margin: 4px 0;
+  font-size: 11px;
+}
+
+.markdown-rendered .todos-block,
+.cm-rendered-block .todos-block {
+  margin: 0 0 1em;
+  padding: 10px 12px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-sidebar);
+}
+
+.todos-section h4 {
+  margin: 4px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.todos-section[data-section="overdue"] h4 {
+  color: var(--danger);
+}
+
+.todos-count {
+  margin-left: 4px;
+  font-weight: 500;
+}
+
+.todos-section ul {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.todo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 3px 4px;
+  border-radius: 5px;
+}
+
+.todo-item:hover {
+  background: var(--bg-hover);
+}
+
+.todo-checkbox {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+
+.todo-body {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.todo-item.is-closed .todo-text {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.todo-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.todo-details .task-meta {
+  display: inline;
+  width: auto;
+  padding: 0;
+}
+
+.todo-details .task-meta:not(:empty)::after {
+  content: " ·";
+  opacity: 0.6;
+}
+
+.todos-view a.internal-link {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.todo-origin a.internal-link {
+  color: var(--text-faint);
+  text-decoration: none;
+}
+
+.todo-origin a.internal-link:hover {
+  color: var(--link);
+  text-decoration: underline;
+}
+
+.todo-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+}
+
+.todo-item:hover .todo-actions,
+.todo-actions:focus-within {
+  opacity: 1;
+}
+
+.todo-actions .icon {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--text-faint);
+}
+
+.todos-empty {
+  margin: 4px 0 8px;
+  font-size: 13px;
+}
+
+/* A one-line CodeMirror editor (editor/todoField.ts) styles itself. */
+.todo-add {
+  padding: 2px 0 6px;
+}

@@ -1,0 +1,24 @@
+# Code repos used by this vault's projects. Machine-local paths live in
+# machine.json, not here.
+acme-platform:
+  name: Acme platform
+  description: Monorepo for Acme's web app and its auth Lambda.
+  git:
+    base_branch: main
+    branch_format: "{{key}}-{{slug}}"
+    worktree_name: "{{key}}-{{slug}}"
+  setup:
+    - npm install
+  docs: [CLAUDE.md]
+  components:
+    web:
+      path: apps/web
+      description: Customer-facing web app, including the login flow.
+      commands:
+        dev: npm run dev -w apps/web
+        test: npm test -w apps/web
+    auth-lambda:
+      path: lambdas/auth
+      description: Session and token refresh Lambda.
+      commands:
+        test: make test

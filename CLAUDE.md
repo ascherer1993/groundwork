@@ -1,0 +1,38 @@
+# Groundwork
+
+A macOS notes app (Tauri v2 + React) over an Obsidian-compatible vault, adding HTML pages, note-linked terminals/worktrees and Claude Code integration. `PLAN.md` is the source of truth for design and phases; check it before adding features, and keep it updated when a decision changes.
+
+## Layout
+
+- `crates/core` (`groundwork-core`): vault model and file operations. No UI or transport concerns.
+- `crates/protocol` (`groundwork-protocol`): the API `Request` enum, `ApiError`, and other wire types.
+- `crates/backend` (`groundwork-backend`): `Backend::handle` dispatches every request. The `dev-server` feature adds the WebSocket host for browser mode.
+- `crates/cli` (`groundwork-cli`): the `groundwork` command. It works on vault files directly through `Session::open_for_tool`, so the app needn't be running. `make dev` and `make browser` build it next to the app.
+- `claude-plugin/`: the Claude Code plugin (the `groundwork` skill), listed by `.claude-plugin/marketplace.json` at the repo root. Keep the skill in step with the CLI.
+- "Set up Claude Code…" (`crates/core/src/setup.rs`) links the CLI onto PATH, installs the plugin from this checkout, and sets the CLI's default vault. Claude Code reads the plugin live from this folder, so skill edits reach new sessions without reinstalling. Tests and e2e use the fake `fixtures/bin/claude`, never the real one.
+- `app/src-tauri`: the desktop shell. It exposes one Tauri command, `api`, which forwards to `Backend`.
+- `app/src`: the React UI. Call the backend only through `api/client.ts`.
+- `app/e2e`: Playwright tests that run against browser mode.
+- `fixtures/vault`: the test vault. Extend it whenever you add parsing or linking behaviour.
+
+## Adding an API method
+
+1. Add a variant to `Request` in `crates/protocol`, with a `/// → ResultType` doc comment.
+2. Handle it in `Backend::handle`. Put the real logic in `crates/core`.
+3. Run `make bindings` to regenerate `app/src/api/generated/`. Commit the generated files; don't edit them by hand.
+4. Add the result type to `Results` in `app/src/api/client.ts`, plus a helper on `api`.
+
+## Commands
+
+- `make dev`: run the desktop app.
+- `make browser`: run the same UI in a browser at http://localhost:1420.
+- `make test`, `make e2e`, `make lint`, `make fmt`.
+
+Before calling a change done, run `make lint test e2e`. For UI changes, also take screenshots in browser mode with Playwright and check both light and dark themes.
+
+## Conventions
+
+- Never write to `.obsidian/`. Groundwork's vault config lives in `.groundwork/`. Machine-local state lives in `groundwork_core::data_dir()`, which tests override with `GROUNDWORK_DATA_DIR`.
+- Any vault path coming from the UI or CLI goes through `Vault::resolve`, which refuses paths outside the vault.
+- Write tests against `fixtures/vault` for anything that reads or rewrites notes. Code that modifies user files (rename, link rewriting) needs thorough tests before it ships.
+- UI colours come from the CSS variables in `app/src/styles/tokens.css`, which handles light and dark mode.

@@ -1,0 +1,47 @@
+#!/bin/sh
+# A stand-in for Claude Code's `claude plugin` commands, for tests. It keeps
+# its marketplace and plugin state in files next to itself and logs each call.
+here=$(dirname "$0")
+echo "$*" >>"$here/calls"
+mkt=$(cat "$here/marketplace" 2>/dev/null)
+
+folder_version() {
+  sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p' "$mkt/claude-plugin/.claude-plugin/plugin.json"
+}
+
+case "$*" in
+"plugin marketplace list --json")
+  if [ -n "$mkt" ]; then
+    printf '[{"name":"groundwork","source":"directory","path":"%s","installLocation":"%s"}]\n' "$mkt" "$mkt"
+  else
+    echo '[]'
+  fi
+  ;;
+"plugin marketplace add "*)
+  echo "$4" >"$here/marketplace"
+  ;;
+"plugin marketplace remove groundwork")
+  rm -f "$here/marketplace" "$here/installed" "$here/disabled"
+  ;;
+"plugin install groundwork@groundwork" | "plugin update groundwork@groundwork")
+  [ -n "$mkt" ] || { echo "no marketplace" >&2; exit 1; }
+  folder_version >"$here/installed"
+  ;;
+"plugin enable groundwork@groundwork")
+  rm -f "$here/disabled"
+  ;;
+"plugin list --json")
+  if [ -f "$here/installed" ]; then
+    enabled=true
+    [ -f "$here/disabled" ] && enabled=false
+    printf '[{"id":"groundwork@groundwork","version":"%s","enabled":%s,"readFromFolder":"%s/claude-plugin","folderVersion":"%s"}]\n' \
+      "$(cat "$here/installed")" "$enabled" "$mkt" "$(folder_version)"
+  else
+    echo '[]'
+  fi
+  ;;
+*)
+  echo "fake claude: unsupported: $*" >&2
+  exit 1
+  ;;
+esac

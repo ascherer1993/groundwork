@@ -1,0 +1,28 @@
+[package]
+name = "groundwork-core"
+description = "Vault model and file operations for Groundwork"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+blake3 = "1"
+chrono = { version = "0.4", features = ["serde"] }
+dirs.workspace = true
+gethostname = "1"
+notify = "8"
+notify-debouncer-full = "0.5"
+percent-encoding = "2"
+pulldown-cmark = { version = "0.13", default-features = false }
+regex = "1"
+serde.workspace = true
+serde-saphyr = "2"
+serde_json.workspace = true
+thiserror.workspace = true
+trash = "5"
+ts-rs.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

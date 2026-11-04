@@ -1,0 +1,14 @@
+[package]
+name = "groundwork-protocol"
+description = "API request/response types shared by the Groundwork app, CLI and dev server"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+groundwork-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+
+[lints]
+workspace = true

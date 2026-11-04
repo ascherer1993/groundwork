@@ -1,0 +1,29 @@
+[package]
+name = "groundwork-backend"
+description = "Request dispatch for Groundwork, shared by the Tauri app and the browser dev server"
+version.workspace = true
+edition.workspace = true
+
+[features]
+dev-server = ["dep:axum", "dep:tokio", "dep:futures-util"]
+
+[dependencies]
+chrono = "0.4"
+groundwork-core.workspace = true
+groundwork-protocol.workspace = true
+serde.workspace = true
+mime_guess = "2"
+serde_json.workspace = true
+axum = { version = "0.8", features = ["ws"], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync"], optional = true }
+futures-util = { version = "0.3", default-features = false, features = ["sink"], optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[[bin]]
+name = "groundwork-dev-server"
+required-features = ["dev-server"]
+
+[lints]
+workspace = true

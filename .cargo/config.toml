@@ -1,0 +1,4 @@
+[env]
+# `cargo test` exports TypeScript bindings for API types here (see ts-rs).
+TS_RS_EXPORT_DIR = { value = "app/src/api/generated", relative = true }
+TS_RS_LARGE_INT = "number"

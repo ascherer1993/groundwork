@@ -1,0 +1,11 @@
+{
+  "name": "groundwork",
+  "owner": { "name": "Groundwork" },
+  "plugins": [
+    {
+      "name": "groundwork",
+      "source": "./claude-plugin",
+      "description": "Work in a Groundwork vault through the groundwork CLI."
+    }
+  ]
+}
