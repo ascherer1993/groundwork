@@ -8,6 +8,7 @@ import { message, newNoteFolder, useVault } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
 import { useInbox } from "../state/inbox";
+import { desktopNotify } from "./notify";
 import { keyLabel } from "../state/keys";
 import {
   closeTicket,
@@ -173,6 +174,20 @@ function commands(): Command[] {
     { id: "next-workspace", label: "Next workspace", run: () => stepWorkspace(1) },
     { id: "previous-workspace", label: "Previous workspace", run: () => stepWorkspace(-1) },
     { id: "settings", label: "Settings…", run: () => ui.setSettingsOpen(true) },
+    {
+      id: "test-notification",
+      label: "Send a test notification",
+      run: async () => {
+        const failed = await desktopNotify("Groundwork", "Notifications work.");
+        ui.notify(
+          failed
+            ? `The notification failed: ${failed}`
+            : import.meta.env.DEV
+              ? "Sent. Not shown? Development builds notify as Terminal: allow Terminal in System Settings → Notifications."
+              : "Sent. Not shown? Allow Groundwork in System Settings → Notifications.",
+        );
+      },
+    },
     {
       id: "inbox",
       label: "Show the inbox",

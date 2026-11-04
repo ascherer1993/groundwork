@@ -8,6 +8,7 @@ import { create } from "zustand";
 import { api, transport } from "../api/client";
 import type { InboxItem } from "../api/generated/InboxItem";
 import { isTauri } from "../api/transport";
+import { desktopNotify } from "../lib/notify";
 import { useTerminals } from "./terminals";
 import { useUi } from "./ui";
 import { message } from "./vault";
@@ -98,11 +99,9 @@ async function announce(item: InboxItem) {
     return;
   }
   if (!isTauri()) return;
+  const failed = await desktopNotify(title(item), item.text);
+  if (failed) console.warn("notification:", failed);
   try {
-    const n = await import("@tauri-apps/plugin-notification");
-    let granted = await n.isPermissionGranted();
-    if (!granted) granted = (await n.requestPermission()) === "granted";
-    if (granted) n.sendNotification({ title: title(item), body: item.text });
     const { getCurrentWindow, UserAttentionType } = await import("@tauri-apps/api/window");
     await getCurrentWindow().requestUserAttention(
       item.kind === "notify" ? UserAttentionType.Informational : UserAttentionType.Critical,
