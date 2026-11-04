@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 
+use groundwork_core::tickets::{NewTicket, TicketFilter};
 use groundwork_core::todos::{TaskChange, TodoFilter};
 use groundwork_core::{CoreError, FileChange};
 use serde::{Deserialize, Serialize};
@@ -305,6 +306,72 @@ pub enum Request {
     /// ends them first.
     #[serde(rename = "workspace.delete")]
     WorkspaceDelete { id: String },
+    /// → `Workspace`: the note's workspace, made (and linked from the note's
+    /// `workspace:` property) if it hasn't one.
+    #[serde(rename = "workspace.forNote")]
+    WorkspaceForNote { path: String },
+
+    /// → `RepoInfo[]`: the repos in `repos.yml`, with where each is on this machine.
+    #[serde(rename = "repo.list")]
+    RepoList,
+    /// → `RepoLocation`: records where a repo is checked out on this
+    /// machine (`path` may be any folder in it, or start with `~`).
+    /// `worktrees` defaults to `<repo>-worktrees` beside it.
+    #[serde(rename = "repo.locate")]
+    RepoLocate {
+        id: String,
+        path: String,
+        #[ts(optional)]
+        worktrees: Option<String>,
+    },
+    /// → `ProjectInfo[]`
+    #[serde(rename = "project.list")]
+    ProjectList,
+
+    /// → `Ticket[]`
+    #[serde(rename = "ticket.list")]
+    TicketList { filter: TicketFilter },
+    /// → `GitState`: the ticket's worktree.
+    #[serde(rename = "ticket.git")]
+    TicketGit { path: String },
+    /// → `CreatedTicket`: makes the worktree, the note and a workspace.
+    /// Setup isn't run; the app runs it in the workspace's first terminal.
+    #[serde(rename = "ticket.create")]
+    TicketCreate { ticket: NewTicket },
+    /// → `Ticket`: refuses, unless `force`, when removing the worktree would
+    /// lose work. Ends terminals working in the worktree.
+    #[serde(rename = "ticket.close")]
+    TicketClose {
+        path: String,
+        #[serde(default)]
+        #[ts(optional)]
+        force: Option<bool>,
+    },
+    /// → `CreatedTicket`
+    #[serde(rename = "ticket.restore")]
+    TicketRestore { path: String },
+    /// → `StrayWorktree[]`: worktrees with no ticket note.
+    #[serde(rename = "ticket.strays")]
+    TicketStrays,
+
+    /// → `Context`: for a note, or an absolute folder.
+    #[serde(rename = "context.get")]
+    ContextGet {
+        #[ts(optional)]
+        note: Option<String>,
+        #[ts(optional)]
+        cwd: Option<String>,
+    },
+    /// → `null`: runs a `shell` action from the note's (or folder's) context,
+    /// in the background. Terminal and URL actions are run by the app.
+    #[serde(rename = "action.run")]
+    ActionRun {
+        id: String,
+        #[ts(optional)]
+        note: Option<String>,
+        #[ts(optional)]
+        cwd: Option<String>,
+    },
 }
 
 /// Pushed from the backend to the UI, serialized as `{ "event": "...", "payload": {...} }`.
@@ -476,7 +543,8 @@ impl From<CoreError> for ApiError {
             CoreError::NotFound(_) | CoreError::NotADirectory(_) => ErrorCode::NotFound,
             CoreError::OutsideVault(_) => ErrorCode::Forbidden,
             CoreError::AlreadyExists(_) | CoreError::Conflict(_) => ErrorCode::Conflict,
-            CoreError::InvalidPath(_) => ErrorCode::BadRequest,
+            CoreError::InvalidPath(_) | CoreError::Config(_) => ErrorCode::BadRequest,
+            CoreError::RepoNotLocated(_) | CoreError::Git(_) => ErrorCode::Conflict,
             CoreError::TooLarge { .. } => ErrorCode::TooLarge,
             CoreError::Io(_) | CoreError::Json(_) | CoreError::Setup(_) => ErrorCode::Internal,
         };

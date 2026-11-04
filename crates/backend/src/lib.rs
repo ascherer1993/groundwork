@@ -380,7 +380,86 @@ impl Backend {
                 Ok(Value::Null)
             }
             Request::WorkspaceDelete { id } => {
-                self.session()?.workspaces().delete(&id)?;
+                let changes = self.session()?.delete_workspace(&id)?;
+                self.emit(changes);
+                Ok(Value::Null)
+            }
+            Request::WorkspaceForNote { path } => {
+                let (workspace, changes) = self.session()?.note_workspace(&path)?;
+                self.emit(changes);
+                to_value(workspace)
+            }
+
+            Request::RepoList => to_value(self.session()?.repo_list()?),
+            Request::RepoLocate {
+                id,
+                path,
+                worktrees,
+            } => {
+                let session = self.session()?;
+                session.config()?.repo(&id)?;
+                to_value(session.repos().locate(&id, &path, worktrees.as_deref())?)
+            }
+            Request::ProjectList => to_value(self.session()?.project_list()?),
+
+            Request::TicketList { filter } => to_value(self.session()?.tickets(&filter)?),
+            Request::TicketGit { path } => to_value(self.session()?.ticket_git(&path)?),
+            Request::TicketCreate { ticket } => {
+                let created = self.session()?.create_ticket(&ticket)?;
+                self.emit(created.changes.clone());
+                to_value(created)
+            }
+            Request::TicketClose { path, force } => {
+                let session = self.session()?;
+                let worktree = session.ticket(&path)?.worktree_path;
+                let (ticket, _, changes) = session.close_ticket(&path, force.unwrap_or(false))?;
+                self.emit(changes);
+                if let Some(wt) = worktree {
+                    self.terminals.kill_inside(Path::new(&wt));
+                }
+                to_value(ticket)
+            }
+            Request::TicketRestore { path } => {
+                let created = self.session()?.restore_ticket(&path)?;
+                self.emit(created.changes.clone());
+                to_value(created)
+            }
+            Request::TicketStrays => to_value(self.session()?.stray_worktrees()?),
+
+            Request::ContextGet { note, cwd } => to_value(
+                self.session()?
+                    .context(note.as_deref(), cwd.as_deref().map(Path::new))?,
+            ),
+            Request::ActionRun { id, note, cwd } => {
+                let context = self
+                    .session()?
+                    .context(note.as_deref(), cwd.as_deref().map(Path::new))?;
+                let action = context
+                    .actions
+                    .into_iter()
+                    .find(|a| a.id == id)
+                    .ok_or_else(|| ApiError::new(ErrorCode::NotFound, format!("no action {id}")))?;
+                if action.kind != "shell" {
+                    return Err(ApiError::new(
+                        ErrorCode::BadRequest,
+                        format!("{} runs in the app, not the backend", action.label),
+                    ));
+                }
+                // A login shell, so PATH has what the user's terminals have
+                // (apps opened from the Finder get a minimal one).
+                let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+                let mut child = std::process::Command::new(shell)
+                    .args(["-l", "-c"])
+                    .arg(&action.run)
+                    .current_dir(&action.cwd)
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                    .map_err(|e| {
+                        ApiError::new(ErrorCode::Internal, format!("{}: {e}", action.label))
+                    })?;
+                std::thread::spawn(move || child.wait());
                 Ok(Value::Null)
             }
         }

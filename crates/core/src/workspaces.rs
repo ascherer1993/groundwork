@@ -21,6 +21,10 @@ pub struct Workspace {
     pub name: String,
     /// The absolute folder new terminals start in.
     pub cwd: String,
+    /// The note it belongs to, which links back with `workspace:`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub note: Option<String>,
     /// Its tabs and splits, as the app saved them (dockview's layout).
     #[serde(default)]
     #[ts(type = "unknown")]
@@ -51,11 +55,17 @@ impl Workspaces {
     }
 
     pub fn create(&self, name: &str, cwd: &str) -> Result<Workspace> {
+        self.create_for(name, cwd, None)
+    }
+
+    /// A workspace belonging to `note`.
+    pub fn create_for(&self, name: &str, cwd: &str, note: Option<&str>) -> Result<Workspace> {
         let _guard = self.lock.lock().unwrap();
         let workspace = Workspace {
             id: new_id(name),
             name: valid_name(name)?,
             cwd: valid_folder(cwd)?,
+            note: note.map(str::to_string),
             layout: Value::Null,
         };
         let mut all = self.list();

@@ -1675,6 +1675,7 @@ dependencies = [
  "chrono",
  "clap",
  "groundwork-core",
+ "groundwork-terminal-daemon",
  "serde",
  "serde_json",
  "tempfile",

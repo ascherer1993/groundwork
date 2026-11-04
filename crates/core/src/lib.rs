@@ -4,18 +4,23 @@
 //! to `.obsidian/`; Groundwork's own vault config lives in `.groundwork/`.
 
 pub mod activity;
+pub mod config;
 pub mod daily;
 pub mod dates;
 mod error;
+pub mod frontmatter;
+pub mod git;
 pub mod index;
 pub mod moment;
 pub mod pages;
 pub mod parse;
 pub mod recent;
+pub mod repos;
 pub mod search;
 pub mod session;
 pub mod setup;
 pub mod template;
+pub mod tickets;
 pub mod todos;
 mod tree;
 mod vault;

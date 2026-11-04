@@ -430,3 +430,173 @@ fn the_plugin_hook_speaks_only_inside_groundwork() {
     assert!(inside.contains("load the groundwork skill"), "{inside}");
     assert_eq!(run(None), "");
 }
+
+/// A git repo with one commit on `main`, pushed to a bare `origin`.
+fn git_repo(dir: &Path) -> PathBuf {
+    let git = |cwd: &Path, args: &[&str]| {
+        let out = Command::new("git")
+            .current_dir(cwd)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    let repo = dir.join("acme");
+    fs::create_dir_all(repo.join("apps/web")).unwrap();
+    git(dir, &["init", "-q", "--bare", "-b", "main", "origin.git"]);
+    git(&repo, &["init", "-q", "-b", "main"]);
+    git(&repo, &["config", "user.email", "test@example.com"]);
+    git(&repo, &["config", "user.name", "Test"]);
+    git(&repo, &["config", "commit.gpgsign", "false"]);
+    fs::write(repo.join("apps/web/index.js"), "\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-q", "-m", "first"]);
+    git(
+        &repo,
+        &[
+            "remote",
+            "add",
+            "origin",
+            dir.join("origin.git").to_str().unwrap(),
+        ],
+    );
+    git(&repo, &["push", "-q", "-u", "origin", "main"]);
+    fs::canonicalize(repo).unwrap()
+}
+
+#[test]
+fn tickets_from_create_to_close() {
+    let v = Vault::new();
+    let code = tempfile::tempdir().unwrap();
+    let repo = git_repo(code.path());
+
+    assert_eq!(v.ok(&["project", "list"]), "acme · Acme · Projects/Acme\n");
+    let repos = v.ok(&["repo", "list"]);
+    assert!(
+        repos.contains("not located (groundwork repo locate acme-platform <path>)"),
+        "{repos}"
+    );
+    let (ok, _, err) = v.run(&[
+        "ticket",
+        "create",
+        "--key",
+        "TEAM-7",
+        "--title",
+        "Fix signup",
+        "--project",
+        "acme",
+    ]);
+    assert!(
+        !ok && err.contains("acme-platform repo hasn't been located"),
+        "{err}"
+    );
+
+    let located = v.ok(&[
+        "repo",
+        "locate",
+        "acme-platform",
+        repo.join("apps").to_str().unwrap(),
+    ]);
+    assert!(located.contains("acme-worktrees"), "{located}");
+    let show = v.ok(&["repo", "show", "acme-platform"]);
+    assert!(
+        show.contains("web (apps/web)") && show.contains("used by: Acme"),
+        "{show}"
+    );
+
+    // The fixture's setup is `npm install`; skip it here.
+    let created = v.ok(&[
+        "ticket",
+        "create",
+        "--key",
+        "TEAM-7",
+        "--title",
+        "Fix signup",
+        "--project",
+        "acme",
+        "--code",
+        "acme-platform:web",
+        "--no-setup",
+    ]);
+    let wt = repo
+        .with_file_name("acme-worktrees")
+        .join("TEAM-7-fix-signup");
+    assert_eq!(
+        created,
+        format!(
+            "Projects/Acme/Work/TEAM-7 Fix signup.md\n  worktree: {}\n  branch: TEAM-7-fix-signup\n",
+            wt.display()
+        )
+    );
+    assert!(wt.join("apps/web/index.js").is_file());
+    let list = v.ok(&["ticket", "list", "--project", "Acme"]);
+    assert!(
+        list.contains("TEAM-7 Fix signup · Projects/Acme/Work/TEAM-7 Fix signup.md"),
+        "{list}"
+    );
+
+    // Context from inside the worktree, as an agent there would ask.
+    let (ok, context, err) = run_in(
+        &v,
+        &wt.join("apps/web"),
+        &["context", "--vault", v.root().to_str().unwrap()],
+    );
+    assert!(ok, "{err}");
+    assert!(context.contains("Ticket: TEAM-7 Fix signup"), "{context}");
+    assert!(
+        context.contains(&format!("  worktree: {}", wt.display())),
+        "{context}"
+    );
+    assert!(
+        context.contains("Component: acme-platform:web"),
+        "{context}"
+    );
+    assert!(
+        context.contains("  dev: npm run dev -w apps/web"),
+        "{context}"
+    );
+    assert!(context.contains("Projects/Acme/Acme.md"), "{context}");
+    let json: serde_json::Value =
+        serde_json::from_str(&v.ok(&["context", "--note", "TEAM-7 Fix signup", "--json"])).unwrap();
+    assert_eq!(json["ticket"]["branch"], "TEAM-7-fix-signup");
+
+    let who = v.ok(&[
+        "code",
+        "who",
+        wt.join("apps/web/index.js").to_str().unwrap(),
+    ]);
+    assert!(
+        who.contains("components: acme-platform:web") && who.contains("project: Acme"),
+        "{who}"
+    );
+    assert!(who.contains("ticket: TEAM-7 Fix signup"), "{who}");
+
+    let show = v.ok(&["ticket", "show", "TEAM-7 Fix signup"]);
+    assert!(show.contains("git: not on the remote"), "{show}");
+    let (ok, _, err) = v.run(&["ticket", "close", "TEAM-7 Fix signup"]);
+    assert!(
+        !ok && err.contains("its branch isn't on the remote. Use --force"),
+        "{err}"
+    );
+    assert!(
+        v.ok(&["ticket", "close", "TEAM-7 Fix signup", "--force"])
+            .starts_with("closed ")
+    );
+    assert!(!wt.exists());
+    assert!(
+        v.read("Projects/Acme/Work/TEAM-7 Fix signup.md")
+            .contains("status: closed\n")
+    );
+    assert!(!v.ok(&["ticket", "list"]).contains("TEAM-7"));
+    assert!(
+        v.ok(&["ticket", "list", "--status", "closed"])
+            .contains("TEAM-7 Fix signup [closed]")
+    );
+
+    v.ok(&["ticket", "restore", "TEAM-7 Fix signup", "--no-setup"]);
+    assert!(wt.is_dir());
+}

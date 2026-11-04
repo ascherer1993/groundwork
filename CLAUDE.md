@@ -4,7 +4,7 @@ A macOS notes app (Tauri v2 + React) over an Obsidian-compatible vault, adding H
 
 ## Layout
 
-- `crates/core` (`groundwork-core`): vault model and file operations. No UI or transport concerns.
+- `crates/core` (`groundwork-core`): vault model and file operations. No UI or transport concerns. Projects, repos and tickets: `config.rs` (the YAML config), `repos.rs` (where repos are on this machine), `git.rs`, `tickets.rs` (tickets, context, actions), `frontmatter.rs` (editing properties in place). Git tests make temporary repos with a bare `origin`.
 - `crates/protocol` (`groundwork-protocol`): the API `Request` enum, `ApiError`, and other wire types.
 - `crates/backend` (`groundwork-backend`): `Backend::handle` dispatches every request. The `dev-server` feature adds the WebSocket host for browser mode.
 - `crates/cli` (`groundwork-cli`): the `groundwork` command. It works on vault files directly through `Session::open_for_tool`, so the app needn't be running. `make dev` and `make browser` build it next to the app.

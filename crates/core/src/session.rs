@@ -109,6 +109,7 @@ pub struct Session {
     activity: ActivityLog,
     state_dir: PathBuf,
     workspaces: crate::workspaces::Workspaces,
+    repos: crate::repos::RepoLocations,
     write_lock: Mutex<()>,
     snapshot_saved: Mutex<Instant>,
     /// Who changes made through this session are logged as.
@@ -146,6 +147,7 @@ impl Session {
             activity: ActivityLog::new(vault.root(), &machine_id(data_dir)),
             state_dir: data_dir.join("vaults").join(key),
             workspaces: crate::workspaces::Workspaces::new(&data_dir.join("vaults").join(key)),
+            repos: crate::repos::RepoLocations::new(&data_dir.join("vaults").join(key)),
             vault,
             index: RwLock::new(index),
             write_lock: Mutex::new(()),
@@ -170,6 +172,11 @@ impl Session {
     /// This vault's workspaces (machine-local).
     pub fn workspaces(&self) -> &crate::workspaces::Workspaces {
         &self.workspaces
+    }
+
+    /// Where this vault's repos are on this machine.
+    pub fn repos(&self) -> &crate::repos::RepoLocations {
+        &self.repos
     }
 
     pub fn index(&self) -> RwLockReadGuard<'_, Index> {
@@ -367,6 +374,22 @@ impl Session {
     ) -> Result<(Option<usize>, Vec<FileChange>)> {
         let source = self.read_template(template)?;
         let ctx = self.template_context(path, date, answers);
+        let rendered = template::render(&source, &ctx);
+        let (text, cursor) = with_created(rendered, ctx.now);
+        let changes = self.create_file(path, Some(&text))?;
+        Ok((cursor, changes))
+    }
+
+    /// Creates a note from a template with context tags (`ticket.key`, …).
+    pub(crate) fn create_from_template_with(
+        &self,
+        template: &str,
+        path: &str,
+        vars: HashMap<String, String>,
+    ) -> Result<(Option<usize>, Vec<FileChange>)> {
+        let source = self.read_template(template)?;
+        let mut ctx = self.template_context(path, None, HashMap::new());
+        ctx.vars = vars;
         let rendered = template::render(&source, &ctx);
         let (text, cursor) = with_created(rendered, ctx.now);
         let changes = self.create_file(path, Some(&text))?;

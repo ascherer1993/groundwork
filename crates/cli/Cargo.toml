@@ -1,6 +1,6 @@
 [package]
 name = "groundwork-cli"
-description = "The `groundwork` command: notes, search, templates, daily notes and todos from the terminal"
+description = "The `groundwork` command: notes, search, templates, daily notes, todos and tickets from the terminal"
 version.workspace = true
 edition.workspace = true
 
@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 groundwork-core.workspace = true
+groundwork-terminal-daemon.workspace = true
 chrono = "0.4"
 clap = { version = "4", features = ["derive", "env"] }
 serde.workspace = true

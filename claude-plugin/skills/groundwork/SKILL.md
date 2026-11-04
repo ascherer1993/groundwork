@@ -159,9 +159,29 @@ await groundwork.navigate("[[Plan]]")    // open a note in Groundwork
 
 A typical flow: build the page, ask the user to open it in Groundwork and tell you when they're done, then run `groundwork page state`.
 
-## Projects
+## Projects, repos and tickets
 
-The design (folders containing `.groundwork.yml`, `projects:` frontmatter linking a note to project overview notes) is planned, but the app doesn't use it yet and the CLI has no `project` commands. A note can already carry `projects: ["[[Acme]]"]`, since that's an ordinary link. If asked to create a project, tell the user that projects aren't supported yet. Offer a folder with an overview note, and copy an existing project's `.groundwork.yml` only if one exists in the vault.
+- **A project** is any folder with a `.groundwork.yml` (name, overview note, work folder, the `code` it uses). A note belongs to the projects linked in its `projects:` frontmatter (`projects: ["[[Acme]]"]`, links to overview notes) plus the project folder it's in.
+- **Repos** are defined once in `.groundwork/repos.yml`, with optional components (a part of a monorepo with its own path, setup, commands and docs). Code is named `repo` or `repo:component`. Where a repo is checked out is per machine: `groundwork repo locate`.
+- **A ticket** is a note with `type: ticket` frontmatter (`ticket`, `jira`, `projects`, `code`, `repo`, `worktree`, `branch`, `status`, `workspace`). It usually has a git worktree in the repo's worktree folder and a workspace in the app whose terminals open there.
+- **Find your bearings with `groundwork context`** before working on code or a ticket: run in a worktree, it names the ticket, its projects, the components involved with their commands and docs to read first, the actions, and notes worth reading. The repo's own `CLAUDE.md` and READMEs stay the source of truth for how its code works.
+- **Make tickets with `groundwork ticket create`**, never by hand: it makes the branch and worktree, runs setup, writes the note from the ticket template and links everything. Fill in the note's summary afterwards. Don't edit `.groundwork.yml` or `repos.yml` unless asked.
+
+```sh
+groundwork context [--note <note> | --cwd <dir>] [--json]   # default: the current folder
+groundwork project list | show <project>
+groundwork repo list | show <repo>
+groundwork repo locate <repo> <path> [--worktrees <dir>]
+groundwork ticket create [--key INT-123|<url>] [--title "Fix login"] [--slug fix-login] [--project <p>]... [--code repo:component]... [--repo <r>] [--note <existing note>] [--no-worktree] [--no-setup]
+groundwork ticket list [--repo r] [--project p] [--status active|closed|all] [--component repo:c]
+groundwork ticket show <note>          # details and the worktree's git state
+groundwork ticket close <note> [--force]   # removes the worktree; refuses if work would be lost
+groundwork ticket restore <note>
+groundwork ticket strays               # worktrees without a ticket note (adopt with create --adopt <path>)
+groundwork code who <path|repo:path>   # components, projects and open tickets touching it
+```
+
+The first project in `--project` is the ticket's home: its note goes in that project's work folder. A ticket that affects two projects gets both. Ask the user which projects and components a ticket touches when the request doesn't say.
 
 ## Asking the user
 

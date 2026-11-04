@@ -6,6 +6,10 @@ export type Workspace = { id: string, name: string,
  */
 cwd: string, 
 /**
+ * The note it belongs to, which links back with `workspace:`.
+ */
+note?: string, 
+/**
  * Its tabs and splits, as the app saved them (dockview's layout).
  */
 layout: unknown, };

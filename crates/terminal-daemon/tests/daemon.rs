@@ -204,9 +204,16 @@ fn programs_folders_and_notifications_are_reported() {
     let session = sh(
         &client,
         work.path(),
-        "cd sub; printf '\\033]9;Claude needs you\\007\\033]9;4;1;50\\007\\033]777;notify;Build;done\\007'; exec /bin/sh -i",
+        "cd sub; read go; printf '\\033]9;Claude needs you\\007\\033]9;4;1;50\\007\\033]777;notify;Build;done\\007'; exec /bin/sh -i",
     );
     attach(&client, &session.id);
+    // Only attached clients hear notifications, so it waits until now.
+    client
+        .call::<()>(Request::Input {
+            id: session.id.clone(),
+            data: "go\r".into(),
+        })
+        .unwrap();
     // An interactive shell runs commands as their own foreground job, named
     // as they name themselves (as Claude Code does: node, calling itself claude).
     client

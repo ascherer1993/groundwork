@@ -81,6 +81,21 @@ impl Terminals {
         self.call(Request::Kill { id })
     }
 
+    /// Ends every terminal whose shell is in `dir` or below it, if the
+    /// daemon is running. Returns how many.
+    pub fn kill_inside(&self, dir: &Path) -> usize {
+        if !self.socket.exists() {
+            return 0;
+        }
+        let Ok(list) = self.list() else {
+            return 0;
+        };
+        list.into_iter()
+            .filter(|t| Path::new(&t.cwd).starts_with(dir))
+            .filter(|t| self.kill(t.id.clone()).is_ok())
+            .count()
+    }
+
     fn call<T: serde::de::DeserializeOwned>(&self, request: Request) -> Result<T, ApiError> {
         self.client()?.call(request).map_err(api_error)
     }

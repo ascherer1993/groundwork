@@ -1,4 +1,14 @@
 import type { AppInfo } from "./generated/AppInfo";
+import type { Context } from "./generated/Context";
+import type { CreatedTicket } from "./generated/CreatedTicket";
+import type { GitState } from "./generated/GitState";
+import type { NewTicket } from "./generated/NewTicket";
+import type { ProjectInfo } from "./generated/ProjectInfo";
+import type { RepoInfo } from "./generated/RepoInfo";
+import type { RepoLocation } from "./generated/RepoLocation";
+import type { StrayWorktree } from "./generated/StrayWorktree";
+import type { Ticket } from "./generated/Ticket";
+import type { TicketFilter } from "./generated/TicketFilter";
 import type { CreatedNote } from "./generated/CreatedNote";
 import type { DayView } from "./generated/DayView";
 import type { Backlinks } from "./generated/Backlinks";
@@ -85,6 +95,18 @@ interface Results {
   "workspace.update": Workspace;
   "workspace.saveLayout": null;
   "workspace.delete": null;
+  "workspace.forNote": Workspace;
+  "repo.list": RepoInfo[];
+  "repo.locate": RepoLocation;
+  "project.list": ProjectInfo[];
+  "ticket.list": Ticket[];
+  "ticket.git": GitState;
+  "ticket.create": CreatedTicket;
+  "ticket.close": Ticket;
+  "ticket.restore": CreatedTicket;
+  "ticket.strays": StrayWorktree[];
+  "context.get": Context;
+  "action.run": null;
 }
 
 type Method = Request["method"];
@@ -187,6 +209,23 @@ export const api = {
   saveWorkspaceLayout: (id: string, layout: unknown) =>
     call("workspace.saveLayout", { id, layout }),
   deleteWorkspace: (id: string) => call("workspace.delete", { id }),
+  /** The note's workspace, made and linked if it hasn't one. */
+  noteWorkspace: (path: string) => call("workspace.forNote", { path }),
+
+  repos: () => call("repo.list"),
+  locateRepo: (id: string, path: string, worktrees?: string) =>
+    call("repo.locate", { id, path, worktrees }),
+  projects: () => call("project.list"),
+  tickets: (filter: TicketFilter = {}) => call("ticket.list", { filter }),
+  ticketGit: (path: string) => call("ticket.git", { path }),
+  createTicket: (ticket: NewTicket) => call("ticket.create", { ticket }),
+  closeTicket: (path: string, force?: boolean) => call("ticket.close", { path, force }),
+  restoreTicket: (path: string) => call("ticket.restore", { path }),
+  strayWorktrees: () => call("ticket.strays"),
+  /** For a note, or an absolute folder. */
+  context: (where: { note?: string; cwd?: string }) => call("context.get", where),
+  runAction: (id: string, where: { note?: string; cwd?: string }) =>
+    call("action.run", { id, ...where }),
 };
 
 export { ApiCallError } from "./transport";

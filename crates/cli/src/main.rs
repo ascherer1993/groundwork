@@ -16,6 +16,7 @@ use groundwork_core::dates::parse_natural;
 use groundwork_core::pages;
 use groundwork_core::session::with_created_property;
 use groundwork_core::setup::default_vault;
+use groundwork_core::tickets::{Context, CreatedTicket, NewTicket, Ticket, TicketFilter};
 use groundwork_core::todos::{DueFilter, StatusFilter, TaskChange, Todo, TodoFilter};
 
 use groundwork_core::{CoreError, NodeKind, RecentVaults, Session, Vault, data_dir, search};
@@ -89,6 +90,31 @@ enum Command {
     Page(PageCommand),
     /// Which vault commands use, and why. Run this first if unsure.
     Vault,
+    /// Everything an agent needs to orient itself: the ticket, its projects,
+    /// the repo and worktree, the components involved (paths, commands, docs
+    /// to read), the actions available, and notes worth reading. For the
+    /// current folder by default.
+    Context {
+        /// A note (path or link name) instead of a folder.
+        #[arg(long, conflicts_with = "cwd")]
+        note: Option<String>,
+        /// A folder: in a worktree, a repo checkout or the vault.
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+    },
+    /// Projects: folders with a `.groundwork.yml`.
+    #[command(subcommand)]
+    Project(ProjectCommand),
+    /// Code repos (`.groundwork/repos.yml`) and where they are on this machine.
+    #[command(subcommand)]
+    Repo(RepoCommand),
+    /// Tickets: notes with `type: ticket`, each with a git worktree and a
+    /// workspace.
+    #[command(subcommand)]
+    Ticket(TicketCommand),
+    /// Who works on which code.
+    #[command(subcommand)]
+    Code(CodeCommand),
     /// What changed in the vault, newest last.
     Activity {
         /// `7d`, `24h` or a date (`YYYY-MM-DD`). Default: 7 days.
@@ -100,6 +126,111 @@ enum Command {
         #[arg(long, default_value_t = 200)]
         limit: usize,
     },
+}
+
+#[derive(Subcommand)]
+enum ProjectCommand {
+    /// Every project.
+    List,
+    /// A project's folders, code and open tickets.
+    Show {
+        /// Its id, name or folder.
+        project: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum RepoCommand {
+    /// Every repo, and where it's checked out here.
+    List,
+    /// A repo's components (paths, commands, docs) and the projects using each.
+    Show { repo: String },
+    /// Record where a repo is checked out on this machine (once per machine).
+    Locate {
+        repo: String,
+        /// Its main checkout (any folder in it).
+        path: String,
+        /// Where its worktrees go. Default: `<checkout>-worktrees` beside it.
+        #[arg(long)]
+        worktrees: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum TicketCommand {
+    /// Make a ticket: a branch and worktree (then the repo's and components'
+    /// setup), a note from the ticket template in its home project's work
+    /// folder, and a workspace. Prints the note's path.
+    Create {
+        /// A tracker key (`INT-123`) or a URL containing one.
+        #[arg(long)]
+        key: Option<String>,
+        #[arg(long)]
+        title: Option<String>,
+        /// For the branch and worktree names. Default: from the title.
+        #[arg(long)]
+        slug: Option<String>,
+        /// A project id or name; the first is the ticket's home (repeatable).
+        #[arg(long = "project")]
+        projects: Vec<String>,
+        /// What it touches, `repo:component` (repeatable).
+        #[arg(long)]
+        code: Vec<String>,
+        /// Default: the one repo its code or projects use.
+        #[arg(long)]
+        repo: Option<String>,
+        /// Turn this existing note into the ticket, where it is.
+        #[arg(long)]
+        note: Option<String>,
+        /// Adopt this existing worktree instead of making one.
+        #[arg(long)]
+        adopt: Option<String>,
+        /// Just the note and workspace.
+        #[arg(long)]
+        no_worktree: bool,
+        /// Don't run the setup commands.
+        #[arg(long)]
+        no_setup: bool,
+    },
+    /// List tickets (active ones by default).
+    List {
+        #[arg(long)]
+        repo: Option<String>,
+        #[arg(long)]
+        project: Option<String>,
+        /// `active` (default), `closed` or `all`.
+        #[arg(long)]
+        status: Option<String>,
+        /// `repo:component`.
+        #[arg(long)]
+        component: Option<String>,
+    },
+    /// A ticket's details and its worktree's git state.
+    Show { note: String },
+    /// Remove the worktree, end its terminals and mark the ticket closed.
+    /// Refuses when that would lose uncommitted or unpushed work.
+    Close {
+        note: String,
+        /// Close anyway, discarding uncommitted changes.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Bring a closed ticket's worktree back (from the local or remote branch).
+    Restore {
+        note: String,
+        #[arg(long)]
+        no_setup: bool,
+    },
+    /// Worktrees with no ticket note (made outside Groundwork). Adopt one
+    /// with `ticket create --adopt <path>`.
+    Strays,
+}
+
+#[derive(Subcommand)]
+enum CodeCommand {
+    /// The components, projects and open tickets touching a path: a file or
+    /// folder in a checkout or worktree, or `repo:relative/path`.
+    Who { path: String },
 }
 
 #[derive(Subcommand)]
@@ -506,11 +637,470 @@ fn run(cli: Cli) -> Fallible<()> {
             Ok(())
         }
         Command::Todo(cmd) => todo(&session, cmd, json),
+        Command::Context { note, cwd } => {
+            let note = note.map(|n| resolve_note(&session, &n)).transpose()?;
+            let cwd = match (&note, cwd) {
+                (Some(_), _) => None,
+                (None, Some(c)) => Some(c),
+                (None, None) => Some(std::env::current_dir().map_err(|e| e.to_string())?),
+            };
+            let context = session
+                .context(note.as_deref(), cwd.as_deref())
+                .map_err(err)?;
+            if json {
+                return print_json(&context);
+            }
+            print_context(&context);
+            Ok(())
+        }
+        Command::Project(cmd) => project(&session, cmd, json),
+        Command::Repo(cmd) => repo(&session, cmd, json),
+        Command::Ticket(cmd) => ticket(&session, cmd, json),
+        Command::Code(CodeCommand::Who { path }) => {
+            let who = session.code_who(&path).map_err(err)?;
+            if json {
+                return print_json(&who);
+            }
+            println!("{}:{}", who.repo, who.path);
+            if who.components.is_empty() {
+                println!("components: none");
+            } else {
+                println!("components: {}", who.components.join(", "));
+            }
+            for p in &who.projects {
+                println!("project: {} ({})", p.name, p.folder);
+            }
+            for t in &who.tickets {
+                println!("ticket: {}", ticket_line(t));
+            }
+            Ok(())
+        }
         Command::Vault => unreachable!("handled before opening the vault"),
         Command::Activity { since, path, limit } => {
             activity(session.vault().root(), &since, path, limit, json)
         }
     }
+}
+
+fn print_context(c: &Context) {
+    if let Some(t) = &c.ticket {
+        println!("Ticket: {}", ticket_line(t));
+        if let Some(url) = &t.url {
+            println!("  {url}");
+        }
+        if let Some(b) = &t.branch {
+            println!("  branch {b}");
+        }
+    } else if let Some(n) = &c.note {
+        println!("Note: {n}");
+    }
+    for p in &c.projects {
+        match &p.overview {
+            Some(o) => println!("Project: {} (overview: {o})", p.name),
+            None => println!("Project: {} ({})", p.name, p.folder),
+        }
+    }
+    if let Some(r) = &c.repo {
+        println!("Repo: {} ({})", r.name, r.id);
+        if let Some(d) = &r.description {
+            println!("  {d}");
+        }
+        match (&r.worktree_path, &r.path) {
+            (Some(w), _) => println!("  worktree: {w}"),
+            (None, Some(p)) => println!("  checkout: {p}"),
+            (None, None) => println!(
+                "  not located on this machine: groundwork repo locate {} <path>",
+                r.id
+            ),
+        }
+        if !r.docs.is_empty() {
+            println!("  read first: {}", r.docs.join(", "));
+        }
+    }
+    for comp in &c.components {
+        println!(
+            "Component: {} ({})",
+            comp.id,
+            comp.abs_path.as_deref().unwrap_or(&comp.path)
+        );
+        if let Some(d) = &comp.description {
+            println!("  {d}");
+        }
+        for (name, run) in &comp.commands {
+            println!("  {name}: {run}");
+        }
+        if !comp.docs.is_empty() {
+            println!("  read first: {}", comp.docs.join(", "));
+        }
+    }
+    if !c.actions.is_empty() {
+        println!("Actions:");
+        for a in &c.actions {
+            println!("  {} ({}): {}", a.label, a.kind, a.run);
+        }
+    }
+    if !c.related.is_empty() {
+        println!("Related notes:");
+        for r in &c.related {
+            println!("  {r}");
+        }
+    }
+}
+
+fn ticket_line(t: &Ticket) -> String {
+    let mut line = match &t.key {
+        Some(k) if !t.title.starts_with(k.as_str()) => format!("{k} {}", t.title),
+        _ => t.title.clone(),
+    };
+    if !t.is_active() {
+        line.push_str(" [closed]");
+    }
+    line.push_str(&format!(" · {}", t.path));
+    line
+}
+
+fn project(session: &Session, cmd: ProjectCommand, json: bool) -> Fallible<()> {
+    match cmd {
+        ProjectCommand::List => {
+            let projects = session.project_list().map_err(err)?;
+            if json {
+                return print_json(&projects);
+            }
+            for p in projects {
+                println!("{} · {} · {}", p.id, p.name, p.folder);
+            }
+            Ok(())
+        }
+        ProjectCommand::Show { project } => {
+            let config = session.config().map_err(err)?;
+            let p = config
+                .project(&project)
+                .ok_or_else(|| format!("no project {project:?}"))?;
+            let tickets = session
+                .tickets(&TicketFilter {
+                    project: Some(p.id.clone()),
+                    ..Default::default()
+                })
+                .map_err(err)?;
+            if json {
+                return print_json(&serde_json::json!({ "project": p, "tickets": tickets }));
+            }
+            println!("{} ({})", p.name, p.id);
+            println!("  folder: {}", p.folder);
+            if let Some(o) = &p.overview {
+                println!("  overview: {o}");
+            }
+            println!("  tickets go in: {}", p.work_folder);
+            if !p.code.is_empty() {
+                println!("  code: {}", p.code.join(", "));
+            }
+            for t in &tickets {
+                println!("  ticket: {}", ticket_line(t));
+            }
+            Ok(())
+        }
+    }
+}
+
+fn repo(session: &Session, cmd: RepoCommand, json: bool) -> Fallible<()> {
+    match cmd {
+        RepoCommand::List => {
+            let repos = session.repo_list().map_err(err)?;
+            if json {
+                return print_json(&repos);
+            }
+            for r in repos {
+                match &r.location {
+                    Some(l) => println!("{} · {} · {}", r.id, r.name, l.path),
+                    None => println!(
+                        "{} · {} · not located (groundwork repo locate {} <path>)",
+                        r.id, r.name, r.id
+                    ),
+                }
+            }
+            Ok(())
+        }
+        RepoCommand::Show { repo } => {
+            let config = session.config().map_err(err)?;
+            let r = config.repo(&repo).map_err(err)?;
+            let info = session
+                .repo_list()
+                .map_err(err)?
+                .into_iter()
+                .find(|i| i.id == r.id);
+            let location = info.as_ref().and_then(|i| i.location.clone());
+            if json {
+                return print_json(
+                    &serde_json::json!({ "repo": r, "location": location, "projects": info.map(|i| i.projects) }),
+                );
+            }
+            println!("{} ({})", r.display_name(), r.id);
+            if let Some(d) = &r.description {
+                println!("  {d}");
+            }
+            match &location {
+                Some(l) => println!("  checkout: {}\n  worktrees: {}", l.path, l.worktrees),
+                None => println!("  not located (groundwork repo locate {} <path>)", r.id),
+            }
+            println!("  base branch: {}", r.git.base_branch);
+            if !r.setup.is_empty() {
+                println!("  setup: {}", r.setup.join(" && "));
+            }
+            if !r.docs.is_empty() {
+                println!("  read first: {}", r.docs.join(", "));
+            }
+            for (name, c) in &r.components {
+                let id = format!("{}:{name}", r.id);
+                let users: Vec<&str> = config
+                    .projects
+                    .iter()
+                    .filter(|p| p.code.contains(&id) || p.code.contains(&r.id))
+                    .map(|p| p.name.as_str())
+                    .collect();
+                println!("  {name} ({})", c.path);
+                if let Some(d) = &c.description {
+                    println!("    {d}");
+                }
+                for (cmd, run) in &c.commands {
+                    println!("    {cmd}: {run}");
+                }
+                if !users.is_empty() {
+                    println!("    used by: {}", users.join(", "));
+                }
+            }
+            Ok(())
+        }
+        RepoCommand::Locate {
+            repo,
+            path,
+            worktrees,
+        } => {
+            session.config().map_err(err)?.repo(&repo).map_err(err)?;
+            let location = session
+                .repos()
+                .locate(&repo, &path, worktrees.as_deref())
+                .map_err(err)?;
+            if json {
+                return print_json(&location);
+            }
+            println!(
+                "{repo}: {}\n  worktrees: {}",
+                location.path, location.worktrees
+            );
+            Ok(())
+        }
+    }
+}
+
+fn ticket(session: &Session, cmd: TicketCommand, json: bool) -> Fallible<()> {
+    match cmd {
+        TicketCommand::Create {
+            key,
+            title,
+            slug,
+            projects,
+            code,
+            repo,
+            note,
+            adopt,
+            no_worktree,
+            no_setup,
+        } => {
+            let note = note.map(|n| resolve_note(session, &n)).transpose()?;
+            let created = session
+                .create_ticket(&NewTicket {
+                    key,
+                    title,
+                    slug,
+                    projects,
+                    code,
+                    repo,
+                    note,
+                    adopt,
+                    no_worktree,
+                })
+                .map_err(err)?;
+            report_created(&created, no_setup, json)
+        }
+        TicketCommand::List {
+            repo,
+            project,
+            status,
+            component,
+        } => {
+            let tickets = session
+                .tickets(&TicketFilter {
+                    repo,
+                    project,
+                    status,
+                    component,
+                })
+                .map_err(err)?;
+            if json {
+                return print_json(&tickets);
+            }
+            for t in &tickets {
+                println!("{}", ticket_line(t));
+            }
+            Ok(())
+        }
+        TicketCommand::Show { note } => {
+            let path = resolve_note(session, &note)?;
+            let ticket = session.ticket(&path).map_err(err)?;
+            let git = session.ticket_git(&path).map_err(err)?;
+            if json {
+                return print_json(&serde_json::json!({ "ticket": ticket, "git": git }));
+            }
+            println!("{}", ticket_line(&ticket));
+            if let Some(url) = &ticket.url {
+                println!("  {url}");
+            }
+            if !ticket.projects.is_empty() {
+                println!("  projects: {}", ticket.projects.join(", "));
+            }
+            if !ticket.code.is_empty() {
+                println!("  code: {}", ticket.code.join(", "));
+            }
+            if let Some(b) = &ticket.branch {
+                println!("  branch: {b}");
+            }
+            match (&ticket.worktree_path, git.exists) {
+                (Some(w), true) => {
+                    println!("  worktree: {w}");
+                    let mut state = Vec::new();
+                    if git.dirty {
+                        state.push("uncommitted changes".to_string());
+                    }
+                    if git.unpushed > 0 {
+                        state.push(format!("{} unpushed", git.unpushed));
+                    }
+                    if !git.on_remote {
+                        state.push("not on the remote".into());
+                    }
+                    if git.behind > 0 {
+                        state.push(format!("{} behind its base", git.behind));
+                    }
+                    if state.is_empty() {
+                        state.push("clean and pushed".into());
+                    }
+                    println!("  git: {}", state.join(", "));
+                }
+                (Some(w), false) => println!("  worktree: {w} (not on disk)"),
+                (None, _) if ticket.repo.is_some() && ticket.worktree.is_some() => {
+                    println!("  repo not located on this machine")
+                }
+                _ => {}
+            }
+            Ok(())
+        }
+        TicketCommand::Close { note, force } => {
+            let path = resolve_note(session, &note)?;
+            let worktree = session.ticket(&path).map_err(err)?.worktree_path;
+            let (ticket, _, _) = session.close_ticket(&path, force).map_err(|e| {
+                let msg = err(e);
+                if msg.starts_with("Not closed") {
+                    format!("{msg} Use --force to close anyway.")
+                } else {
+                    msg
+                }
+            })?;
+            let ended = worktree.map_or(0, |w| end_terminals_in(Path::new(&w)));
+            if json {
+                return print_json(
+                    &serde_json::json!({ "ticket": ticket, "terminalsEnded": ended }),
+                );
+            }
+            println!("closed {}", ticket.path);
+            if ended > 0 {
+                println!(
+                    "  ended {ended} terminal{}",
+                    if ended == 1 { "" } else { "s" }
+                );
+            }
+            Ok(())
+        }
+        TicketCommand::Restore { note, no_setup } => {
+            let path = resolve_note(session, &note)?;
+            let created = session.restore_ticket(&path).map_err(err)?;
+            report_created(&created, no_setup, json)
+        }
+        TicketCommand::Strays => {
+            let strays = session.stray_worktrees().map_err(err)?;
+            if json {
+                return print_json(&strays);
+            }
+            for s in strays {
+                println!(
+                    "{} · {} · {}",
+                    s.repo,
+                    s.path,
+                    s.branch.as_deref().unwrap_or("(detached)")
+                );
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Prints a new (or restored) ticket, then runs its setup unless told not to.
+fn report_created(created: &CreatedTicket, no_setup: bool, json: bool) -> Fallible<()> {
+    let t = &created.ticket;
+    if json {
+        print_json(created)?;
+    } else {
+        println!("{}", t.path);
+        if let Some(w) = &t.worktree_path {
+            println!("  worktree: {w}");
+        }
+        if let Some(b) = &t.branch {
+            println!("  branch: {b}");
+        }
+    }
+    if no_setup || created.setup.is_empty() {
+        return Ok(());
+    }
+    for step in &created.setup {
+        // Setup output goes to stderr, so --json output stays parseable.
+        eprintln!("$ {}", step.command);
+        let status = std::process::Command::new("/bin/sh")
+            .args(["-c", &step.command])
+            .current_dir(&step.cwd)
+            .stdout(std::process::Stdio::from(std::io::stderr()))
+            .status()
+            .map_err(|e| format!("running setup: {e}"))?;
+        if !status.success() {
+            return Err(format!(
+                "setup failed at `{}` (in {}); the ticket was made, finish setup by hand",
+                step.command, step.cwd
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Ends terminals (in the Groundwork terminal daemon) working in `dir`.
+fn end_terminals_in(dir: &Path) -> usize {
+    use groundwork_terminal_daemon::client::Client;
+    use groundwork_terminal_daemon::protocol::{Request, SessionInfo};
+    let socket = data_dir().join("groundworkd.sock");
+    if !socket.exists() {
+        return 0;
+    }
+    let Ok(client) = Client::connect(&socket, |_| {}, || {}) else {
+        return 0;
+    };
+    let Ok(sessions) = client.call::<Vec<SessionInfo>>(Request::List) else {
+        return 0;
+    };
+    sessions
+        .into_iter()
+        .filter(|s| s.cwd.starts_with(dir))
+        .filter(|s| {
+            client
+                .call::<()>(Request::Kill { id: s.id.clone() })
+                .is_ok()
+        })
+        .count()
 }
 
 fn note(session: &Session, cmd: NoteCommand, json: bool) -> Fallible<()> {

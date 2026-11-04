@@ -22,3 +22,9 @@ acme-platform:
       description: Session and token refresh Lambda.
       commands:
         test: make test
+  actions:
+    - id: storybook
+      label: Run Storybook
+      kind: terminal
+      run: npm run storybook -w apps/web
+      component: acme-platform:web

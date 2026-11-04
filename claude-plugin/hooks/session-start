@@ -9,3 +9,11 @@ cat <<TEXT
 This session is running in a terminal tab inside Groundwork, the user's notes app (an Obsidian-compatible vault with HTML pages and terminals). The vault is ${GROUNDWORK_VAULT:-the one \`groundwork vault\` reports}. It's open beside this terminal, and notes you write appear there as you save them.
 Before reading, writing or describing anything in the vault (notes, todos, daily notes, templates, HTML pages), load the groundwork skill. It covers the vault's conventions, what the app shows and renders, and the \`groundwork\` CLI, which is already on PATH.
 TEXT
+
+# Where this terminal is: its ticket, project, repo and components.
+if command -v groundwork >/dev/null 2>&1; then
+  context=$(groundwork context 2>/dev/null)
+  if [ -n "$context" ]; then
+    printf '\nWhere this terminal is, from `groundwork context` (run `groundwork context --json` for more):\n%s\n' "$context"
+  fi
+fi

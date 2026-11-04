@@ -8,3 +8,10 @@ trackers:
     url: "https://example.atlassian.net/browse/{{key}}"
     note_name: "{{key}} {{title}}"
     template: Templates/Ticket.md
+
+# Shown wherever they apply (PLAN §4.7).
+actions:
+  - id: worktree-finder
+    label: Show worktree in Finder
+    kind: shell
+    run: open "{{worktree.path}}"
