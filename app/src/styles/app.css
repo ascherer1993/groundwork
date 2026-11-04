@@ -1311,9 +1311,27 @@ button.terminals-name:hover {
   margin: 3px 0 0;
 }
 
-.session-text {
+button.session-text {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  align-items: stretch;
   min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+
+button.session-text,
+button.session-text:hover:not(:disabled) {
+  gap: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.session {
+  cursor: pointer;
 }
 
 .session-name {

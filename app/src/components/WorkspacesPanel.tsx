@@ -1,4 +1,4 @@
-import { ArrowRight, Plus, SquareTerminal, X } from "lucide-react";
+import { Plus, SquareTerminal, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { TerminalInfo } from "../api/generated/TerminalInfo";
@@ -211,8 +211,17 @@ function Sessions() {
           const cwd = live?.cwd ?? t.cwd;
           const tab = tabs.find((x) => x.terminal === t.id);
           const where = tab ? `in ${names[tab.area] ?? "a workspace"}` : "not in a tab";
+          const go = () =>
+            tab
+              ? useWorkspace.getState().showTerminal(t.id)
+              : void useWorkspace.getState().addTerminal(t);
           return (
-            <li key={t.id} className="session">
+            <li
+              key={t.id}
+              className="session"
+              // The row's edges count too; its checkbox and End button don't.
+              onClick={(e) => e.target === e.currentTarget && go()}
+            >
               <input
                 type="checkbox"
                 aria-label={`Select ${process}`}
@@ -224,35 +233,22 @@ function Sessions() {
                   setSelected(next);
                 }}
               />
-              <div className="session-text">
-                <div className="session-name">
+              {/* The row goes to its tab, or opens one for it. */}
+              <button
+                type="button"
+                className="session-text"
+                title={tab ? `Go to its tab · ${cwd}` : `Open in a tab · ${cwd}`}
+                onClick={go}
+              >
+                <span className="session-name">
                   {process}
                   {isClaude(process, t.title) && <span className="session-tag">Claude</span>}
                   {tab && <Badge state={stateOf(live)} />}
-                </div>
-                <div className="session-meta" title={cwd}>
+                </span>
+                <span className="session-meta">
                   {where} · {shortPath(cwd, root)} · {age(t.started)}
-                </div>
-              </div>
-              {tab ? (
-                <button
-                  className="icon"
-                  aria-label="Go to its tab"
-                  title="Go to its tab"
-                  onClick={() => useWorkspace.getState().showTerminal(t.id)}
-                >
-                  <ArrowRight size={13} />
-                </button>
-              ) : (
-                <button
-                  className="icon"
-                  aria-label="Open in a tab"
-                  title="Open in a tab"
-                  onClick={() => useWorkspace.getState().addTerminal(t)}
-                >
-                  <SquareTerminal size={13} />
-                </button>
-              )}
+                </span>
+              </button>
               <button
                 className="icon"
                 aria-label="End"
