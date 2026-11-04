@@ -465,6 +465,67 @@ fn the_plugin_hooks_speak_only_inside_groundwork() {
 }
 
 #[test]
+fn hooks_report_permission_prompts_but_not_idle_reminders() {
+    use std::io::{BufRead, BufReader};
+    use std::os::unix::net::UnixListener;
+
+    let data = tempfile::tempdir().unwrap();
+    let socket = data.path().join("app.sock");
+    // A stand-in for the app: records each request and says ok.
+    let listener = UnixListener::bind(&socket).unwrap();
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<serde_json::Value>::new()));
+    {
+        let seen = seen.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                let mut line = String::new();
+                BufReader::new(stream.try_clone().unwrap())
+                    .read_line(&mut line)
+                    .unwrap();
+                seen.lock()
+                    .unwrap()
+                    .push(serde_json::from_str(&line).unwrap());
+                writeln!(stream, r#"{{"ok":null}}"#).unwrap();
+            }
+        });
+    }
+    let hook = |input: &str| {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_groundwork"))
+            .args(["hook", "notification"])
+            .env("GROUNDWORK_DATA_DIR", data.path())
+            .env("GROUNDWORK_SOCKET", &socket)
+            .env("GROUNDWORK_TAB_ID", "t1")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(input.as_bytes())
+            .unwrap();
+        assert!(child.wait().unwrap().success());
+    };
+    hook(
+        r#"{"session_id":"s","message":"Claude is waiting for your input","notification_type":"idle_prompt"}"#,
+    );
+    hook(r#"{"session_id":"s","message":"Claude is waiting for your input"}"#);
+    hook(
+        r#"{"session_id":"s","message":"Claude needs your permission to use Bash","notification_type":"permission_prompt"}"#,
+    );
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.len(), 1, "{seen:?}");
+    assert_eq!(seen[0]["method"], "agent.hook");
+    assert_eq!(seen[0]["params"]["tab"], "t1");
+    assert_eq!(seen[0]["params"]["session"], "s");
+    assert_eq!(
+        seen[0]["params"]["message"],
+        "Claude needs your permission to use Bash"
+    );
+}
+
+#[test]
 fn ask_and_notify_use_the_inbox_while_the_app_is_closed() {
     use groundwork_core::inbox::{Inbox, InboxKind};
 

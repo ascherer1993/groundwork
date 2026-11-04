@@ -101,8 +101,27 @@ fn menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     Menu::with_items(app, &[&app_menu, &edit, &window])
 }
 
+/// In development the app isn't a bundle, so macOS can't put its
+/// notifications under Groundwork; tauri-plugin-notification sends them as
+/// Terminal.app, which may never have asked to notify (and so never shows
+/// them, or appears in System Settings). Send them as the app that started
+/// `make dev` (cmux, Ghostty, iTerm…) instead. Only the first
+/// `set_application` counts, so this runs before any notification.
+#[cfg(all(target_os = "macos", debug_assertions))]
+fn notify_as_launcher() {
+    if let Ok(id) = std::env::var("__CFBundleIdentifier")
+        && !id.is_empty()
+        && let Err(e) = mac_notification_sys::set_application(&id)
+    {
+        eprintln!("notifications can't be sent as {id}: {e}");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(all(target_os = "macos", debug_assertions))]
+    notify_as_launcher();
+
     let app = tauri::Builder::default()
         .menu(menu)
         .plugin(tauri_plugin_dialog::init())

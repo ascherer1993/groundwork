@@ -45,6 +45,10 @@ impl Agents {
         self.inbox.open()
     }
 
+    pub fn history(&self) -> Vec<InboxItem> {
+        self.inbox.history(200)
+    }
+
     pub fn add(&self, kind: InboxKind, item: NewItem) -> Result<InboxItem, ApiError> {
         let item = self.inbox.add(kind, item)?;
         (self.events)(Event::InboxChanged {

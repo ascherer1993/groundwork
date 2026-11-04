@@ -26,3 +26,7 @@ tauri-plugin-opener = "2"
 
 [lints]
 workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# The library tauri-plugin-notification sends through; see `notify_as_launcher`.
+mac-notification-sys = "0.6"

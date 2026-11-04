@@ -1653,6 +1653,7 @@ dependencies = [
  "groundwork-backend",
  "groundwork-core",
  "groundwork-protocol",
+ "mac-notification-sys",
  "percent-encoding",
  "serde_json",
  "tauri",

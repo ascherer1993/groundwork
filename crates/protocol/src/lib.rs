@@ -335,6 +335,10 @@ pub enum Request {
     /// → `InboxItem[]`: what's open in the inbox, oldest first.
     #[serde(rename = "inbox.list")]
     InboxList,
+    /// → `InboxItem[]`: answered and dismissed items, most recent first
+    /// (kept for 30 days).
+    #[serde(rename = "inbox.history")]
+    InboxHistory,
     /// → `InboxItem`: posts a question. `inbox.wait` waits for the answer.
     #[serde(rename = "inbox.ask")]
     InboxAsk {

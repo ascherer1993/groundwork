@@ -1875,3 +1875,19 @@ button.link-button:hover:not(:disabled) {
   background: none;
   text-decoration: underline;
 }
+
+.inbox-header {
+  padding: 0 12px 8px;
+}
+
+.inbox-done .inbox-kind,
+.inbox-done .inbox-text {
+  color: var(--text-muted);
+}
+
+.inbox-outcome {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}

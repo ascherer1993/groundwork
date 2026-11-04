@@ -67,18 +67,100 @@ export function InboxButton() {
 
 function InboxPanel() {
   const items = useInbox((s) => s.items);
+  const history = useInbox((s) => s.history);
+  const view = useInbox((s) => s.view);
+  const setView = useInbox((s) => s.setView);
   // Newest first.
   const shown = [...items].reverse();
   return (
     <div className="inbox-popover" role="dialog" aria-label="Inbox">
-      <div className="section-header">Inbox</div>
-      {shown.length === 0 && <p className="panel-empty muted small">Nothing waiting on you.</p>}
-      <ul className="inbox-list">
-        {shown.map((item) => (
-          <InboxRow key={item.id} item={item} />
-        ))}
-      </ul>
+      <div className="inbox-header">
+        <div className="segmented" role="tablist" aria-label="Inbox">
+          <button
+            role="tab"
+            aria-selected={view === "waiting"}
+            aria-pressed={view === "waiting"}
+            onClick={() => setView("waiting")}
+          >
+            Waiting{items.length > 0 && ` (${items.length})`}
+          </button>
+          <button
+            role="tab"
+            aria-selected={view === "earlier"}
+            aria-pressed={view === "earlier"}
+            onClick={() => setView("earlier")}
+          >
+            Earlier
+          </button>
+        </div>
+      </div>
+      {view === "waiting" ? (
+        <>
+          {shown.length === 0 && <p className="panel-empty muted small">Nothing waiting on you.</p>}
+          <ul className="inbox-list">
+            {shown.map((item) => (
+              <InboxRow key={item.id} item={item} />
+            ))}
+          </ul>
+        </>
+      ) : (
+        <>
+          {history.length === 0 && (
+            <p className="panel-empty muted small">Nothing yet. Items stay here for 30 days.</p>
+          )}
+          <ul className="inbox-list">
+            {history.map((item) => (
+              <EarlierRow key={item.id} item={item} />
+            ))}
+          </ul>
+        </>
+      )}
     </div>
+  );
+}
+
+/** What became of a done item. */
+function outcome(item: InboxItem): string {
+  if (item.answer !== undefined) return `Answered: ${item.answer}`;
+  switch (item.kind) {
+    case "ask":
+      return "Dismissed without an answer";
+    case "notify":
+      return "Dismissed";
+    case "attention":
+      return "Seen";
+  }
+}
+
+function EarlierRow({ item }: { item: InboxItem }) {
+  const from = source(item);
+  const link = item.link?.replace(/^\[\[|\]\]$/g, "");
+  return (
+    <li
+      className={`inbox-item inbox-done inbox-${item.kind}`}
+      aria-label={`${title(item)}: ${item.text}`}
+    >
+      <div className="inbox-meta">
+        <span className="inbox-kind">{title(item)}</span>
+        {from && <span className="inbox-from">{from}</span>}
+        <span className="inbox-age" title={new Date(item.created).toLocaleString()}>
+          {age(item.doneAt ?? item.created)}
+        </span>
+      </div>
+      <p className="inbox-text">{item.text}</p>
+      <p className="inbox-outcome">{outcome(item)}</p>
+      {link && (
+        <button
+          className="link-button"
+          onClick={() => {
+            useInbox.getState().setOpen(false);
+            void useWorkspace.getState().openLink("", link);
+          }}
+        >
+          {link}
+        </button>
+      )}
+    </li>
   );
 }
 

@@ -17,8 +17,11 @@ use ts_rs::TS;
 use crate::{CoreError, Result};
 
 const FILE_NAME: &str = "inbox.json";
-/// Done items are kept this long (so an agent can still read its answer).
-const KEEP_DONE_MS: u64 = 24 * 60 * 60 * 1000;
+/// Done items are kept this long, for the inbox's history (and so an agent
+/// can still read its answer)…
+const KEEP_DONE_MS: u64 = 30 * 24 * 60 * 60 * 1000;
+/// …up to this many.
+const KEEP_DONE: usize = 300;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -97,6 +100,14 @@ impl Inbox {
     /// Items not yet answered or dismissed, oldest first.
     pub fn open(&self) -> Vec<InboxItem> {
         self.read().into_iter().filter(|i| !i.done).collect()
+    }
+
+    /// Items answered or dismissed, most recently done first.
+    pub fn history(&self, limit: usize) -> Vec<InboxItem> {
+        let mut done: Vec<_> = self.read().into_iter().filter(|i| i.done).collect();
+        done.sort_by_key(|i| std::cmp::Reverse((i.done_at.unwrap_or(i.created), i.created)));
+        done.truncate(limit);
+        done
     }
 
     pub fn get(&self, id: &str) -> Option<InboxItem> {
@@ -200,6 +211,18 @@ impl Inbox {
                 || i.done_at
                     .is_none_or(|t| now.saturating_sub(t) < KEEP_DONE_MS)
         });
+        let done = items.iter().filter(|i| i.done).count();
+        if done > KEEP_DONE {
+            // Drop the oldest done ones (items are in the order they came).
+            let mut drop = done - KEEP_DONE;
+            items.retain(|i| {
+                if i.done && drop > 0 {
+                    drop -= 1;
+                    return false;
+                }
+                true
+            });
+        }
         if let Some(parent) = self.file.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -264,6 +287,33 @@ mod tests {
             Err(CoreError::NotFound(_))
         ));
         assert!(inbox.add(InboxKind::Notify, text("  ")).is_err());
+
+        // The history: what's done, most recent first.
+        inbox.answer(&n.id, None).unwrap();
+        let history = inbox.history(10);
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].id, n.id);
+        assert_eq!(history[0].answer, None);
+        assert_eq!(history[1].answer.as_deref(), Some("staging"));
+        assert_eq!(inbox.history(1).len(), 1);
+    }
+
+    #[test]
+    fn keeps_a_bounded_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let inbox = Inbox::new(dir.path());
+        let waiting = inbox.add(InboxKind::Ask, text("still open")).unwrap();
+        for i in 0..KEEP_DONE + 5 {
+            let item = inbox
+                .add(InboxKind::Notify, text(&format!("n{i}")))
+                .unwrap();
+            inbox.answer(&item.id, None).unwrap();
+        }
+        let history = inbox.history(usize::MAX);
+        assert_eq!(history.len(), KEEP_DONE);
+        assert!(history.iter().all(|i| i.text != "n0"));
+        // Open items are never dropped.
+        assert_eq!(inbox.open(), vec![waiting]);
     }
 
     #[test]

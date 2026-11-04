@@ -69,6 +69,25 @@ test("agents ask, tell and wait on you through the inbox", async ({ page }) => {
   await question.getByRole("button", { name: "Send" }).click();
   await expect.poll(() => screen(page)).toMatch(/^staging, please\nexit=0$/m);
   await expect(inboxButton(page)).toHaveAccessibleName("Inbox");
+
+  // Earlier: what was answered, and with what; what was dismissed.
+  await inbox(page).getByRole("tab", { name: "Earlier" }).click();
+  const answered = inbox(page)
+    .getByRole("listitem", { name: /Which env\?/ })
+    .first();
+  await expect(answered).toContainText("Answered: staging, please");
+  await expect(
+    inbox(page)
+      .getByRole("listitem", { name: /Tidied the welcome note/ })
+      .first(),
+  ).toContainText("Dismissed");
+  await page.keyboard.press("Escape");
+  // It opens on what's waiting again.
+  await inboxButton(page).click();
+  await expect(inbox(page).getByRole("tab", { name: "Waiting" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await page.keyboard.press("Escape");
 
   // Claude's Notification hook, while you look elsewhere: an attention

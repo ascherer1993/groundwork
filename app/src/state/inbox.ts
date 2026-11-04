@@ -15,28 +15,54 @@ import { message } from "./vault";
 import { useWorkspace } from "./workspace";
 
 interface InboxState {
+  /** Open items, oldest first. */
   items: InboxItem[];
+  /** Answered and dismissed ones, most recent first (loaded when shown). */
+  history: InboxItem[];
   open: boolean;
+  view: "waiting" | "earlier";
   setOpen(open: boolean): void;
+  setView(view: "waiting" | "earlier"): void;
+  /** Reloads the open items (and the history, if it's showing). */
   load(): Promise<void>;
   answer(id: string, answer?: string): Promise<void>;
 }
 
+/** Numbers loads, so a late one is ignored. */
+let loads = 0;
+
 export const useInbox = create<InboxState>((set, get) => ({
   items: [],
+  history: [],
   open: false,
+  view: "waiting",
 
   setOpen(open) {
-    set({ open });
+    set(open ? { open, view: "waiting" } : { open });
+    // Whatever events were missed (say, the CLI wrote the file while the app
+    // restarted), opening shows what's there.
+    if (open) void get().load();
+  },
+
+  setView(view) {
+    set({ view });
+    void get().load();
   },
 
   async load() {
+    const n = ++loads;
     try {
-      const items = await api.inbox();
-      set({ items });
+      const showHistory = get().open && get().view === "earlier";
+      const [items, history] = await Promise.all([
+        api.inbox(),
+        showHistory ? api.inboxHistory() : Promise.resolve(get().history),
+      ]);
+      // An older load finishing late doesn't undo a newer one.
+      if (n !== loads) return;
+      set({ items, history });
       void badge(items.length);
     } catch {
-      // Shown as empty.
+      // Left as it was.
     }
   },
 
@@ -134,4 +160,5 @@ export function watchInbox() {
     void useInbox.getState().load();
     if (added) void announce(added);
   });
+  window.addEventListener("focus", () => void useInbox.getState().load());
 }

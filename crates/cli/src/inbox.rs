@@ -167,6 +167,11 @@ pub fn hook(event: &str, context: impl FnOnce() -> Option<String>) {
         let _ = std::io::stdin().read_to_string(&mut input);
     }
     let input: Value = serde_json::from_str(&input).unwrap_or(Value::Null);
+    // Claude's reminder after a minute idle at its prompt: Stop already said
+    // it finished, so it isn't worth an inbox item. Permission prompts are.
+    if event == "notification" && is_idle_reminder(&input) {
+        return;
+    }
 
     if event == "session-start" {
         print_session_start(context());
@@ -182,6 +187,13 @@ pub fn hook(event: &str, context: impl FnOnce() -> Option<String>) {
             }),
         );
     }
+}
+
+fn is_idle_reminder(input: &Value) -> bool {
+    input["notification_type"] == "idle_prompt"
+        || input["message"]
+            .as_str()
+            .is_some_and(|m| m.starts_with("Claude is waiting for your input"))
 }
 
 /// What SessionStart adds to Claude's context in a Groundwork terminal.

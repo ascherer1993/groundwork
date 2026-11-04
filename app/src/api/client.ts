@@ -105,6 +105,7 @@ interface Results {
   "repo.locate": RepoLocation;
   "project.list": ProjectInfo[];
   "inbox.list": InboxItem[];
+  "inbox.history": InboxItem[];
   "inbox.ask": InboxItem;
   "inbox.notify": InboxItem;
   "inbox.wait": InboxItem;
@@ -232,6 +233,7 @@ export const api = {
     call("repo.locate", { id, path, worktrees }),
   projects: () => call("project.list"),
   inbox: () => call("inbox.list"),
+  inboxHistory: () => call("inbox.history"),
   answerInbox: (id: string, answer?: string) => call("inbox.answer", { id, answer }),
   agents: () => call("agent.list"),
   createProject: (folder: string) => call("project.create", { folder }),

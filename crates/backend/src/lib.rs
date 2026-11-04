@@ -424,6 +424,7 @@ impl Backend {
                 to_value(session.repos().locate(&id, &path, worktrees.as_deref())?)
             }
             Request::InboxList => to_value(self.agents.open()),
+            Request::InboxHistory => to_value(self.agents.history()),
             Request::InboxAsk {
                 text,
                 choices,
