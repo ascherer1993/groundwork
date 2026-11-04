@@ -4,7 +4,8 @@ import { editorFor } from "../editor/active";
 import { insertRendered } from "../editor/templates";
 import { formDialog, type PaletteItem, useUi } from "../state/ui";
 import { message, newNoteFolder, useVault } from "../state/vault";
-import { useWorkspace } from "../state/workspace";
+import { NOTES, useWorkspace } from "../state/workspace";
+import { useWorkspaces } from "../state/workspaces";
 
 /** Past any note's end: "put the cursor at the end". */
 const END = Number.MAX_SAFE_INTEGER;
@@ -150,6 +151,17 @@ function commands(): Command[] {
     { id: "forward", label: "Go forward", shortcut: "⌘]", run: () => ws.forward() },
     { id: "new-terminal", label: "New terminal", shortcut: "⌘T", run: () => ws.openTerminal() },
     {
+      id: "new-workspace",
+      label: "New workspace…",
+      run: () => useWorkspaces.getState().create(),
+    },
+    { id: "switch-workspace", label: "Switch workspace…", run: switchWorkspace },
+    {
+      id: "workspaces",
+      label: "Show workspaces and terminals",
+      run: () => ui.setSidebarView("workspaces"),
+    },
+    {
       id: "close-tab",
       label: "Close tab",
       shortcut: "⌘W",
@@ -180,6 +192,24 @@ function commands(): Command[] {
 }
 
 /** ⌘P */
+/** Lists the notes and the workspaces, with their ⌘ number. */
+function switchWorkspace() {
+  const areas = [
+    { id: NOTES, name: "Notes", cwd: undefined as string | undefined },
+    ...useWorkspaces.getState().list,
+  ];
+  useUi.getState().openPalette({
+    placeholder: "Switch to…",
+    items: areas.map((a, i) => ({
+      id: a.id,
+      label: a.name,
+      detail: a.cwd,
+      hint: i < 9 ? `⌘${i + 1}` : undefined,
+      run: () => useWorkspace.getState().setArea(a.id),
+    })),
+  });
+}
+
 export function openCommandPalette() {
   const items: PaletteItem[] = commands()
     .filter((c) => !c.when || c.when())

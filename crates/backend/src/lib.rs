@@ -312,6 +312,7 @@ impl Backend {
             Request::TerminalCreate {
                 cwd,
                 command,
+                workspace,
                 cols,
                 rows,
             } => {
@@ -329,7 +330,10 @@ impl Backend {
                         .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
                         .unwrap_or_else(|| "/".into()),
                 };
-                let env = self.terminal_env(vault.as_deref());
+                let mut env = self.terminal_env(vault.as_deref());
+                if let Some(workspace) = workspace {
+                    env.push(("GROUNDWORK_WORKSPACE_ID".into(), workspace));
+                }
                 to_value(self.terminals.create(
                     cwd,
                     command.unwrap_or_default(),
@@ -352,6 +356,30 @@ impl Backend {
             }
             Request::TerminalKill { id } => {
                 self.terminals.kill(id)?;
+                Ok(Value::Null)
+            }
+
+            Request::WorkspaceList => to_value(self.session()?.workspaces().list()),
+            Request::WorkspaceCreate { name, cwd } => {
+                let session = self.session()?;
+                let root = session.vault().root().display().to_string();
+                to_value(
+                    session
+                        .workspaces()
+                        .create(&name, cwd.as_deref().unwrap_or(&root))?,
+                )
+            }
+            Request::WorkspaceUpdate { id, name, cwd } => to_value(
+                self.session()?
+                    .workspaces()
+                    .update(&id, name.as_deref(), cwd.as_deref())?,
+            ),
+            Request::WorkspaceSaveLayout { id, layout } => {
+                self.session()?.workspaces().save_layout(&id, layout)?;
+                Ok(Value::Null)
+            }
+            Request::WorkspaceDelete { id } => {
+                self.session()?.workspaces().delete(&id)?;
                 Ok(Value::Null)
             }
         }

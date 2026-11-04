@@ -8,6 +8,7 @@ import {
   ListTodo,
   PanelRight,
   Search,
+  SquareTerminal,
   TextSearch,
 } from "lucide-react";
 import { useEffect } from "react";
@@ -15,7 +16,9 @@ import { openToday } from "../lib/commands";
 import { api } from "../api/client";
 import { promptDialog, type SidebarView, useUi } from "../state/ui";
 import { message, useVault } from "../state/vault";
+import { watchTerminals } from "../state/terminals";
 import { useWorkspace } from "../state/workspace";
+import { useWorkspaces } from "../state/workspaces";
 import { FileTree } from "./FileTree";
 import { LinksPanel } from "./LinksPanel";
 import { SearchPanel } from "./SearchPanel";
@@ -23,6 +26,7 @@ import { checkSetupOnce } from "./SetupDialog";
 import { TagsPanel } from "./TagsPanel";
 import { TodosPanel } from "./TodosPanel";
 import { Workspace } from "./Workspace";
+import { WorkspacesPanel } from "./WorkspacesPanel";
 
 async function newFolder() {
   const name = await promptDialog({
@@ -43,6 +47,7 @@ const VIEWS: { id: SidebarView; label: string; icon: typeof Files }[] = [
   { id: "search", label: "Search (⌘⇧F)", icon: TextSearch },
   { id: "tags", label: "Tags", icon: Hash },
   { id: "todos", label: "Todos", icon: ListTodo },
+  { id: "workspaces", label: "Workspaces", icon: SquareTerminal },
 ];
 
 function SidebarTabs() {
@@ -79,6 +84,10 @@ export function VaultView() {
   const setSwitcher = useUi((s) => s.setSwitcher);
 
   useEffect(checkSetupOnce, []);
+  useEffect(() => {
+    watchTerminals();
+    void useWorkspaces.getState().load();
+  }, [vault?.path]);
 
   return (
     <div className={`vault${rightOpen ? " with-right" : ""}`}>
@@ -138,6 +147,7 @@ export function VaultView() {
           {sidebarView === "search" && <SearchPanel />}
           {sidebarView === "tags" && <TagsPanel />}
           {sidebarView === "todos" && <TodosPanel />}
+          {sidebarView === "workspaces" && <WorkspacesPanel />}
         </div>
       </aside>
       <main className="content">

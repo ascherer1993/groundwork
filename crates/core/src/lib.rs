@@ -20,6 +20,7 @@ pub mod todos;
 mod tree;
 mod vault;
 pub mod watch;
+pub mod workspaces;
 
 pub use error::{CoreError, Result};
 pub use recent::{RecentVault, RecentVaults};

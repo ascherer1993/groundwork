@@ -249,14 +249,17 @@ pub enum Request {
         cwd: Option<String>,
         #[ts(optional)]
         command: Option<Vec<String>>,
+        /// The workspace it's in, as `GROUNDWORK_WORKSPACE_ID`.
+        #[ts(optional)]
+        workspace: Option<String>,
         cols: u16,
         rows: u16,
     },
     /// → `TerminalInfo[]`: every running terminal, oldest first.
     #[serde(rename = "terminal.list")]
     TerminalList,
-    /// → `TerminalSnapshot`: resizes the terminal, returns what's on screen,
-    /// and starts `terminal.output` events for it.
+    /// → `TerminalSnapshot`: resizes the terminal (not if 0×0: a view that
+    /// isn't on screen yet), returns what's on screen, and starts its events.
     #[serde(rename = "terminal.attach")]
     TerminalAttach { id: String, cols: u16, rows: u16 },
     /// → `null`: types into the terminal.
@@ -269,6 +272,37 @@ pub enum Request {
     /// window does.
     #[serde(rename = "terminal.kill")]
     TerminalKill { id: String },
+
+    /// → `Workspace[]`: the open vault's workspaces.
+    #[serde(rename = "workspace.list")]
+    WorkspaceList,
+    /// → `Workspace`: `cwd` is an absolute folder (the vault root by default).
+    #[serde(rename = "workspace.create")]
+    WorkspaceCreate {
+        name: String,
+        #[ts(optional)]
+        cwd: Option<String>,
+    },
+    /// → `Workspace`
+    #[serde(rename = "workspace.update")]
+    WorkspaceUpdate {
+        id: String,
+        #[ts(optional)]
+        name: Option<String>,
+        #[ts(optional)]
+        cwd: Option<String>,
+    },
+    /// → `null`: saves a workspace's tabs and splits.
+    #[serde(rename = "workspace.saveLayout")]
+    WorkspaceSaveLayout {
+        id: String,
+        #[ts(type = "unknown")]
+        layout: serde_json::Value,
+    },
+    /// → `null`: forgets a workspace. Its terminals keep running; the app
+    /// ends them first.
+    #[serde(rename = "workspace.delete")]
+    WorkspaceDelete { id: String },
 }
 
 /// Pushed from the backend to the UI, serialized as `{ "event": "...", "payload": {...} }`.
@@ -296,6 +330,20 @@ pub enum Event {
     TerminalTitle { id: String, title: String },
     #[serde(rename = "terminal.bell")]
     TerminalBell { id: String },
+    /// What's in a terminal's foreground, or its shell's folder, changed.
+    #[serde(rename = "terminal.process")]
+    TerminalProcess {
+        id: String,
+        process: Option<String>,
+        cwd: Option<String>,
+    },
+    /// A program in a terminal asked for attention (OSC 9 / OSC 777).
+    #[serde(rename = "terminal.notify")]
+    TerminalNotify {
+        id: String,
+        title: Option<String>,
+        body: String,
+    },
     /// A terminal's program exited; the terminal is gone.
     #[serde(rename = "terminal.exit")]
     TerminalExit { id: String, code: Option<i32> },
@@ -310,7 +358,7 @@ pub enum Event {
 #[ts(export)]
 pub struct TerminalInfo {
     pub id: String,
-    /// The folder it started in.
+    /// The shell's current folder.
     pub cwd: String,
     /// The program it started (`zsh`).
     pub program: String,

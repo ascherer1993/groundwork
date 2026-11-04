@@ -43,5 +43,7 @@ export async function expectFile(vault: string, path: string, check: (text: stri
 
 /** The active tab's editor content. */
 export function editor(page: Page) {
-  return page.locator(".dv-groupview.dv-active-group [data-testid=editor] .cm-content");
+  return page.locator(
+    ".area:not([hidden]) .dv-groupview.dv-active-group [data-testid=editor] .cm-content",
+  );
 }

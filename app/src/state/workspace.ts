@@ -1,10 +1,14 @@
 /**
- * Open files: tabs and splits (dockview), per-tab history, and link navigation.
+ * Tabs and splits (dockview) for files and terminals, per-tab history, and
+ * link navigation. The main area shows one "area" at a time: the notes
+ * layout, or a workspace's own layout (see `workspaces.ts`). Each area has
+ * its own dock; `dock` is the one on screen.
  */
 import type { DockviewApi, IDockviewPanel } from "dockview-react";
 import { create } from "zustand";
 import { api } from "../api/client";
 import type { FileChange } from "../api/generated/FileChange";
+import type { TerminalInfo } from "../api/generated/TerminalInfo";
 import { displayName, isPagePath } from "../lib/paths";
 import { splitTarget } from "../markdown/syntax";
 import { message, newNoteFolder, onVaultChange, useVault } from "./vault";
@@ -61,12 +65,28 @@ export interface OpenOptions {
   editTitle?: boolean;
 }
 
+/** The notes area: the layout that isn't a workspace's. */
+export const NOTES = "notes";
+
 interface WorkspaceState {
+  /** The dock on screen. */
   dock: DockviewApi | null;
+  /** Every mounted area's dock, by area. */
+  docks: Record<string, DockviewApi>;
+  /** `NOTES`, or the id of the workspace on screen. */
+  area: string;
+  /** Bumped when any dock's tabs change, for views that list them. */
+  tabsVersion: number;
   activePanelId: string | null;
   activePath: string | null;
 
-  attach(dock: DockviewApi): void;
+  /**
+   * Sets up a mounted area's dock: restores its layout and saves changes.
+   * Returns the cleanup to run when it unmounts.
+   */
+  attach(dock: DockviewApi, area: string, layout?: unknown): () => void;
+  /** Puts an area on screen. */
+  setArea(area: string): void;
   open(path: string, opts?: OpenOptions): void;
   openLink(
     source: string,
@@ -79,11 +99,22 @@ interface WorkspaceState {
   forward(panelId?: string): void;
   closeActive(): void;
   newNote(folder?: string, opts?: OpenOptions): Promise<void>;
-  /** A shell in `cwd` (the vault root by default), in a new tab. */
+  /**
+   * A shell in `cwd` in a new tab of the area on screen. By default it starts
+   * in the workspace's folder, or the vault root in the notes area.
+   */
   openTerminal(cwd?: string): Promise<void>;
+  /** Shows a running terminal in a new tab of the area on screen. */
+  addTerminal(info: TerminalInfo): void;
+  /** Shows a running terminal (by session id) in a tab, if one has it. */
+  showTerminal(id: string): boolean;
+  /** Every terminal in a tab, with the area it's in. */
+  terminalTabs(): { area: string; panel: IDockviewPanel; terminal: string }[];
 }
 
 let panelCounter = 0;
+/** Docks whose saved layout was restored. */
+const restored = new WeakSet<DockviewApi>();
 let focusNonce = 0;
 
 function titleOf(path: string): string {
@@ -95,6 +126,26 @@ function titleOf(path: string): string {
 function layoutKey(): string | null {
   const vault = useVault.getState().vault;
   return vault ? `groundwork.layout:${vault.path}` : null;
+}
+
+function areaKey(): string | null {
+  const vault = useVault.getState().vault;
+  return vault ? `groundwork.area:${vault.path}` : null;
+}
+
+/** The area last on screen in this vault. */
+export function savedArea(): string {
+  try {
+    return localStorage.getItem(areaKey() ?? "") ?? NOTES;
+  } catch {
+    return NOTES;
+  }
+}
+
+/** Where terminals in an area start by default. */
+let areaFolders: (area: string) => string | undefined = () => undefined;
+export function setAreaFolders(fn: (area: string) => string | undefined) {
+  areaFolders = fn;
 }
 
 function update(panel: IDockviewPanel, params: PanelParams) {
@@ -118,16 +169,25 @@ function activeFile(dock: DockviewApi | null | undefined): IDockviewPanel | unde
 
 export const useWorkspace = create<WorkspaceState>((set, get) => ({
   dock: null,
+  docks: {},
+  area: NOTES,
+  tabsVersion: 0,
   activePanelId: null,
   activePath: null,
 
-  attach(dock) {
-    set({ dock });
-    const key = layoutKey();
-    if (key) {
+  attach(dock, area, layout) {
+    let disposed = false;
+    const listeners: { dispose(): void }[] = [];
+    // Once per dock, though React may attach it twice (StrictMode).
+    if (!restored.has(dock)) {
+      restored.add(dock);
       try {
-        const saved = localStorage.getItem(key);
-        if (saved) dock.fromJSON(JSON.parse(saved));
+        if (area === NOTES) {
+          const saved = layoutKey() && localStorage.getItem(layoutKey()!);
+          if (saved) dock.fromJSON(JSON.parse(saved));
+        } else if (layout) {
+          dock.fromJSON(layout as Parameters<DockviewApi["fromJSON"]>[0]);
+        }
       } catch {
         dock.clear();
       }
@@ -136,18 +196,33 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const n = Number(panel.id.replace(/^tab-/, ""));
       if (n > panelCounter) panelCounter = n;
     }
+    set((s) => ({ docks: { ...s.docks, [area]: dock } }));
     const sync = () => {
+      if (get().area !== area) return;
       const panel = dock.activePanel;
       const path = panel && !isTerminal(panel) ? paramsOf(panel).path : null;
-      set({ activePanelId: panel?.id ?? null, activePath: path });
+      set({ dock, activePanelId: panel?.id ?? null, activePath: path });
       if (path) useVault.getState().revealInTree(path);
     };
     sync();
-    dock.onDidActivePanelChange(sync);
+    listeners.push(dock.onDidActivePanelChange(sync));
+    const touch = () => !disposed && set((s) => ({ tabsVersion: s.tabsVersion + 1 }));
+    listeners.push(
+      dock.onDidAddPanel((panel) => {
+        touch();
+        panel.api.onDidTitleChange(touch);
+      }),
+    );
+    for (const panel of dock.panels) panel.api.onDidTitleChange(touch);
     let saveTimer: ReturnType<typeof setTimeout> | null = null;
     const save = () => {
       if (saveTimer) clearTimeout(saveTimer);
       saveTimer = null;
+      if (disposed) return;
+      if (area !== NOTES) {
+        void api.saveWorkspaceLayout(area, dock.toJSON()).catch(() => {});
+        return;
+      }
       const k = layoutKey();
       try {
         if (k) localStorage.setItem(k, JSON.stringify(dock.toJSON()));
@@ -155,22 +230,54 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         // Storage can be unavailable; layout just won't persist.
       }
     };
-    dock.onDidLayoutChange(() => {
-      if (saveTimer) clearTimeout(saveTimer);
-      saveTimer = setTimeout(save, 300);
-    });
+    listeners.push(
+      dock.onDidLayoutChange(() => {
+        touch();
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(save, 300);
+      }),
+    );
     // Don't lose a change made just before quitting or reloading.
-    window.addEventListener("beforeunload", () => saveTimer && save());
+    const flush = () => saveTimer && save();
+    window.addEventListener("beforeunload", flush);
     // Closing a terminal tab ends its session, as closing a terminal window
-    // does. Not when the whole dock goes (switching vaults): those keep
-    // running and come back with the vault's layout.
-    dock.onDidRemovePanel((panel) => {
-      if (!isTerminal(panel)) return;
-      const { terminal } = panel.params as unknown as TerminalParams;
-      setTimeout(() => {
-        if (get().dock === dock) void api.killTerminal(terminal).catch(() => {});
+    // does. Not when the whole dock goes (switching vaults, deleting a
+    // workspace): those decide for themselves.
+    listeners.push(
+      dock.onDidRemovePanel((panel) => {
+        touch();
+        if (!isTerminal(panel)) return;
+        const { terminal } = panel.params as unknown as TerminalParams;
+        setTimeout(() => {
+          if (!disposed) void api.killTerminal(terminal).catch(() => {});
+        });
+      }),
+    );
+    return () => {
+      flush();
+      disposed = true;
+      listeners.forEach((l) => l.dispose());
+      window.removeEventListener("beforeunload", flush);
+      set((s) => {
+        const docks = { ...s.docks };
+        if (docks[area] === dock) delete docks[area];
+        return { docks, dock: s.dock === dock ? null : s.dock };
       });
-    });
+    };
+  },
+
+  setArea(area) {
+    const dock = get().docks[area] ?? null;
+    const panel = dock?.activePanel;
+    const path = panel && !isTerminal(panel) ? paramsOf(panel).path : null;
+    set({ area, dock, activePanelId: panel?.id ?? null, activePath: path });
+    if (path) useVault.getState().revealInTree(path);
+    try {
+      const k = areaKey();
+      if (k) localStorage.setItem(k, area);
+    } catch {
+      // Not remembered; the notes area shows next time.
+    }
   },
 
   open(path, opts = {}) {
@@ -301,23 +408,52 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   },
 
   async openTerminal(cwd) {
-    const dock = get().dock;
-    if (!dock) return;
+    const area = get().area;
     try {
       // The view resizes it to fit once it's on screen.
-      const info = await api.createTerminal({ cols: 100, rows: 30 }, cwd);
-      const params: TerminalParams = { terminal: info.id, cwd: info.cwd };
-      const active = dock.activePanel;
-      dock.addPanel({
-        id: `tab-${++panelCounter}`,
-        component: "terminal",
-        title: terminalTitle(info.title, info.cwd),
-        params: params as unknown as Record<string, unknown>,
-        position: active ? { referencePanel: active, direction: "within" } : undefined,
-      });
+      const info = await api.createTerminal(
+        { cols: 100, rows: 30 },
+        cwd ?? areaFolders(area),
+        area === NOTES ? undefined : area,
+      );
+      get().addTerminal(info);
     } catch (err) {
       useUi.getState().notify(message(err));
     }
+  },
+
+  addTerminal(info) {
+    const dock = get().dock;
+    if (!dock) return;
+    const params: TerminalParams = { terminal: info.id, cwd: info.cwd };
+    const active = dock.activePanel;
+    dock.addPanel({
+      id: `tab-${++panelCounter}`,
+      component: "terminal",
+      title: terminalTitle(info.title, info.cwd),
+      params: params as unknown as Record<string, unknown>,
+      position: active ? { referencePanel: active, direction: "within" } : undefined,
+    });
+  },
+
+  showTerminal(id) {
+    const tab = get()
+      .terminalTabs()
+      .find((t) => t.terminal === id);
+    if (!tab) return false;
+    get().setArea(tab.area);
+    tab.panel.api.setActive();
+    return true;
+  },
+
+  terminalTabs() {
+    return Object.entries(get().docks).flatMap(([area, dock]) =>
+      dock.panels.filter(isTerminal).map((panel) => ({
+        area,
+        panel,
+        terminal: (panel.params as unknown as TerminalParams).terminal,
+      })),
+    );
   },
 
   async newNote(folder, opts = {}) {
@@ -334,8 +470,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
 /** Keeps open tabs pointing at files that moved, and closes tabs of deleted files. */
 function followChanges(changes: FileChange[]) {
-  const dock = useWorkspace.getState().dock;
-  if (!dock) return;
+  for (const dock of Object.values(useWorkspace.getState().docks)) followChangesIn(dock, changes);
+}
+
+function followChangesIn(dock: DockviewApi, changes: FileChange[]) {
   const moves = new Map<string, string>();
   const removed = new Set<string>();
   for (const c of changes) {

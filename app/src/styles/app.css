@@ -1079,3 +1079,192 @@ button.danger-button {
   right: 4px;
   bottom: 4px;
 }
+
+/* Workspaces: the main area shows one at a time */
+
+.areas {
+  position: relative;
+  height: 100%;
+}
+
+.area {
+  position: absolute;
+  inset: 0;
+}
+
+.area[hidden] {
+  display: none;
+}
+
+/* Workspaces view */
+
+.workspaces-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 4px;
+}
+
+.workspaces-header,
+.sessions-header {
+  display: flex;
+  align-items: center;
+}
+
+.workspaces-header .icon {
+  margin-left: auto;
+}
+
+.area-list,
+.area-tabs,
+.session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.area-row,
+.area-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px 4px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  text-align: left;
+}
+
+.area-row.current {
+  background: var(--bg-selected);
+}
+
+.area-name {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.area-folder,
+.area-tab-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.area-folder {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.area-tab {
+  padding-left: 22px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.area-row .badge,
+.area-tab .badge {
+  margin-left: auto;
+}
+
+.badge {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--text-faint);
+}
+
+.badge-waiting {
+  background: var(--warning);
+  box-shadow: none;
+}
+
+.badge-finished {
+  background: var(--success);
+  box-shadow: none;
+}
+
+.badge-running {
+  background: var(--accent);
+  box-shadow: none;
+  animation: badge-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .badge-running {
+    animation: none;
+  }
+}
+
+.sessions {
+  margin-top: 10px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.session {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 4px 4px 8px;
+  border-radius: 4px;
+}
+
+.session:hover {
+  background: var(--bg-hover);
+}
+
+.session input {
+  margin: 3px 0 0;
+}
+
+.session-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.session-tag {
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  font-size: 10.5px;
+  color: var(--accent);
+}
+
+.session-meta {
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session .icon {
+  padding: 2px;
+}
+
+.sessions-end {
+  margin: 6px 8px;
+}

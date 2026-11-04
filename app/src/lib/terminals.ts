@@ -7,7 +7,7 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { type ITheme, Terminal } from "@xterm/xterm";
+import { type ILinkProvider, type ITheme, Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { ApiCallError, api, transport } from "../api/client";
 import type { Event } from "../api/generated/Event";
@@ -89,12 +89,14 @@ export interface TerminalViewOptions {
   /** The session to show. */
   id: string;
   /** Where a replacement shell starts if the session is gone. */
-  cwd: string;
+  cwd(): string;
   onTitle(title: string): void;
   /** The program exited. */
   onExit(): void;
   /** The session was gone (the daemon stopped), so a new shell replaced it. */
   onReplaced(id: string): void;
+  /** More links in the output (vault paths). */
+  links?: (term: Terminal) => ILinkProvider;
 }
 
 export interface TerminalView {
@@ -129,11 +131,21 @@ export function mountTerminal(el: TerminalElement, opts: TerminalViewOptions): T
   } catch {
     // No WebGL: xterm.js draws with the DOM instead.
   }
+  if (opts.links) term.registerLinkProvider(opts.links(term));
   el.terminal = term;
 
+  // A view that isn't on screen (a hidden workspace) follows the session
+  // without resizing it, then attaches properly once it has a size.
+  let sized = false;
   const refit = () => {
-    if (el.clientWidth > 0 && el.clientHeight > 0) fit.fit();
+    if (el.clientWidth === 0 || el.clientHeight === 0) return;
+    fit.fit();
+    if (!sized) {
+      sized = true;
+      if (started) void attach();
+    }
   };
+  let started = false;
   refit();
 
   // Snapshot first, then output from where it left off. Output that arrives
@@ -156,12 +168,17 @@ export function mountTerminal(el: TerminalElement, opts: TerminalViewOptions): T
     seq += bytes.length;
     term.write(bytes);
   };
+  let attaching = 0;
   const attach = async () => {
     attached = false;
     early = [];
+    const attempt = ++attaching;
     try {
-      const snapshot = await api.attachTerminal(id, term.cols, term.rows);
-      if (disposed) return;
+      const snapshot = sized
+        ? await api.attachTerminal(id, term.cols, term.rows)
+        : await api.attachTerminal(id, 0, 0);
+      // A newer attach (the view got a size) replaces this one.
+      if (disposed || attempt !== attaching) return;
       term.reset();
       term.write(snapshot.data);
       seq = snapshot.seq;
@@ -170,7 +187,7 @@ export function mountTerminal(el: TerminalElement, opts: TerminalViewOptions): T
       early = [];
       waiting.forEach(output);
     } catch (err) {
-      if (disposed) return;
+      if (disposed || attempt !== attaching) return;
       if (err instanceof ApiCallError && err.code === "not_found") await replace();
       else
         term.write(`\r\n\x1b[2m[${err instanceof Error ? err.message : String(err)}]\x1b[0m\r\n`);
@@ -178,7 +195,7 @@ export function mountTerminal(el: TerminalElement, opts: TerminalViewOptions): T
   };
   /** The session is gone (the daemon stopped, or the Mac restarted). */
   const replace = async () => {
-    const info = await api.createTerminal({ cols: term.cols, rows: term.rows }, opts.cwd);
+    const info = await api.createTerminal({ cols: term.cols, rows: term.rows }, opts.cwd());
     if (disposed) return void api.killTerminal(info.id).catch(() => {});
     unsubscribe();
     id = info.id;
@@ -194,6 +211,7 @@ export function mountTerminal(el: TerminalElement, opts: TerminalViewOptions): T
     reconnect: () => void attach(),
   };
   let unsubscribe = subscribe(id, listener);
+  started = true;
   void attach();
 
   // Keystrokes go one call at a time, so they arrive in order.

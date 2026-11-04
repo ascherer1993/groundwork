@@ -1,7 +1,8 @@
 import { undoLast } from "../components/NoteView";
 import { useUi } from "../state/ui";
 import { useVault } from "../state/vault";
-import { useWorkspace } from "../state/workspace";
+import { NOTES, useWorkspace } from "../state/workspace";
+import { useWorkspaces } from "../state/workspaces";
 import { openCommandPalette, openToday } from "./commands";
 
 function inEditable(target: EventTarget | null): boolean {
@@ -34,6 +35,13 @@ export function installShortcuts(): () => void {
       if (key === "e" && !e.shiftKey) return (ws.toggleReading(), true);
       if (key === "w" && !e.shiftKey) return (ws.closeActive(), true);
       if (key === "b" && e.shiftKey) return (ui.toggleRightPanel(), true);
+      // ⌘1 shows the notes, ⌘2… the workspaces in order.
+      if (/^[1-9]$/.test(key) && !e.shiftKey) {
+        const areas = [NOTES, ...useWorkspaces.getState().list.map((w) => w.id)];
+        const area = areas[Number(key) - 1];
+        if (area) ws.setArea(area);
+        return true;
+      }
       if (key === "[") return (ws.back(), true);
       if (key === "]") return (ws.forward(), true);
       if (key === "\\") {

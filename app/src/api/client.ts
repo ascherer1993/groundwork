@@ -22,6 +22,7 @@ import type { TodoFilter } from "./generated/TodoFilter";
 import type { Request } from "./generated/Request";
 import type { TreeNode } from "./generated/TreeNode";
 import type { VaultInfo } from "./generated/VaultInfo";
+import type { Workspace } from "./generated/Workspace";
 import type { WriteResult } from "./generated/WriteResult";
 import { isTauri, TauriTransport, type Transport, WebSocketTransport } from "./transport";
 
@@ -79,6 +80,11 @@ interface Results {
   "terminal.input": null;
   "terminal.resize": null;
   "terminal.kill": null;
+  "workspace.list": Workspace[];
+  "workspace.create": Workspace;
+  "workspace.update": Workspace;
+  "workspace.saveLayout": null;
+  "workspace.delete": null;
 }
 
 type Method = Request["method"];
@@ -163,8 +169,8 @@ export const api = {
   openExternally: (path: string) => call("os.open", { path }),
 
   /** Starts a shell in `cwd` (absolute; the vault root by default). */
-  createTerminal: (size: { cols: number; rows: number }, cwd?: string) =>
-    call("terminal.create", { ...size, cwd }),
+  createTerminal: (size: { cols: number; rows: number }, cwd?: string, workspace?: string) =>
+    call("terminal.create", { ...size, cwd, workspace }),
   terminals: () => call("terminal.list"),
   attachTerminal: (id: string, cols: number, rows: number) =>
     call("terminal.attach", { id, cols, rows }),
@@ -172,6 +178,15 @@ export const api = {
   resizeTerminal: (id: string, cols: number, rows: number) =>
     call("terminal.resize", { id, cols, rows }),
   killTerminal: (id: string) => call("terminal.kill", { id }),
+
+  workspaces: () => call("workspace.list"),
+  /** `cwd` is absolute; the vault root by default. */
+  createWorkspace: (name: string, cwd?: string) => call("workspace.create", { name, cwd }),
+  updateWorkspace: (id: string, change: { name?: string; cwd?: string }) =>
+    call("workspace.update", { id, ...change }),
+  saveWorkspaceLayout: (id: string, layout: unknown) =>
+    call("workspace.saveLayout", { id, layout }),
+  deleteWorkspace: (id: string) => call("workspace.delete", { id }),
 };
 
 export { ApiCallError } from "./transport";

@@ -15,7 +15,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 function activePanel(page: Page) {
-  return page.locator(".dv-groupview.dv-active-group");
+  return page.locator(".area:not([hidden]) .dv-groupview.dv-active-group");
 }
 
 function frame(page: Page) {

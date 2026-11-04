@@ -3,12 +3,14 @@
 //! on first use, and forwards the events of the terminals it attached to.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use groundwork_protocol::{ApiError, ErrorCode, Event, TerminalInfo, TerminalSnapshot};
 use groundwork_terminal_daemon::protocol::{
-    self as daemon, CreateSession, Hello, PROTOCOL, Request, SessionInfo, Snapshot,
+    self as daemon, CreateSession, Hello, OLDEST_COMPATIBLE, PROTOCOL, Request, SessionInfo,
+    Snapshot,
 };
 use groundwork_terminal_daemon::{Client, Error};
 
@@ -19,6 +21,8 @@ pub struct Terminals {
     daemon: PathBuf,
     events: EventSink,
     client: Mutex<Option<Arc<Client>>>,
+    /// The connected daemon's protocol.
+    protocol: AtomicU32,
 }
 
 impl Terminals {
@@ -28,6 +32,7 @@ impl Terminals {
             daemon: daemon_binary(),
             events,
             client: Mutex::new(None),
+            protocol: AtomicU32::new(PROTOCOL),
         }
     }
 
@@ -55,6 +60,11 @@ impl Terminals {
     }
 
     pub fn attach(&self, id: String, cols: u16, rows: u16) -> Result<TerminalSnapshot, ApiError> {
+        // Protocol 1 resizes to whatever it's given.
+        let (cols, rows) = match (cols, rows) {
+            (0, 0) if self.protocol.load(Ordering::SeqCst) < 2 => (80, 24),
+            size => size,
+        };
         let Snapshot { data, seq } = self.call(Request::Attach { id, cols, rows })?;
         Ok(TerminalSnapshot { data, seq })
     }
@@ -84,8 +94,12 @@ impl Terminals {
         }
         let mut client = self.connect()?;
         let hello: Hello = client.call(Request::Hello).map_err(api_error)?;
-        if hello.protocol != PROTOCOL {
-            // Left running by another build of Groundwork.
+        // Left running by another build of Groundwork: replaced once it's
+        // empty, used meanwhile if it's compatible.
+        let mut protocol = hello.protocol;
+        if hello.protocol != PROTOCOL
+            && !(hello.sessions > 0 && hello.protocol >= OLDEST_COMPATIBLE)
+        {
             if hello.sessions > 0 {
                 return Err(ApiError::new(
                     ErrorCode::Conflict,
@@ -105,7 +119,9 @@ impl Terminals {
                 std::thread::sleep(Duration::from_millis(20));
             }
             client = self.connect()?;
+            protocol = PROTOCOL;
         }
+        self.protocol.store(protocol, Ordering::SeqCst);
         let client = Arc::new(client);
         *slot = Some(client.clone());
         Ok(client)
@@ -155,6 +171,12 @@ fn app_event(event: daemon::Event) -> Event {
         daemon::Event::Output { id, seq, data } => Event::TerminalOutput { id, seq, data },
         daemon::Event::Title { id, title } => Event::TerminalTitle { id, title },
         daemon::Event::Bell { id } => Event::TerminalBell { id },
+        daemon::Event::Process { id, process, cwd } => Event::TerminalProcess {
+            id,
+            process,
+            cwd: cwd.map(|c| c.display().to_string()),
+        },
+        daemon::Event::Notify { id, title, body } => Event::TerminalNotify { id, title, body },
         daemon::Event::Exit { id, code } => Event::TerminalExit { id, code },
     }
 }

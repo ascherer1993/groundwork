@@ -30,6 +30,7 @@ Groundwork is a desktop app. It shows the vault as a file tree, notes in tabs (l
 
   Write these directly. Don't read Groundwork's source code or install tools to check that something renders. If a diagram is unusual, ask the user how it looks.
 - **Links to notes that don't exist yet are normal**, as in Obsidian: clicking one creates the note. A daily note linking to the previous day's note is a common example. Call these "not created yet", not "broken".
+- **In a Groundwork terminal, vault paths you print are links.** The user can click `Projects/Acme/Kickoff notes.md` (or an absolute path into the vault, with an optional `:line`) to open it, so name the files you created or changed by their path.
 - **For an overview of the whole vault**, run `groundwork files` and `groundwork links --all` (add `--json` to parse them). Don't walk the folders with `find`, or call `note info` once per note.
 
 ## Rules

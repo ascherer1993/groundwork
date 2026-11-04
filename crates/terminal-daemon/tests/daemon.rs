@@ -178,6 +178,67 @@ fn sessions_outlive_their_clients_and_reattach_with_their_screen() {
     let screen = replay.screen().contents();
     assert!(screen.contains("line 60\nred"), "{screen}");
     assert!(!screen.contains("line 30\n"), "{screen}");
+
+    // A client that only follows it (0×0) leaves its size alone.
+    let (watcher, _events) = daemon.client();
+    let followed: Snapshot = watcher
+        .call(Request::Attach {
+            id: id.clone(),
+            cols: 0,
+            rows: 0,
+        })
+        .unwrap();
+    let mut replay = vt100::Parser::new(24.try_into().unwrap(), 80.try_into().unwrap(), 0);
+    replay.process(followed.data.as_bytes());
+    assert_eq!(replay.screen().contents(), screen);
+}
+
+#[test]
+fn programs_folders_and_notifications_are_reported() {
+    let (daemon, _) = Daemon::in_process(Duration::from_secs(60));
+    let (client, events) = daemon.client();
+    let work = tempfile::tempdir().unwrap();
+    let sub = work.path().join("sub");
+    std::fs::create_dir(&sub).unwrap();
+    // A shell that moves, runs a command, and asks for attention.
+    let session = sh(
+        &client,
+        work.path(),
+        "cd sub; printf '\\033]9;Claude needs you\\007\\033]9;4;1;50\\007\\033]777;notify;Build;done\\007'; exec /bin/sh -i",
+    );
+    attach(&client, &session.id);
+    // An interactive shell runs commands as their own foreground job, named
+    // as they name themselves (as Claude Code does: node, calling itself claude).
+    client
+        .call::<()>(Request::Input {
+            id: session.id.clone(),
+            data: "/bin/bash -c 'exec -a dozing sleep 3'\r".into(),
+        })
+        .unwrap();
+
+    let sub = std::fs::canonicalize(&sub).unwrap();
+    let (mut notices, mut sleeping, mut moved) = (Vec::new(), false, false);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while notices.len() < 2 || !sleeping || !moved {
+        match events.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(Event::Notify { title, body, .. }) => notices.push((title, body)),
+            Ok(Event::Process { process, cwd, .. }) => {
+                sleeping |= process.as_deref() == Some("dozing");
+                moved |= cwd.as_deref() == Some(sub.as_path());
+            }
+            Ok(_) => {}
+            Err(_) => panic!("notices {notices:?}, sleeping {sleeping}, moved {moved}"),
+        }
+    }
+    assert_eq!(
+        notices,
+        [
+            (None, "Claude needs you".to_string()),
+            (Some("Build".to_string()), "done".to_string())
+        ]
+    );
+    let listed: Vec<SessionInfo> = client.call(Request::List).unwrap();
+    assert_eq!(listed[0].cwd, sub);
 }
 
 #[test]

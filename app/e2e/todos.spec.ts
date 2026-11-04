@@ -34,7 +34,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 function block(page: Page) {
-  return page.locator(".dv-groupview.dv-active-group .todos-view");
+  return page.locator(".area:not([hidden]) .dv-groupview.dv-active-group .todos-view");
 }
 
 function section(page: Page, name: string) {

@@ -2,7 +2,7 @@
 
 export type TerminalInfo = { id: string, 
 /**
- * The folder it started in.
+ * The shell's current folder.
  */
 cwd: string, 
 /**

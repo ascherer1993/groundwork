@@ -108,6 +108,7 @@ pub struct Session {
     index: RwLock<Index>,
     activity: ActivityLog,
     state_dir: PathBuf,
+    workspaces: crate::workspaces::Workspaces,
     write_lock: Mutex<()>,
     snapshot_saved: Mutex<Instant>,
     /// Who changes made through this session are logged as.
@@ -144,6 +145,7 @@ impl Session {
         let session = Self {
             activity: ActivityLog::new(vault.root(), &machine_id(data_dir)),
             state_dir: data_dir.join("vaults").join(key),
+            workspaces: crate::workspaces::Workspaces::new(&data_dir.join("vaults").join(key)),
             vault,
             index: RwLock::new(index),
             write_lock: Mutex::new(()),
@@ -163,6 +165,11 @@ impl Session {
 
     pub fn vault(&self) -> &Vault {
         &self.vault
+    }
+
+    /// This vault's workspaces (machine-local).
+    pub fn workspaces(&self) -> &crate::workspaces::Workspaces {
+        &self.workspaces
     }
 
     pub fn index(&self) -> RwLockReadGuard<'_, Index> {

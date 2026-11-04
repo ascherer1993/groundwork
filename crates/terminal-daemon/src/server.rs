@@ -35,6 +35,8 @@ const SCROLLBACK: usize = 5000;
 const KILL_GRACE: Duration = Duration::from_secs(2);
 /// Output that arrives after the program exits (it's still in the PTY).
 const DRAIN: Duration = Duration::from_millis(500);
+/// How often sessions are checked for a new foreground program or folder.
+const POLL: Duration = Duration::from_secs(1);
 
 pub struct Options {
     pub socket: PathBuf,
@@ -70,6 +72,10 @@ pub fn run(opts: Options) -> io::Result<()> {
     if let Some(idle) = opts.idle_exit {
         let daemon = daemon.clone();
         thread::spawn(move || daemon.watch_idle(idle));
+    }
+    {
+        let daemon = daemon.clone();
+        thread::spawn(move || daemon.watch_processes());
     }
     for stream in listener.incoming() {
         if daemon.stopping.load(Ordering::SeqCst) {
@@ -122,6 +128,18 @@ impl Daemon {
                 since = None;
             } else if since.get_or_insert_with(Instant::now).elapsed() >= idle {
                 self.stop();
+            }
+        }
+    }
+
+    /// Tells clients when a session's foreground program or folder changes
+    /// (a command started or finished, the shell `cd`'d).
+    fn watch_processes(&self) {
+        while !self.stopping.load(Ordering::SeqCst) {
+            thread::sleep(POLL);
+            let sessions: Vec<_> = self.sessions.lock().unwrap().values().cloned().collect();
+            for session in sessions {
+                session.check_process();
             }
         }
     }
@@ -281,6 +299,7 @@ impl Daemon {
                 .duration_since(UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs()),
             order: self.next_session.fetch_add(1, Ordering::SeqCst),
+            seen: Mutex::new((None, None)),
             killer: Mutex::new(child.clone_killer()),
             writer: Mutex::new(writer),
             master: Mutex::new(pair.master),
@@ -354,6 +373,8 @@ struct Session {
     started: u64,
     /// Creation order, for listing.
     order: u64,
+    /// The foreground program and folder clients were last told about.
+    seen: Mutex<(Option<String>, Option<PathBuf>)>,
     master: Mutex<Box<dyn MasterPty + Send>>,
     writer: Mutex<Box<dyn Write + Send>>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
@@ -373,6 +394,8 @@ struct Screen {
 struct Callbacks {
     title: Option<String>,
     bell: bool,
+    /// (title, body)
+    notices: Vec<(Option<String>, String)>,
 }
 
 impl vt100::Callbacks for Callbacks {
@@ -383,17 +406,59 @@ impl vt100::Callbacks for Callbacks {
     fn audible_bell(&mut self, _: &mut vt100::Screen) {
         self.bell = true;
     }
+
+    fn unhandled_osc(&mut self, _: &mut vt100::Screen, params: &[&[u8]]) {
+        let text = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
+        match params {
+            // iTerm2's notification. `9;4;…` is ConEmu's progress report instead.
+            [b"9", rest @ ..] if !rest.is_empty() && rest[0] != b"4" => {
+                let body: Vec<String> = rest.iter().map(|p| text(p)).collect();
+                self.notices.push((None, body.join(";")));
+            }
+            [b"777", b"notify", title, body @ ..] => {
+                let body: Vec<String> = body.iter().map(|p| text(p)).collect();
+                self.notices.push((Some(text(title)), body.join(";")));
+            }
+            _ => {}
+        }
+    }
 }
 
 impl Session {
-    fn info(&self) -> SessionInfo {
+    /// The foreground program's name, and the shell's current folder.
+    fn process(&self) -> (Option<String>, Option<PathBuf>) {
         let foreground = self.master.lock().unwrap().process_group_leader();
+        let cwd = self.pid.and_then(|pid| process_cwd(pid as i32));
+        (foreground.and_then(process_name), cwd)
+    }
+
+    fn check_process(&self) {
+        let now = self.process();
+        let mut seen = self.seen.lock().unwrap();
+        if *seen == now {
+            return;
+        }
+        seen.clone_from(&now);
+        let line = encode(&ServerMessage::Event(Event::Process {
+            id: self.id.clone(),
+            process: now.0,
+            cwd: now.1,
+        }));
+        self.screen
+            .lock()
+            .unwrap()
+            .subscribers
+            .retain(|_, tx| tx.send(line.clone()).is_ok());
+    }
+
+    fn info(&self) -> SessionInfo {
+        let (process, cwd) = self.process();
         let screen = self.screen.lock().unwrap();
         SessionInfo {
             id: self.id.clone(),
-            cwd: self.cwd.clone(),
+            cwd: cwd.unwrap_or_else(|| self.cwd.clone()),
             program: self.program.clone(),
-            process: foreground.and_then(process_name),
+            process,
             title: screen.title.clone(),
             pid: self.pid,
             started: self.started,
@@ -439,6 +504,13 @@ impl Session {
                 id: self.id.clone(),
             });
         }
+        for (title, body) in seen.notices.drain(..) {
+            events.push(Event::Notify {
+                id: self.id.clone(),
+                title,
+                body,
+            });
+        }
         for event in events {
             let line = encode(&ServerMessage::Event(event));
             screen
@@ -454,7 +526,10 @@ impl Session {
         cols: u16,
         rows: u16,
     ) -> Result<Snapshot, RemoteError> {
-        self.resize(cols, rows)?;
+        // 0×0: a client that isn't showing it yet, just following it.
+        if (cols, rows) != (0, 0) {
+            self.resize(cols, rows)?;
+        }
         let mut screen = self.screen.lock().unwrap();
         screen.subscribers.insert(client, tx);
         Ok(Snapshot {
@@ -547,12 +622,104 @@ fn pty_size(cols: u16, rows: u16) -> Result<PtySize, RemoteError> {
     })
 }
 
+/// The process's name as it gives it (`argv[0]`, which Claude Code installed
+/// through npm sets to `claude`), else its executable's.
 #[cfg(target_os = "macos")]
 fn process_name(pid: i32) -> Option<String> {
+    let argv0 = process_args(pid).and_then(|args| {
+        let first = args.split(|&b| b == 0).next()?;
+        let name = String::from_utf8_lossy(first);
+        let name = name.rsplit('/').next()?.trim_start_matches('-');
+        (!name.is_empty()).then(|| name.to_string())
+    });
+    argv0.or_else(|| executable_name(pid))
+}
+
+/// `argv` and the environment, after the executable path, as the kernel
+/// keeps them (KERN_PROCARGS2: argc, the path, NUL padding, then argv).
+#[cfg(target_os = "macos")]
+fn process_args(pid: i32) -> Option<Vec<u8>> {
+    let mut argmax: libc::c_int = 0;
+    let mut size = std::mem::size_of::<libc::c_int>();
+    let mut mib = [libc::CTL_KERN, libc::KERN_ARGMAX];
+    // SAFETY: the sysctl writes one c_int into `argmax`.
+    let ok = unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            2,
+            (&raw mut argmax).cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if ok != 0 || argmax <= 0 {
+        return None;
+    }
+    let mut buf = vec![0u8; argmax as usize];
+    let mut size = buf.len();
+    let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid];
+    // SAFETY: the sysctl writes at most `size` bytes into `buf`.
+    let ok = unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            3,
+            buf.as_mut_ptr().cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if ok != 0 || size < 4 {
+        return None;
+    }
+    let rest = &buf[4..size];
+    let path_end = rest.iter().position(|&b| b == 0)?;
+    let args_start = path_end + rest[path_end..].iter().position(|&b| b != 0)?;
+    Some(rest[args_start..].to_vec())
+}
+
+#[cfg(target_os = "macos")]
+fn executable_name(pid: i32) -> Option<String> {
     let mut buf = [0u8; 256];
     // SAFETY: proc_name writes at most `buf.len()` bytes into `buf`.
     let n = unsafe { libc::proc_name(pid, buf.as_mut_ptr().cast(), buf.len() as u32) };
     (n > 0).then(|| String::from_utf8_lossy(&buf[..n as usize]).into_owned())
+}
+
+#[cfg(target_os = "macos")]
+fn process_cwd(pid: i32) -> Option<PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
+    // SAFETY: an all-zero proc_vnodepathinfo is valid (plain integers and
+    // arrays), and proc_pidinfo writes at most `size` bytes into it.
+    let mut info: libc::proc_vnodepathinfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<libc::proc_vnodepathinfo>() as i32;
+    let n = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDVNODEPATHINFO,
+            0,
+            (&raw mut info).cast(),
+            size,
+        )
+    };
+    if n != size {
+        return None;
+    }
+    let bytes: Vec<u8> = info
+        .pvi_cdir
+        .vip_path
+        .as_flattened()
+        .iter()
+        .take_while(|&&c| c != 0)
+        .map(|&c| c as u8)
+        .collect();
+    (!bytes.is_empty()).then(|| PathBuf::from(std::ffi::OsStr::from_bytes(&bytes)))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn process_cwd(pid: i32) -> Option<PathBuf> {
+    fs::read_link(format!("/proc/{pid}/cwd")).ok()
 }
 
 #[cfg(not(target_os = "macos"))]

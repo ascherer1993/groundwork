@@ -10,8 +10,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Bumped whenever this format changes. The app replaces a running daemon
-/// that speaks a different one.
-pub const PROTOCOL: u32 = 1;
+/// that speaks a different one once it has no sessions; until then it keeps
+/// using one that speaks [`OLDEST_COMPATIBLE`] or later.
+pub const PROTOCOL: u32 = 2;
+/// The oldest protocol this one can still talk to: changes since only added
+/// events, which an older daemon just never sends, and 0×0 attaches, which
+/// the app doesn't send to one.
+pub const OLDEST_COMPATIBLE: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "method", content = "params", rename_all = "camelCase")]
@@ -22,8 +27,9 @@ pub enum Request {
     Create(CreateSession),
     /// → `Vec<SessionInfo>`
     List,
-    /// Resizes the session, subscribes this connection to its events, and
-    /// returns what's on screen. → [`Snapshot`]
+    /// Resizes the session (unless the size is 0×0, from protocol 2),
+    /// subscribes this connection to its events, and returns what's on
+    /// screen. → [`Snapshot`]
     Attach { id: String, cols: u16, rows: u16 },
     /// Writes to the session's input. → null
     Input { id: String, data: String },
@@ -51,6 +57,7 @@ pub struct CreateSession {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionInfo {
     pub id: String,
+    /// The shell's current folder (where it started, if that's unknown).
     pub cwd: PathBuf,
     /// The program the session started (`zsh`).
     pub program: String,
@@ -138,6 +145,18 @@ pub enum Event {
     },
     Bell {
         id: String,
+    },
+    /// The program in the foreground, or the shell's folder, changed.
+    Process {
+        id: String,
+        process: Option<String>,
+        cwd: Option<PathBuf>,
+    },
+    /// A program asked for attention with OSC 9 or OSC 777.
+    Notify {
+        id: String,
+        title: Option<String>,
+        body: String,
     },
     /// The session's program exited; the session is gone.
     Exit {

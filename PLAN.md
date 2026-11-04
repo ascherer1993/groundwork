@@ -632,8 +632,8 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
 - Claude Code ergonomics (Shift+Enter, links, notifications)
 - **Checkpoint:** use Groundwork instead of cmux for a few days
 - Built in two halves, with a check-in between:
-  1. **The daemon and terminal tabs** *(built, awaiting check-in)*.
-  2. Workspaces (each with its own tabs and splits, which the main area switches between; decided 2026-11-03), the Workspaces view and badges, the session manager, restore after a reboot, bell and OSC 9 notifications, and opening vault paths clicked in a terminal.
+  1. **The daemon and terminal tabs** *(built)*.
+  2. **Workspaces** (each with its own tabs and splits, which the main area switches between; decided 2026-11-03), the Workspaces view and badges, the session manager, restore after a reboot, bell and OSC 9 notifications, and opening vault paths clicked in a terminal *(built, awaiting the checkpoint)*.
 - Built in the first half:
   - **`groundworkd`** (`crates/terminal-daemon`) is a std-only threaded server on `<data dir>/groundworkd.sock`, speaking newline-delimited JSON.
     - The backend starts it on first use from beside its own binary, in its own session (`setsid`), so it outlives the app. Quitting leaves terminals running (decided 2026-11-03).
@@ -650,7 +650,15 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
     - xterm.js 6 draws with WebGL when it's available, with colours from `tokens.css` (`--term-*`).
     - Keyboard: Shift+Enter sends ESC CR (a newline in Claude Code), and ⌘ shortcuts go to the app. Web and OSC 8 links open in the browser.
     - Input is sent one call at a time, so keystrokes stay in order.
-  - Not yet: the packaged `.app` doesn't bundle `groundworkd` (Phase 7 packaging), and the session list shows the foreground process by its executable name (Claude installed through npm shows as `node`).
+- Built in the second half:
+  - **Workspaces** have a name, a folder and their own dock layout. They're machine-local, so they're kept per vault in the data folder (`vaults/<key>/workspaces.json`), not the vault. The main area shows the notes layout or one workspace's; ⌘1 is the notes, ⌘2… the workspaces, and "Switch workspace…" is in the palette. Every area's dock stays mounted (hidden), so terminals in other workspaces keep reporting. New terminals start in the workspace's folder with `GROUNDWORK_WORKSPACE_ID` set. Deleting a workspace ends its terminals, after confirming.
+  - **The Workspaces view** (the terminal icon in the sidebar) lists Notes and each workspace with its terminal tabs and badges: *waiting* (a bell or notification you haven't seen), *finished* (a command ended while you were elsewhere), *running* (a program besides the shell is in the foreground; Claude Code only while it draws, since its spinner runs while it works), *idle*. Badges clear when the tab is on screen and the window has focus. Real Claude states come with the Phase 6 hooks.
+  - **The session manager** is the view's "Running terminals" list: every session in the daemon, from any vault, with its program, whether it's Claude, where it is (a workspace, Notes, or not in a tab), its folder and age. Sessions can be ended one at a time or selected and ended together, and ones not in a tab can be opened in one.
+  - **The daemon reports** the foreground program and the shell's folder (polled each second, sent when they change) and OSC 9 / OSC 777 notifications. Programs are named by `argv[0]`, so Claude installed through npm shows as `claude`, not `node`. Protocol 2; the app still uses a busy protocol-1 daemon, without these events. An attach at 0×0 follows a session without resizing it: views in hidden workspaces do that until they're first shown.
+  - **Notifications** from a terminal you aren't looking at show a toast with "Show", and bounce the Dock icon when the window isn't focused.
+  - **Restore after a reboot:** tabs save the shell's current folder as it changes, so a replacement shell starts where the old one was.
+  - **Vault paths in terminal output are links:** vault-relative, absolute, or relative to the shell's folder, with spaces and an optional `:line`. They're found by looking for the vault's actual files in the line, so names with spaces work. The plugin's skill tells Claude to name files by path.
+- Not yet: the packaged `.app` doesn't bundle `groundworkd` (Phase 7 packaging).
 
 ### Phase 5 — Projects, tickets, worktrees, actions
 - Repos and components (`.groundwork/repos.yml`), project config (`.groundwork.yml`), trackers, and the machine-local repo mapping with first-run "locate repo"
