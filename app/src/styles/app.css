@@ -1618,3 +1618,7 @@ label.check input {
   flex: 1;
   justify-content: center;
 }
+
+.kind-icon.kind-project {
+  color: var(--accent);
+}

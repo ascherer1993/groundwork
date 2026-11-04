@@ -414,6 +414,54 @@ impl Session {
             .collect())
     }
 
+    /// Makes a folder a project by giving it a `.groundwork.yml`. A folder
+    /// that doesn't exist yet is made, with an overview note named after it;
+    /// an existing folder's own note (`Trip/Trip.md`) becomes its overview.
+    pub fn create_project(&self, folder: &str) -> Result<(ProjectInfo, Vec<FileChange>)> {
+        let folder = folder.trim_matches('/');
+        if folder.is_empty() {
+            return Err(CoreError::InvalidPath(
+                "the vault itself can't be a project; choose a folder".into(),
+            ));
+        }
+        let mut changes = Vec::new();
+        let dir = self.vault().root().join(folder);
+        let new = !dir.exists();
+        if new {
+            changes.extend(self.create_folder(folder)?);
+        } else if !self.vault().resolve(folder)?.is_dir() {
+            return Err(CoreError::InvalidPath(format!("{folder} isn't a folder")));
+        }
+        if dir.join(".groundwork.yml").exists() {
+            return Err(CoreError::Conflict(format!(
+                "{folder} is already a project"
+            )));
+        }
+        let base = folder.rsplit('/').next().unwrap_or(folder);
+        let overview = format!("{folder}/{base}.md");
+        if new {
+            let text = format!(
+                "---\ntype: project\ncreated: {}\n---\n",
+                Local::now().format("%Y-%m-%dT%H:%M")
+            );
+            changes.extend(self.create_file(&overview, Some(&text))?);
+        }
+        let mut yml = format!("name: {}\n", frontmatter::scalar(base, false));
+        if self.vault().root().join(&overview).is_file() {
+            yml.push_str(&format!(
+                "overview: {}\n",
+                frontmatter::scalar(&format!("{base}.md"), false)
+            ));
+        }
+        std::fs::write(dir.join(".groundwork.yml"), yml)?;
+        let info = self
+            .project_list()?
+            .into_iter()
+            .find(|p| p.folder == folder)
+            .ok_or_else(|| CoreError::NotFound(folder.to_string()))?;
+        Ok((info, changes))
+    }
+
     /// The projects a note belongs to: those linked in its `projects:`
     /// frontmatter (by overview note, id or name), then the project folder
     /// it's in.
@@ -1643,6 +1691,48 @@ mod tests {
             code: vec!["acme-platform:web".into()],
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn folders_become_projects() {
+        let t = Setup::new();
+        // A new one gets its folder and an overview note.
+        let (p, changes) = t.session.create_project("Projects/Test Project").unwrap();
+        assert_eq!(p.id, "test-project");
+        assert_eq!(p.name, "Test Project");
+        assert_eq!(
+            p.overview.as_deref(),
+            Some("Projects/Test Project/Test Project.md")
+        );
+        assert_eq!(p.work_folder, "Projects/Test Project/Work");
+        assert!(changes.iter().any(|c| c.path == "Projects/Test Project"));
+        assert!(
+            t.read("Projects/Test Project/Test Project.md")
+                .contains("type: project")
+        );
+        assert_eq!(
+            t.read("Projects/Test Project/.groundwork.yml"),
+            "name: Test Project\noverview: Test Project.md\n"
+        );
+
+        // An existing folder keeps its notes; its own note is the overview.
+        fs::create_dir(t.dir.path().join("vault/Contacts/Team")).unwrap();
+        let (p, changes) = t.session.create_project("Contacts").unwrap();
+        assert_eq!(p.overview, None);
+        assert!(changes.is_empty());
+        assert_eq!(t.read("Contacts/.groundwork.yml"), "name: Contacts\n");
+        fs::write(t.dir.path().join("vault/Contacts/Team/Team.md"), "").unwrap();
+        let (p, _) = t.session.create_project("Contacts/Team").unwrap();
+        assert_eq!(p.overview.as_deref(), Some("Contacts/Team/Team.md"));
+
+        // Not twice, not the vault, not a file.
+        assert!(matches!(
+            t.session.create_project("Projects/Acme"),
+            Err(CoreError::Conflict(_))
+        ));
+        assert!(t.session.create_project("").is_err());
+        assert!(t.session.create_project("Welcome.md").is_err());
+        assert!(t.session.create_project("../outside").is_err());
     }
 
     #[test]

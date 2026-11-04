@@ -26,7 +26,7 @@ impl Prop {
 }
 
 /// A YAML scalar, quoted when it would otherwise mean something else.
-fn scalar(value: &str, in_list: bool) -> String {
+pub(crate) fn scalar(value: &str, in_list: bool) -> String {
     let plain = !value.is_empty()
         && value.trim() == value
         && !value.starts_with([

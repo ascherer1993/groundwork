@@ -241,6 +241,45 @@ test("file tree: new folders show at once, from the menu or from outside", async
   await expect(tree.getByRole("treeitem", { name: "Made outside" })).toHaveCount(0);
 });
 
+test("file tree: new projects, and folders made into projects", async ({ page }) => {
+  const tree = page.getByRole("tree", { name: "Files" });
+  const menu = async (name: string) =>
+    tree
+      .getByRole("treeitem", { name, exact: true })
+      .locator("> button")
+      .click({ button: "right" });
+
+  await menu("Projects");
+  await page.getByRole("menuitem", { name: "New project…" }).click();
+  const dialog = page.getByRole("dialog", { name: "New project" });
+  await dialog.getByLabel("Name").fill("Test Project");
+  await dialog.getByRole("button", { name: "Create" }).click();
+  await expect(page.getByText("“Test Project” is a project")).toBeVisible();
+  // Its overview opens; the folder shows as a project.
+  await expect(
+    page.locator(".notes-side .dv-tab").filter({ hasText: "Test Project" }),
+  ).toBeVisible();
+  await expectFile(VAULT, "Projects/Test Project/.groundwork.yml", (t) =>
+    t.includes("overview: Test Project.md"),
+  );
+  const project = tree.getByRole("treeitem", { name: "Test Project", exact: true }).first();
+  await expect(project.locator("> button").getByLabel("Project")).toBeVisible();
+
+  // An existing folder.
+  mkdirSync(join(VAULT, "Projects/Side gig"));
+  await expect(tree.getByRole("treeitem", { name: "Side gig" })).toBeVisible();
+  await menu("Side gig");
+  await expect(page.getByRole("menuitem", { name: "New ticket…" })).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "Make this a project" }).click();
+  await expect(
+    tree.getByRole("treeitem", { name: "Side gig" }).locator("> button").getByLabel("Project"),
+  ).toBeVisible();
+  await menu("Side gig");
+  await expect(page.getByRole("menuitem", { name: "Make this a project" })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: "New ticket…" })).toBeVisible();
+  await page.keyboard.press("Escape");
+});
+
 test("tabs and splits persist across reloads", async ({ page }) => {
   await quickOpen(page, "Welcome");
   await page.keyboard.press("Meta+o");

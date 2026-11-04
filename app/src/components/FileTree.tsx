@@ -3,6 +3,7 @@ import {
   File,
   FileText,
   Folder,
+  FolderKanban,
   FolderOpen,
   Globe,
   PanelsTopLeft,
@@ -14,8 +15,8 @@ import type { NodeKind } from "../api/generated/NodeKind";
 import type { TreeNode } from "../api/generated/TreeNode";
 import { displayName } from "../lib/paths";
 import { openNoteWorkspace } from "../lib/commands";
-import { projectAt, ticketAt, useTickets } from "../state/tickets";
-import { confirmDialog, type MenuEntry, promptDialog, useUi } from "../state/ui";
+import { createProject, projectAt, ticketAt, useTickets } from "../state/tickets";
+import { confirmDialog, formDialog, type MenuEntry, promptDialog, useUi } from "../state/ui";
 import { message, useVault } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
 import { renameWithUndo } from "./NoteView";
@@ -87,6 +88,19 @@ function menuFor(node: TreeNode): MenuEntry[] {
             });
           }),
       },
+      {
+        label: "New project…",
+        action: () =>
+          void formDialog({
+            title: "New project",
+            message: "A folder with an overview note, for its tickets and workspaces.",
+            fields: [{ label: "Name", placeholder: "Name" }],
+            confirmLabel: "Create",
+          }).then((values) => {
+            const name = values?.[0]?.trim();
+            if (name) void createProject(join(node.path, name));
+          }),
+      },
       { label: "Open terminal here", action: () => void ws.openTerminal(absolute) },
     );
     const project = projectAt(node.path);
@@ -95,6 +109,8 @@ function menuFor(node: TreeNode): MenuEntry[] {
         label: "New ticket…",
         action: () => void useTickets.getState().newTicket({ projects: [project.id] }),
       });
+    } else if (!isRoot) {
+      entries.push({ label: "Make this a project", action: () => void createProject(node.path) });
     }
     entries.push("separator");
   } else {
@@ -231,7 +247,14 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
   const [dropping, setDropping] = useState(false);
   const isFolder = node.kind === "folder";
   const { base, ext } = displayName(node.name, node.kind);
-  const Icon = node.kind === "folder" ? (expanded ? FolderOpen : Folder) : ICONS[node.kind];
+  const isProject = useTickets((s) => isFolder && s.projects.some((p) => p.folder === node.path));
+  const Icon = isProject
+    ? FolderKanban
+    : node.kind === "folder"
+      ? expanded
+        ? FolderOpen
+        : Folder
+      : ICONS[node.kind];
 
   const dropProps = isFolder
     ? {
@@ -299,7 +322,11 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
           <span className={`chevron${expanded ? " open" : ""}`}>
             {isFolder && <ChevronRight size={12} />}
           </span>
-          <Icon size={14} className={`kind-icon kind-${node.kind}`} />
+          <Icon
+            size={14}
+            className={`kind-icon kind-${node.kind}${isProject ? " kind-project" : ""}`}
+            aria-label={isProject ? "Project" : undefined}
+          />
           <span className="tree-label">
             {base}
             {ext && <span className="ext">{ext}</span>}

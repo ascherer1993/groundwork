@@ -132,6 +132,12 @@ enum Command {
 enum ProjectCommand {
     /// Every project.
     List,
+    /// Makes a folder a project (making the folder, with an overview note,
+    /// if it doesn't exist).
+    Create {
+        /// The folder, from the vault root.
+        folder: String,
+    },
     /// A project's folders, code and open tickets.
     Show {
         /// Its id, name or folder.
@@ -769,6 +775,14 @@ fn project(session: &Session, cmd: ProjectCommand, json: bool) -> Fallible<()> {
             for p in projects {
                 println!("{} · {} · {}", p.id, p.name, p.folder);
             }
+            Ok(())
+        }
+        ProjectCommand::Create { folder } => {
+            let (project, _) = session.create_project(&folder).map_err(err)?;
+            if json {
+                return print_json(&project);
+            }
+            println!("{} · {} · {}", project.id, project.name, project.folder);
             Ok(())
         }
         ProjectCommand::Show { project } => {

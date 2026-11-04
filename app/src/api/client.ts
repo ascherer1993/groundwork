@@ -99,6 +99,7 @@ interface Results {
   "repo.list": RepoInfo[];
   "repo.locate": RepoLocation;
   "project.list": ProjectInfo[];
+  "project.create": ProjectInfo;
   "ticket.list": Ticket[];
   "ticket.git": GitState;
   "ticket.create": CreatedTicket;
@@ -216,6 +217,7 @@ export const api = {
   locateRepo: (id: string, path: string, worktrees?: string) =>
     call("repo.locate", { id, path, worktrees }),
   projects: () => call("project.list"),
+  createProject: (folder: string) => call("project.create", { folder }),
   tickets: (filter: TicketFilter = {}) => call("ticket.list", { filter }),
   ticketGit: (path: string) => call("ticket.git", { path }),
   createTicket: (ticket: NewTicket) => call("ticket.create", { ticket }),

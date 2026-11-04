@@ -329,6 +329,22 @@ export function projectAt(folder: string): ProjectInfo | undefined {
   return useTickets.getState().projects.find((p) => p.folder === folder);
 }
 
+/** Makes a folder (new or existing) a project, then opens its overview. */
+export async function createProject(folder: string): Promise<boolean> {
+  try {
+    const project = await api.createProject(folder);
+    await useTickets.getState().load();
+    useVault.getState().revealInTree(project.folder);
+    useVault.getState().toggleFolder(project.folder, true);
+    if (project.overview) useWorkspace.getState().open(project.overview);
+    useUi.getState().notify(`“${project.name}” is a project`);
+    return true;
+  } catch (err) {
+    useUi.getState().notify(message(err));
+    return false;
+  }
+}
+
 /** The vault folder, absolute. */
 export function vaultPath(): string {
   return useVault.getState().vault?.path ?? "";

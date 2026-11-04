@@ -402,6 +402,11 @@ impl Backend {
                 to_value(session.repos().locate(&id, &path, worktrees.as_deref())?)
             }
             Request::ProjectList => to_value(self.session()?.project_list()?),
+            Request::ProjectCreate { folder } => {
+                let (project, changes) = self.session()?.create_project(&folder)?;
+                self.emit(changes);
+                to_value(project)
+            }
 
             Request::TicketList { filter } => to_value(self.session()?.tickets(&filter)?),
             Request::TicketGit { path } => to_value(self.session()?.ticket_git(&path)?),

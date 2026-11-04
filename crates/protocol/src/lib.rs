@@ -327,6 +327,9 @@ pub enum Request {
     /// → `ProjectInfo[]`
     #[serde(rename = "project.list")]
     ProjectList,
+    /// → `ProjectInfo`: makes a folder (made if it doesn't exist) a project.
+    #[serde(rename = "project.create")]
+    ProjectCreate { folder: String },
 
     /// → `Ticket[]`
     #[serde(rename = "ticket.list")]
