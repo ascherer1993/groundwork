@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { FIXTURE_VAULT as VAULT } from "./fixtures";
@@ -220,6 +220,25 @@ test("file tree: rename inline and delete with confirmation", async ({ page }) =
   await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
   await expect(tree.getByRole("treeitem", { name: "Renamed idea" })).toHaveCount(0);
   expect(existsSync(join(VAULT, "Renamed idea.md"))).toBe(false);
+});
+
+test("file tree: new folders show at once, from the menu or from outside", async ({ page }) => {
+  const tree = page.getByRole("tree", { name: "Files" });
+  await tree
+    .getByRole("treeitem", { name: "Daily" })
+    .locator("> button")
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "New folder" }).click();
+  await page.getByRole("dialog").getByRole("textbox").fill("Archive");
+  await page.getByRole("dialog").getByRole("button", { name: "Create" }).click();
+  await expect(tree.getByRole("treeitem", { name: "Archive" })).toBeVisible();
+  expect(existsSync(join(VAULT, "Daily/Archive"))).toBe(true);
+
+  // Empty folders made and removed in Finder.
+  mkdirSync(join(VAULT, "Made outside"));
+  await expect(tree.getByRole("treeitem", { name: "Made outside" })).toBeVisible();
+  rmdirSync(join(VAULT, "Made outside"));
+  await expect(tree.getByRole("treeitem", { name: "Made outside" })).toHaveCount(0);
 });
 
 test("tabs and splits persist across reloads", async ({ page }) => {

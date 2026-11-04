@@ -227,7 +227,8 @@ impl Backend {
                 Ok(Value::Null)
             }
             Request::FolderCreate { path } => {
-                self.session()?.create_folder(&path)?;
+                let changes = self.session()?.create_folder(&path)?;
+                self.emit(changes);
                 Ok(Value::Null)
             }
 

@@ -427,7 +427,9 @@ impl Session {
         }
     }
 
-    pub fn create_folder(&self, path: &str) -> Result<()> {
+    /// Makes an empty folder. The change is reported so the file tree shows
+    /// it, though the index (which holds files) doesn't.
+    pub fn create_folder(&self, path: &str) -> Result<Vec<FileChange>> {
         let _guard = self.write_lock.lock().unwrap();
         validate_new_path(path)?;
         let full = self.vault.root().join(path);
@@ -436,7 +438,7 @@ impl Session {
         }
         self.ensure_parent(path)?;
         fs::create_dir(full)?;
-        Ok(())
+        Ok(vec![FileChange::new(path, ChangeKind::Created, false)])
     }
 
     /// First free `folder/base{ext}`, `folder/base 1{ext}`, …
@@ -931,8 +933,30 @@ impl Session {
                 refs.push(path);
             }
         }
-        let changes = self.reindex(&refs, true);
+        let mut changes = self.reindex(&refs, true);
         self.log_changes(&changes, ActivitySource::External);
+        // Folders that came or went with no files in them change only the
+        // file tree, which still needs to hear about them. (A folder with
+        // files is reported through them.)
+        let index = self.index.read().unwrap();
+        let prefixes: Vec<String> = refs
+            .iter()
+            .filter(|p| !changes.iter().any(|c| c.path == **p))
+            .map(|p| format!("{p}/"))
+            .collect();
+        for prefix in prefixes {
+            if index.paths().any(|f| f.starts_with(&prefix)) {
+                continue;
+            }
+            let path = &prefix[..prefix.len() - 1];
+            let full = self.vault.root().join(path);
+            if full.is_dir() {
+                changes.push(FileChange::new(path, ChangeKind::Created, true));
+            } else if !full.exists() {
+                changes.push(FileChange::new(path, ChangeKind::Removed, true));
+            }
+        }
+        drop(index);
         changes
     }
 
@@ -1638,6 +1662,35 @@ mod tests {
             changes,
             [FileChange::new("A.md", ChangeKind::Modified, true)]
         );
+    }
+
+    #[test]
+    fn empty_folders_are_reported() {
+        let v = TestVault::new(&[("Work/A.md", "one")]);
+        let changes = v.session.create_folder("Work/New").unwrap();
+        assert_eq!(
+            changes,
+            [FileChange::new("Work/New", ChangeKind::Created, false)]
+        );
+        assert!(matches!(
+            v.session.create_folder("Work/New"),
+            Err(CoreError::AlreadyExists(_))
+        ));
+
+        // Made or removed outside Groundwork.
+        fs::create_dir(v.dir.path().join("Outside")).unwrap();
+        assert_eq!(
+            v.session.apply_external(&["Outside".into()]),
+            [FileChange::new("Outside", ChangeKind::Created, true)]
+        );
+        fs::remove_dir(v.dir.path().join("Outside")).unwrap();
+        assert_eq!(
+            v.session.apply_external(&["Outside".into()]),
+            [FileChange::new("Outside", ChangeKind::Removed, true)]
+        );
+
+        // A folder with notes in it isn't reported for itself.
+        assert!(v.session.apply_external(&["Work".into()]).is_empty());
     }
 
     #[test]
