@@ -69,6 +69,6 @@ test("the command palette lists recent commands first", async ({ page }) => {
   await runCommand(page, "Toggle links panel");
   await page.keyboard.press("Meta+p");
   await expect(page.getByRole("option").first()).toContainText("Toggle links panel");
-  await expect(page.getByRole("option", { name: /Open today’s daily note/ })).toContainText("⌘⇧D");
+  await expect(page.getByRole("option", { name: /Open today’s daily note/ })).toContainText("⇧⌘D");
   await page.keyboard.press("Enter");
 });

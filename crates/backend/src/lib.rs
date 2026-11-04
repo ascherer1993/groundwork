@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex};
 use chrono::NaiveDate;
 use groundwork_core::pages;
 use groundwork_core::search;
+use groundwork_core::settings::Settings;
 use groundwork_core::setup::{self, SetupEnv, SetupStatus};
 use groundwork_core::watch::{self, VaultWatcher};
 use groundwork_core::workspaces;
@@ -39,6 +40,7 @@ pub struct Backend {
     host: Host,
     data_dir: PathBuf,
     recent: RecentVaults,
+    settings: Settings,
     open: Mutex<Option<OpenVault>>,
     events: EventSink,
     /// See [`page_server`].
@@ -51,6 +53,7 @@ impl Backend {
         Self {
             host,
             recent: RecentVaults::new(&data_dir),
+            settings: Settings::new(&data_dir),
             terminals: terminals::Terminals::new(&data_dir, events.clone()),
             data_dir,
             open: Mutex::new(None),
@@ -75,6 +78,11 @@ impl Backend {
             }),
 
             Request::VaultRecent => to_value(self.recent.list()),
+            Request::SettingsGet => to_value(self.settings.get()),
+            Request::SettingsSet { settings } => {
+                self.settings.set(&settings)?;
+                Ok(Value::Null)
+            }
             Request::VaultForget { path } => {
                 self.recent.remove(&path)?;
                 Ok(Value::Null)

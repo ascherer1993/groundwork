@@ -8,6 +8,7 @@ import { escapeHtml, extractSubpath, splitFrontmatter } from "../markdown/syntax
 import { useUi } from "../state/ui";
 import { Palette } from "./Palette";
 import { QuickSwitcher } from "./QuickSwitcher";
+import { SettingsDialog } from "./SettingsDialog";
 import { SetupDialog } from "./SetupDialog";
 import { TicketDialog } from "./TicketDialog";
 
@@ -19,6 +20,7 @@ export function Overlays() {
       <ContextMenu />
       <Toast />
       <TicketDialog />
+      <SettingsDialog />
       <Dialog />
       <HoverPreview />
       {switcherOpen && <QuickSwitcher />}

@@ -7,6 +7,7 @@ import { formDialog, type PaletteItem, promptDialog, useUi } from "../state/ui";
 import { message, newNoteFolder, useVault } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
+import { keyLabel } from "../state/keys";
 import {
   closeTicket,
   locateRepo,
@@ -101,7 +102,6 @@ export async function openToday() {
 interface Command {
   id: string;
   label: string;
-  shortcut?: string;
   /** Hidden from the palette when this returns false. */
   when?: () => boolean;
   run(): void | Promise<void>;
@@ -116,10 +116,9 @@ function commands(): Command[] {
     {
       id: "switcher",
       label: "Open quick switcher",
-      shortcut: "⌘O",
       run: () => ui.setSwitcher(true),
     },
-    { id: "new-note", label: "New note", shortcut: "⌘N", run: () => ws.newNote() },
+    { id: "new-note", label: "New note", run: () => ws.newNote() },
     { id: "new-from-template", label: "New note from template…", run: newNoteFromTemplate },
     {
       id: "insert-template",
@@ -130,24 +129,21 @@ function commands(): Command[] {
     {
       id: "search",
       label: "Search in all notes",
-      shortcut: "⌘⇧F",
       run: () => ui.searchFor(),
     },
     { id: "files", label: "Show files", run: () => ui.setSidebarView("files") },
     { id: "tags", label: "Show tags", run: () => ui.setSidebarView("tags") },
     { id: "todos", label: "Show todos", run: () => ui.setSidebarView("todos") },
-    { id: "daily-today", label: "Open today’s daily note", shortcut: "⌘⇧D", run: openToday },
+    { id: "daily-today", label: "Open today’s daily note", run: openToday },
     {
       id: "toggle-reading",
       label: "Toggle reading view",
-      shortcut: "⌘E",
       when: hasActive,
       run: () => ws.toggleReading(),
     },
     {
       id: "split-right",
       label: "Split right",
-      shortcut: "⌘\\",
       when: hasActive,
       run: () => ws.open(ws.activePath!, { split: "right" }),
     },
@@ -157,9 +153,9 @@ function commands(): Command[] {
       when: hasActive,
       run: () => ws.open(ws.activePath!, { split: "below" }),
     },
-    { id: "back", label: "Go back", shortcut: "⌘[", run: () => ws.back() },
-    { id: "forward", label: "Go forward", shortcut: "⌘]", run: () => ws.forward() },
-    { id: "new-terminal", label: "New terminal", shortcut: "⌘T", run: () => ws.openTerminal() },
+    { id: "back", label: "Go back", run: () => ws.back() },
+    { id: "forward", label: "Go forward", run: () => ws.forward() },
+    { id: "new-terminal", label: "New terminal", run: () => ws.openTerminal() },
     { id: "new-terminal-in", label: "New terminal in folder…", run: terminalInFolder },
     {
       id: "new-workspace",
@@ -168,17 +164,14 @@ function commands(): Command[] {
     },
     { id: "switch-workspace", label: "Switch workspace…", run: switchWorkspace },
     {
-      id: "pin-workspace",
-      label: "Pin terminals to this workspace",
-      when: () => !!ws.workspace && !ws.pinned,
-      run: () => ws.setPinned(true),
+      id: "toggle-pin",
+      label: ws.pinned ? "Let the terminals follow notes" : "Pin the terminals to this workspace",
+      when: () => ws.pinned || !!ws.workspace,
+      run: () => ws.setPinned(!ws.pinned),
     },
-    {
-      id: "unpin-workspace",
-      label: "Let terminals follow notes",
-      when: () => ws.pinned,
-      run: () => ws.setPinned(false),
-    },
+    { id: "next-workspace", label: "Next workspace", run: () => stepWorkspace(1) },
+    { id: "previous-workspace", label: "Previous workspace", run: () => stepWorkspace(-1) },
+    { id: "settings", label: "Settings…", run: () => ui.setSettingsOpen(true) },
     {
       id: "workspaces",
       label: "Show workspaces and terminals",
@@ -215,26 +208,22 @@ function commands(): Command[] {
     {
       id: "close-tab",
       label: "Close tab",
-      shortcut: "⌘W",
       run: () => ws.closeActive(),
     },
-    { id: "view-note", label: "Show notes only", shortcut: "⌃⌘1", run: () => ws.setView("note") },
+    { id: "view-note", label: "Show notes only", run: () => ws.setView("note") },
     {
       id: "view-split",
       label: "Show notes and terminals",
-      shortcut: "⌃⌘2",
       run: () => ws.setView("split"),
     },
     {
       id: "view-terminal",
       label: "Show terminals only",
-      shortcut: "⌃⌘3",
       run: () => ws.setView("terminal"),
     },
     {
       id: "toggle-right",
       label: "Toggle links panel",
-      shortcut: "⌘⇧B",
       run: () => ui.toggleRightPanel(),
     },
     {
@@ -349,7 +338,7 @@ async function terminalInFolder() {
   });
 }
 
-/** Lists the workspaces, with their ⌘ number. */
+/** Lists the workspaces, with their shortcuts. */
 export function switchWorkspace() {
   useUi.getState().openPalette({
     placeholder: "Switch to…",
@@ -357,15 +346,61 @@ export function switchWorkspace() {
       id: w.id,
       label: w.name,
       detail: w.cwd,
-      hint: i < 9 ? `⌘${i + 1}` : undefined,
+      hint: i < 9 ? keyLabel(`workspace-${i + 1}`) : undefined,
       run: () => useWorkspaces.getState().pick(w.id),
     })),
   });
 }
 
+/** The workspace after (or before) the current one, round the list. */
+function stepWorkspace(by: number) {
+  const list = useWorkspaces.getState().list;
+  if (!list.length) return;
+  const at = list.findIndex((w) => w.id === useWorkspace.getState().workspace);
+  const next = list[(at + by + list.length) % list.length]!;
+  useWorkspaces.getState().pick(next.id);
+}
+
+function inEditable(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    !!target.closest(".cm-editor")
+  );
+}
+
+/**
+ * Runs the command a shortcut is bound to (`state/keys.ts`). Returns false
+ * when the key should do what it otherwise would.
+ */
+export function runKey(id: string, target: EventTarget | null): boolean {
+  if (id === "palette") {
+    openCommandPalette();
+    return true;
+  }
+  // Outside editors, ⌘Z undoes the last file operation (rename, move…).
+  if (id === "undo-file") {
+    if (inEditable(target)) return false;
+    void undoLast();
+    return true;
+  }
+  const n = id.match(/^workspace-(\d)$/);
+  if (n) {
+    const workspace = useWorkspaces.getState().list[Number(n[1]) - 1];
+    if (workspace) useWorkspaces.getState().pick(workspace.id);
+    return true;
+  }
+  const command = commands().find((c) => c.id === id);
+  if (!command) return false;
+  if (!command.when || command.when()) void command.run();
+  return true;
+}
+
 export function openCommandPalette() {
   const items: PaletteItem[] = commands()
     .filter((c) => !c.when || c.when())
-    .map((c) => ({ id: c.id, label: c.label, hint: c.shortcut, run: c.run }));
+    .map((c) => ({ id: c.id, label: c.label, hint: keyLabel(c.id), run: c.run }));
   useUi.getState().openPalette({ placeholder: "Run a command…", recentKey: "commands", items });
 }

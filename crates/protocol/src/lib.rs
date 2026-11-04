@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 
+use groundwork_core::settings::AppSettings;
 use groundwork_core::tickets::{NewTicket, TicketFilter};
 use groundwork_core::todos::{TaskChange, TodoFilter};
 use groundwork_core::{CoreError, FileChange};
@@ -26,6 +27,12 @@ pub enum Request {
     /// → `RecentVault[]`
     #[serde(rename = "vault.recent")]
     VaultRecent,
+    /// → `AppSettings`: this machine's app settings (not the vault's).
+    #[serde(rename = "settings.get")]
+    SettingsGet,
+    /// → `null`
+    #[serde(rename = "settings.set")]
+    SettingsSet { settings: AppSettings },
     /// → `null`
     #[serde(rename = "vault.forget")]
     VaultForget { path: String },

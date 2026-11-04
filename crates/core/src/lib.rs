@@ -18,6 +18,7 @@ pub mod recent;
 pub mod repos;
 pub mod search;
 pub mod session;
+pub mod settings;
 pub mod setup;
 pub mod template;
 pub mod tickets;

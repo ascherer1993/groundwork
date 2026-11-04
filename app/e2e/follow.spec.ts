@@ -68,6 +68,18 @@ test("the terminals follow the open note, unless pinned", async ({ page }) => {
   await page.keyboard.press("Control+Meta+2");
   await expect(header(page).locator(".terminals-name")).toHaveText("Acme");
 
+  // Keys step through the workspaces, round the list, and pick them by number.
+  const name = header(page).locator(".terminals-name");
+  await page.keyboard.press("Control+Meta+]");
+  await expect(name).toHaveText("Jane Doe");
+  await expect(activeNote(page)).toContainText("Jane Doe");
+  await page.keyboard.press("Control+Meta+]");
+  await expect(name).toHaveText("Acme");
+  await page.keyboard.press("Control+Meta+[");
+  await expect(name).toHaveText("Jane Doe");
+  await page.keyboard.press("Meta+1");
+  await expect(name).toHaveText("Acme");
+
   // Leave no workspaces for the other tests.
   for (const name of ["Acme", "Jane Doe"]) {
     await row(page, name).click({ button: "right" });

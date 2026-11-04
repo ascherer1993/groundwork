@@ -11,6 +11,7 @@ import { createContext, useEffect, useRef, useState } from "react";
 import { switchWorkspace } from "../lib/commands";
 import { NOTES, useWorkspace } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
+import { useKeyLabel } from "../state/keys";
 import { useUi } from "../state/ui";
 import { FilePanel } from "./FilePanel";
 import { TerminalPanel } from "./TerminalPanel";
@@ -23,16 +24,22 @@ const components = {
   terminal: TerminalPanel as (props: IDockviewPanelProps) => React.ReactNode,
 };
 
+/** A shortcut, as it's currently bound. */
+function Key({ id }: { id: string }) {
+  const key = useKeyLabel(id);
+  return key ? <kbd>{key}</kbd> : null;
+}
+
 function NotesWatermark() {
   const newNote = useWorkspace((s) => s.newNote);
   const setSwitcher = useUi((s) => s.setSwitcher);
   return (
     <div className="watermark">
       <button onClick={() => setSwitcher(true)}>
-        <Search size={14} /> Open a file <kbd>⌘O</kbd>
+        <Search size={14} /> Open a file <Key id="switcher" />
       </button>
       <button onClick={() => void newNote("")}>
-        <FilePlus size={14} /> New note <kbd>⌘N</kbd>
+        <FilePlus size={14} /> New note <Key id="new-note" />
       </button>
     </div>
   );
@@ -43,7 +50,7 @@ function TerminalsWatermark() {
   return (
     <div className="watermark">
       <button onClick={() => void openTerminal()}>
-        <SquareTerminal size={14} /> New terminal <kbd>⌘T</kbd>
+        <SquareTerminal size={14} /> New terminal <Key id="new-terminal" />
       </button>
     </div>
   );
@@ -111,7 +118,7 @@ function NoWorkspace() {
   return (
     <div className="watermark no-workspace">
       <button onClick={() => void useWorkspace.getState().openTerminal()}>
-        <SquareTerminal size={14} /> New terminal <kbd>⌘T</kbd>
+        <SquareTerminal size={14} /> New terminal <Key id="new-terminal" />
       </button>
       <button onClick={() => void useWorkspaces.getState().create()}>
         <Plus size={14} /> New workspace

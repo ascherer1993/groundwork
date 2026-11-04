@@ -165,15 +165,20 @@ test("notes, notes beside terminals, or terminals alone", async ({ page }) => {
   await expect(tab(page, "Welcome")).toHaveCount(0);
   await expect(tab(page, /^vault$/)).toBeVisible();
 
-  // Terminals alone; opening a note brings the notes back beside them.
-  await page.keyboard.press("Control+Meta+3");
+  // Terminals alone, with the workspaces in the sidebar instead of the files;
+  // opening a note brings the notes back beside them.
+  await views.getByRole("button", { name: "Terminals" }).click();
   await expect(notes).toBeHidden();
   await expect(tab(page, /^vault$/)).toBeVisible();
-  await page
-    .getByRole("tree", { name: "Files" })
-    .getByRole("treeitem", { name: "Welcome" })
-    .click();
+  const sidebar = page.locator("aside.sidebar");
+  await expect(sidebar.getByRole("tree", { name: "Files" })).toHaveCount(0);
+  await expect(sidebar.getByRole("tab", { name: "Files" })).toHaveCount(0);
+  await expect(sidebar.locator(".workspaces-panel")).toBeVisible();
+  await page.keyboard.press("Meta+o");
+  await page.keyboard.type("Welcome");
+  await page.keyboard.press("Enter");
   await expect(notes).toBeVisible();
+  await expect(sidebar.getByRole("tree", { name: "Files" })).toBeVisible();
   await expect(terminals).toBeVisible();
 
   // ⌘W closes the tab on the side last used.

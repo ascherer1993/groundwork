@@ -10,6 +10,7 @@ import {
   ListTodo,
   PanelRight,
   Search,
+  Settings,
   SquareTerminal,
   TextSearch,
   Ticket,
@@ -17,6 +18,8 @@ import {
 import { useEffect } from "react";
 import { openToday } from "../lib/commands";
 import { api } from "../api/client";
+import { isTauri } from "../api/transport";
+import { useKeyLabel, withKey } from "../state/keys";
 import { promptDialog, type SidebarView, useUi } from "../state/ui";
 import { message, useVault } from "../state/vault";
 import { watchTerminals } from "../state/terminals";
@@ -49,34 +52,70 @@ async function newFolder() {
 }
 
 const MAIN_VIEWS: { id: View; label: string; title: string; icon: typeof Files }[] = [
-  { id: "note", label: "Notes", title: "Notes only (⌃⌘1)", icon: FileText },
-  { id: "split", label: "Split", title: "Notes and terminals (⌃⌘2)", icon: Columns2 },
-  { id: "terminal", label: "Terminals", title: "Terminals only (⌃⌘3)", icon: SquareTerminal },
+  { id: "note", label: "Notes", title: "Notes only", icon: FileText },
+  { id: "split", label: "Split", title: "Notes and terminals", icon: Columns2 },
+  { id: "terminal", label: "Terminals", title: "Terminals only", icon: SquareTerminal },
 ];
 
-/** Notes · Split · Terminals, for the whole window. */
-function ViewSwitch() {
-  const view = useWorkspace((s) => s.view);
+function ViewButton({ id, label, title, icon: Icon }: (typeof MAIN_VIEWS)[number]) {
+  const pressed = useWorkspace((s) => s.view === id);
+  const key = useKeyLabel(`view-${id}`);
   return (
-    <div className="view-switch segmented" role="group" aria-label="Main view">
-      {MAIN_VIEWS.map(({ id, label, title, icon: Icon }) => (
+    <button
+      type="button"
+      className="icon"
+      aria-label={label}
+      title={withKey(title, key)}
+      aria-pressed={pressed}
+      onClick={() => useWorkspace.getState().setView(id)}
+    >
+      <Icon size={14} />
+    </button>
+  );
+}
+
+/**
+ * Across the top of the window (under the title bar on macOS, which is
+ * transparent): the view, the links panel, settings. Drags the window.
+ */
+function TopBar({ notesShown, rightOpen }: { notesShown: boolean; rightOpen: boolean }) {
+  const linksKey = useKeyLabel("toggle-right");
+  const settingsKey = useKeyLabel("settings");
+  return (
+    <header className={`topbar${isTauri() ? " desktop" : ""}`} data-tauri-drag-region>
+      <span className="topbar-fill" data-tauri-drag-region />
+      <div className="view-switch segmented" role="group" aria-label="Main view">
+        {MAIN_VIEWS.map((v) => (
+          <ViewButton key={v.id} {...v} />
+        ))}
+      </div>
+      <span className="topbar-fill" data-tauri-drag-region />
+      {notesShown && (
         <button
-          key={id}
-          type="button"
-          title={title}
-          aria-pressed={view === id}
-          onClick={() => useWorkspace.getState().setView(id)}
+          className="icon"
+          aria-label="Toggle links panel"
+          title={withKey("Toggle links panel", linksKey)}
+          aria-pressed={rightOpen}
+          onClick={() => useUi.getState().toggleRightPanel()}
         >
-          <Icon size={13} /> {label}
+          <PanelRight size={14} />
         </button>
-      ))}
-    </div>
+      )}
+      <button
+        className="icon"
+        aria-label="Settings"
+        title={withKey("Settings", settingsKey)}
+        onClick={() => useUi.getState().setSettingsOpen(true)}
+      >
+        <Settings size={14} />
+      </button>
+    </header>
   );
 }
 
 const VIEWS: { id: SidebarView; label: string; icon: typeof Files }[] = [
   { id: "files", label: "Files", icon: Files },
-  { id: "search", label: "Search (⌘⇧F)", icon: TextSearch },
+  { id: "search", label: "Search", icon: TextSearch },
   { id: "tags", label: "Tags", icon: Hash },
   { id: "todos", label: "Todos", icon: ListTodo },
   { id: "workspaces", label: "Workspaces", icon: SquareTerminal },
@@ -85,6 +124,7 @@ const VIEWS: { id: SidebarView; label: string; icon: typeof Files }[] = [
 
 function SidebarTabs() {
   const view = useUi((s) => s.sidebarView);
+  const searchKey = useKeyLabel("search");
   return (
     <div className="sidebar-tabs" role="tablist" aria-label="Sidebar">
       {VIEWS.map(({ id, label, icon: Icon }) => (
@@ -92,8 +132,8 @@ function SidebarTabs() {
           key={id}
           role="tab"
           className="icon"
-          aria-label={label.replace(/ \(.*/, "")}
-          title={label}
+          aria-label={label}
+          title={id === "search" ? withKey(label, searchKey) : label}
           aria-selected={view === id}
           onClick={() =>
             id === "search" ? useUi.getState().searchFor() : useUi.getState().setSidebarView(id)
@@ -115,8 +155,10 @@ export function VaultView() {
   // The links panel is about notes, so it isn't shown beside terminals alone.
   const notesShown = useWorkspace((s) => s.view !== "terminal");
   const rightOpen = useUi((s) => s.rightPanelOpen) && notesShown;
-  const toggleRight = useUi((s) => s.toggleRightPanel);
   const setSwitcher = useUi((s) => s.setSwitcher);
+  const switcherKey = useKeyLabel("switcher");
+  const dailyKey = useKeyLabel("daily-today");
+  const newNoteKey = useKeyLabel("new-note");
 
   useEffect(checkSetupOnce, []);
   useEffect(() => {
@@ -127,87 +169,87 @@ export function VaultView() {
   }, [vault?.path]);
 
   return (
-    <div className={`vault${rightOpen ? " with-right" : ""}`}>
-      <aside className="sidebar">
-        <header className="sidebar-header">
-          <span className="vault-name" title={vault?.path}>
-            {vault?.name}
-          </span>
-          <button
-            className="icon"
-            aria-label="Quick switcher"
-            title="Quick switcher (⌘O)"
-            onClick={() => setSwitcher(true)}
-          >
-            <Search size={14} />
-          </button>
-          <button
-            className="icon"
-            aria-label="Today’s daily note"
-            title="Today’s daily note (⌘⇧D)"
-            onClick={() => void openToday()}
-          >
-            <CalendarDays size={14} />
-          </button>
-          <button
-            className="icon"
-            aria-label="New note"
-            title="New note (⌘N)"
-            onClick={() => void newNote()}
-          >
-            <FilePlus size={14} />
-          </button>
-          <button
-            className="icon"
-            aria-label="New folder"
-            title="New folder"
-            onClick={() => void newFolder()}
-          >
-            <FolderPlus size={14} />
-          </button>
-          <button
-            className="icon"
-            aria-label="Switch vault"
-            title="Switch vault"
-            onClick={() => void closeVault()}
-          >
-            <ArrowLeftRight size={14} />
-          </button>
-        </header>
-        <SidebarTabs />
-        <div className="sidebar-body" role="tabpanel">
-          {sidebarView === "files" && tree && (
-            <nav aria-label="File tree">
-              <FileTree root={tree} />
-            </nav>
+    <div className="window">
+      <TopBar notesShown={notesShown} rightOpen={rightOpen} />
+      <div className={`vault${rightOpen ? " with-right" : ""}`}>
+        <aside className="sidebar">
+          <header className="sidebar-header">
+            <span className="vault-name" title={vault?.path}>
+              {vault?.name}
+            </span>
+            <button
+              className="icon"
+              aria-label="Quick switcher"
+              title={withKey("Quick switcher", switcherKey)}
+              onClick={() => setSwitcher(true)}
+            >
+              <Search size={14} />
+            </button>
+            <button
+              className="icon"
+              aria-label="Today’s daily note"
+              title={withKey("Today’s daily note", dailyKey)}
+              onClick={() => void openToday()}
+            >
+              <CalendarDays size={14} />
+            </button>
+            <button
+              className="icon"
+              aria-label="New note"
+              title={withKey("New note", newNoteKey)}
+              onClick={() => void newNote()}
+            >
+              <FilePlus size={14} />
+            </button>
+            <button
+              className="icon"
+              aria-label="New folder"
+              title="New folder"
+              onClick={() => void newFolder()}
+            >
+              <FolderPlus size={14} />
+            </button>
+            <button
+              className="icon"
+              aria-label="Switch vault"
+              title="Switch vault"
+              onClick={() => void closeVault()}
+            >
+              <ArrowLeftRight size={14} />
+            </button>
+          </header>
+          {notesShown ? (
+            <>
+              <SidebarTabs />
+              <div className="sidebar-body" role="tabpanel">
+                {sidebarView === "files" && tree && (
+                  <nav aria-label="File tree">
+                    <FileTree root={tree} />
+                  </nav>
+                )}
+                {sidebarView === "search" && <SearchPanel />}
+                {sidebarView === "tags" && <TagsPanel />}
+                {sidebarView === "todos" && <TodosPanel />}
+                {sidebarView === "workspaces" && <WorkspacesPanel />}
+                {sidebarView === "tickets" && <TicketsPanel />}
+              </div>
+            </>
+          ) : (
+            // Terminals alone: the sidebar is the workspaces, as in a terminal app.
+            <div className="sidebar-body">
+              <WorkspacesPanel />
+            </div>
           )}
-          {sidebarView === "search" && <SearchPanel />}
-          {sidebarView === "tags" && <TagsPanel />}
-          {sidebarView === "todos" && <TodosPanel />}
-          {sidebarView === "workspaces" && <WorkspacesPanel />}
-          {sidebarView === "tickets" && <TicketsPanel />}
-        </div>
-        <ViewSwitch />
-      </aside>
-      <main className="content">
-        <Workspace key={vault?.path} />
-      </main>
-      {rightOpen && (
-        <aside className="right-panel" aria-label="Links">
-          <LinksPanel />
         </aside>
-      )}
-      {notesShown && (
-        <button
-          className="icon right-toggle"
-          aria-label="Toggle links panel"
-          title="Toggle links panel (⌘⇧B)"
-          aria-pressed={rightOpen}
-          onClick={toggleRight}
-        >
-          <PanelRight size={14} />
-        </button>
-      )}
+        <main className="content">
+          <Workspace key={vault?.path} />
+        </main>
+        {rightOpen && (
+          <aside className="right-panel" aria-label="Links">
+            <LinksPanel />
+          </aside>
+        )}
+      </div>
     </div>
   );
 }

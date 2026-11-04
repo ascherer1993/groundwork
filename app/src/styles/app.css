@@ -213,14 +213,7 @@ input {
 .right-panel {
   border-left: 1px solid var(--border);
   overflow: auto;
-  padding: 40px 6px 16px;
-}
-
-.right-toggle {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  z-index: 5;
+  padding: 10px 6px 16px;
 }
 
 .sidebar-header {
@@ -1609,16 +1602,109 @@ label.check input {
 
 /* Notes · Split · Terminals, at the foot of the sidebar */
 
-.view-switch {
+/* The top bar. On macOS it sits under the transparent title bar, beside the
+   window buttons. */
+
+.window {
   display: flex;
-  margin: 6px 8px 8px;
+  flex-direction: column;
+  height: 100%;
+}
+
+.window > .vault {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+.topbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 38px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.topbar.desktop {
+  padding-left: 80px;
+}
+
+.topbar-fill {
+  flex: 1;
+  align-self: stretch;
 }
 
 .view-switch button {
-  flex: 1;
+  width: 30px;
+  height: 24px;
   justify-content: center;
+  padding: 0;
 }
 
 .kind-icon.kind-project {
   color: var(--accent);
+}
+
+/* Settings */
+
+.settings-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: 76vh;
+}
+
+.settings-keys {
+  min-height: 0;
+  margin: 0 -16px;
+  padding: 0 16px;
+  overflow: auto;
+}
+
+.settings-keys h3 {
+  margin: 12px 0 4px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settings-keys section:first-child h3 {
+  margin-top: 0;
+}
+
+.settings-key {
+  display: grid;
+  grid-template-columns: 1fr auto 22px;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  border-top: 1px solid var(--border);
+}
+
+.settings-combo {
+  min-width: 96px;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.settings-combo kbd {
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.settings-combo.recording {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.settings-note {
+  font-size: 12px;
 }

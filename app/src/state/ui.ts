@@ -84,6 +84,8 @@ interface UiState {
   openPalette(palette: Omit<Palette, "id">): void;
   closePalette(): void;
   openSetup(): void;
+  settingsOpen: boolean;
+  setSettingsOpen(open: boolean): void;
   closeSetup(): void;
   toggleRightPanel(): void;
   showMenu(x: number, y: number, items: MenuEntry[]): void;
@@ -108,6 +110,7 @@ export const useUi = create<UiState>((set) => ({
   dialog: null,
   palette: null,
   setupOpen: false,
+  settingsOpen: false,
   hover: null,
   renaming: null,
 
@@ -122,6 +125,8 @@ export const useUi = create<UiState>((set) => ({
   closePalette: () => set({ palette: null }),
   openSetup: () => set({ setupOpen: true, palette: null, switcherOpen: false }),
   closeSetup: () => set({ setupOpen: false }),
+  setSettingsOpen: (settingsOpen) =>
+    set(settingsOpen ? { settingsOpen, palette: null, switcherOpen: false } : { settingsOpen }),
   toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
   showMenu: (x, y, items) => set({ menu: { x, y, items } }),
   closeMenu: () => set({ menu: null }),

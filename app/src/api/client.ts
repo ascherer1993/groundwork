@@ -18,6 +18,7 @@ import type { LinkSettings } from "./generated/LinkSettings";
 import type { Mention } from "./generated/Mention";
 import type { OutgoingLink } from "./generated/OutgoingLink";
 import type { ParsedNote } from "./generated/ParsedNote";
+import type { AppSettings } from "./generated/AppSettings";
 import type { RecentVault } from "./generated/RecentVault";
 import type { RenameOutcome } from "./generated/RenameOutcome";
 import type { RenderedTemplate } from "./generated/RenderedTemplate";
@@ -40,6 +41,8 @@ import { isTauri, TauriTransport, type Transport, WebSocketTransport } from "./t
 interface Results {
   "app.info": AppInfo;
   "vault.recent": RecentVault[];
+  "settings.get": AppSettings;
+  "settings.set": null;
   "vault.forget": null;
   "vault.open": VaultInfo;
   "vault.current": VaultInfo | null;
@@ -129,6 +132,8 @@ export const api = {
   appInfo: () => call("app.info"),
 
   recentVaults: () => call("vault.recent"),
+  settings: () => call("settings.get"),
+  saveSettings: (settings: AppSettings) => call("settings.set", { settings }),
   forgetVault: (path: string) => call("vault.forget", { path }),
   openVault: (path: string) => call("vault.open", { path }),
   currentVault: () => call("vault.current"),

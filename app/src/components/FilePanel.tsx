@@ -6,6 +6,7 @@ import type { FileContent } from "../api/generated/FileContent";
 import { vaultFileUrl } from "../lib/fileUrl";
 import { isPagePath } from "../lib/paths";
 import { isImage } from "../markdown/syntax";
+import { useKeyLabel } from "../state/keys";
 import { message, useVault } from "../state/vault";
 import { type PanelParams, useWorkspace, type ViewMode } from "../state/workspace";
 import { NoteView } from "./NoteView";
@@ -36,6 +37,7 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
   const note = isNote(path);
   const page = isPagePath(path);
   const modes = note ? MODES : page ? PAGE_MODES : null;
+  const toggleKey = useKeyLabel("toggle-reading");
   const current = page && mode !== "source" ? "reading" : mode;
 
   return (
@@ -72,7 +74,11 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
                 role="radio"
                 aria-checked={current === m}
                 aria-label={label}
-                title={`${label} (⌘E toggles ${page ? "source" : "reading"})`}
+                title={
+                  toggleKey
+                    ? `${label} (${toggleKey} toggles ${page ? "source" : "reading"})`
+                    : label
+                }
                 className={`icon${current === m ? " active" : ""}`}
                 onClick={() => setMode(panel.id, m)}
               >

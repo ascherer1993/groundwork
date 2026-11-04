@@ -152,8 +152,8 @@
 
   // App shortcuts (⌘P, ⌘O, ⌘W…) still work while the page has focus.
   window.addEventListener("keydown", (event) => {
-    if (event.defaultPrevented || !event.metaKey) return;
-    if ("acvxz".includes(event.key.toLowerCase())) return;
+    if (event.defaultPrevented || !(event.metaKey || event.ctrlKey || event.altKey)) return;
+    if (event.metaKey && "acvxz".includes(event.key.toLowerCase())) return;
     const target = event.target;
     if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
     const { key, code, metaKey, shiftKey, altKey, ctrlKey } = event;
