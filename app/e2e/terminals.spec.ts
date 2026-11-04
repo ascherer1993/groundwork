@@ -260,11 +260,18 @@ test("workspaces keep their own terminals, with badges and a session manager", a
   await expect(sessions.locator(".session-meta").filter({ hasText: "in Acme API" })).toContainText(
     "vault/Projects/Acme",
   );
-  // Clicking anywhere on one goes to its tab.
+  // Clicking anywhere on one goes to its tab, and marks it as the one shown.
+  const acmeSession = sessions.locator(".session").filter({ hasText: "in Acme API" });
   await expect(page.getByRole("region", { name: "Terminals", exact: true })).toBeHidden();
-  await sessions.locator(".session").filter({ hasText: "in Acme API" }).click();
+  await expect(acmeSession).not.toHaveAttribute("aria-current", "true");
+  await acmeSession.click();
   await expect(page.getByRole("region", { name: "Terminals", exact: true })).toBeVisible();
   await expect(page.locator(".terminals-header .terminals-name")).toHaveText("Acme API");
+  await expect(acmeSession).toHaveAttribute("aria-current", "true");
+  await expect(acme.locator(".area-tab")).toHaveAttribute("aria-current", "true");
+  await expect(sessions.locator('.session[aria-current="true"]')).toHaveCount(1);
+  await page.keyboard.press("Control+Meta+1");
+  await expect(acmeSession).not.toHaveAttribute("aria-current", "true");
 
   // Deleting the workspace ends its terminal.
   await acme.locator(".area-row").click({ button: "right" });

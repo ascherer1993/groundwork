@@ -13,7 +13,7 @@ import {
 } from "../state/terminals";
 import { confirmDialog, useUi } from "../state/ui";
 import { message, useVault } from "../state/vault";
-import { useWorkspace } from "../state/workspace";
+import { shownTerminal, useWorkspace } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
 
 const LABELS: Record<TerminalState, string> = {
@@ -69,6 +69,7 @@ function isClaude(process: string | null | undefined, title?: string): boolean {
 function AreaRow({ area, name, folder }: { area: string; name: string; folder?: string }) {
   useWorkspace((s) => s.tabsVersion);
   const current = useWorkspace((s) => s.workspace === area && s.view !== "note");
+  const shown = useWorkspace(shownTerminal);
   const byId = useTerminals((s) => s.byId);
   const root = useVault((s) => s.vault?.path);
   const tabs = useWorkspace
@@ -126,7 +127,8 @@ function AreaRow({ area, name, folder }: { area: string; name: string; folder?: 
           {tabs.map((t, i) => (
             <li key={t.panel.id}>
               <button
-                className="area-tab"
+                className={`area-tab${t.terminal === shown ? " current" : ""}`}
+                aria-current={t.terminal === shown || undefined}
                 onClick={() => useWorkspace.getState().showTerminal(t.terminal)}
               >
                 <SquareTerminal size={12} />
@@ -151,6 +153,7 @@ function Sessions() {
   const tabsVersion = useWorkspace((s) => s.tabsVersion);
   const byId = useTerminals((s) => s.byId);
   const root = useVault((s) => s.vault?.path);
+  const shown = useWorkspace(shownTerminal);
   const [sessions, setSessions] = useState<TerminalInfo[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [refresh, setRefresh] = useState(0);
@@ -218,7 +221,8 @@ function Sessions() {
           return (
             <li
               key={t.id}
-              className="session"
+              className={`session${t.id === shown ? " current" : ""}`}
+              aria-current={t.id === shown || undefined}
               // The row's edges count too; its checkbox and End button don't.
               onClick={(e) => e.target === e.currentTarget && go()}
             >

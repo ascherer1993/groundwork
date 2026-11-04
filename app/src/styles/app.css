@@ -1214,7 +1214,9 @@ button.terminals-name:hover {
   text-align: left;
 }
 
-.area-row.current {
+.area-row.current,
+.area-tab.current,
+.session.current {
   background: var(--bg-selected);
 }
 

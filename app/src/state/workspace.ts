@@ -95,6 +95,8 @@ interface WorkspaceState {
   tabsVersion: number;
   /** The file in the notes dock's active tab. */
   activePath: string | null;
+  /** Each workspace's active terminal tab: the terminal's id. */
+  activeTerminals: Record<string, string | null>;
 
   /**
    * Sets up a mounted area's dock: restores its layout and saves changes.
@@ -232,6 +234,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   focused: "notes",
   tabsVersion: 0,
   activePath: null,
+  activeTerminals: {},
 
   attach(dock, area, layout) {
     let disposed = false;
@@ -266,6 +269,16 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         const path = panel ? paramsOf(panel).path : null;
         set({ activePath: path });
         if (path) useVault.getState().revealInTree(path);
+      };
+      sync();
+      listeners.push(dock.onDidActivePanelChange(sync));
+    } else {
+      const sync = () => {
+        if (disposed) return;
+        const panel = dock.activePanel;
+        const terminal =
+          panel && isTerminal(panel) ? (panel.params as unknown as TerminalParams).terminal : null;
+        set((s) => ({ activeTerminals: { ...s.activeTerminals, [area]: terminal } }));
       };
       sync();
       listeners.push(dock.onDidActivePanelChange(sync));
@@ -582,3 +595,9 @@ function followChangesIn(dock: DockviewApi, changes: FileChange[]) {
 }
 
 onVaultChange(followChanges);
+
+/** The terminal on screen: the current workspace's active tab, when terminals show. */
+export function shownTerminal(s: WorkspaceState): string | null {
+  if (s.view === "note" || !s.workspace) return null;
+  return s.activeTerminals[s.workspace] ?? null;
+}
