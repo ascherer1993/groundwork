@@ -7,6 +7,15 @@ import { formDialog, type PaletteItem, promptDialog, useUi } from "../state/ui";
 import { message, newNoteFolder, useVault } from "../state/vault";
 import { NOTES, useWorkspace } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
+import {
+  closeTicket,
+  locateRepo,
+  noteWorkspace,
+  pickAction,
+  showSplit,
+  ticketAt,
+  useTickets,
+} from "../state/tickets";
 
 /** Past any note's end: "put the cursor at the end". */
 const END = Number.MAX_SAFE_INTEGER;
@@ -163,6 +172,34 @@ function commands(): Command[] {
       label: "Show workspaces and terminals",
       run: () => ui.setSidebarView("workspaces"),
     },
+    { id: "new-ticket", label: "New ticket…", run: () => useTickets.getState().newTicket() },
+    { id: "new-worktree", label: "New worktree in…", run: newWorktreeIn },
+    {
+      id: "add-worktree",
+      label: "Add worktree to this note…",
+      when: () => hasActive() && !ticketAt(ws.activePath),
+      run: () => useTickets.getState().newTicket({ note: ws.activePath! }),
+    },
+    {
+      id: "note-workspace",
+      label: "Open this note’s workspace",
+      when: hasActive,
+      run: () => openNoteWorkspace(ws.activePath!),
+    },
+    {
+      id: "run-action",
+      label: "Run action…",
+      when: hasActive,
+      run: () => pickAction(ws.activePath!),
+    },
+    {
+      id: "close-ticket",
+      label: "Close ticket…",
+      when: () => ticketAt(ws.activePath)?.status === "active",
+      run: () => closeTicket(ws.activePath!),
+    },
+    { id: "locate-repo", label: "Locate repo…", run: pickRepoToLocate },
+    { id: "tickets", label: "Show tickets", run: () => ui.setSidebarView("tickets") },
     {
       id: "close-tab",
       label: "Close tab",
@@ -193,8 +230,51 @@ function commands(): Command[] {
   ];
 }
 
+/** The note's workspace (made if it has none), with the note beside its terminals. */
+export async function openNoteWorkspace(path: string) {
+  const id = await noteWorkspace(path);
+  if (id) await showSplit(path, id);
+}
+
+/** Picks a repo, then opens the new-ticket dialog for it. */
+async function newWorktreeIn() {
+  await useTickets.getState().load();
+  const { repos } = useTickets.getState();
+  if (!repos.length) {
+    useUi.getState().notify("No repos yet. Add them to .groundwork/repos.yml.");
+    return;
+  }
+  useUi.getState().openPalette({
+    placeholder: "New worktree in…",
+    items: repos.map((r) => ({
+      id: r.id,
+      label: r.name,
+      detail: r.id,
+      run: () => useTickets.getState().newTicket({ repo: r.id }),
+    })),
+  });
+}
+
+async function pickRepoToLocate() {
+  await useTickets.getState().load();
+  const { repos } = useTickets.getState();
+  if (!repos.length) {
+    useUi.getState().notify("No repos yet. Add them to .groundwork/repos.yml.");
+    return;
+  }
+  useUi.getState().openPalette({
+    placeholder: "Locate repo…",
+    items: repos.map((r) => ({
+      id: r.id,
+      label: r.name,
+      detail: r.location?.path ?? "not located",
+      run: () => void locateRepo(r.id),
+    })),
+  });
+}
+
 /** Lists the vault's folders and the workspaces' to start a terminal in, or asks for another. */
-function terminalInFolder() {
+async function terminalInFolder() {
   const vault = useVault.getState().vault;
   const tree = useVault.getState().tree;
   if (!vault) return;
@@ -206,12 +286,27 @@ function terminalInFolder() {
   };
   if (tree) walk(tree);
   const open = (cwd: string) => useWorkspace.getState().openTerminal(cwd);
-  const items: PaletteItem[] = folders.map((path) => ({
-    id: `vault:${path}`,
-    label: path || vault.name,
-    detail: path ? undefined : "vault root",
-    run: () => open(path ? `${vault.path}/${path}` : vault.path),
-  }));
+  const items: PaletteItem[] = [];
+  // In a ticket's workspace: the components it touches, in its worktree.
+  const area = useWorkspace.getState().area;
+  const note = useWorkspaces.getState().list.find((w) => w.id === area)?.note;
+  if (note) {
+    const context = await api.context({ note }).catch(() => null);
+    for (const c of context?.components ?? []) {
+      if (c.absPath) {
+        const cwd = c.absPath;
+        items.push({ id: `component:${c.id}`, label: c.id, detail: c.path, run: () => open(cwd) });
+      }
+    }
+  }
+  items.push(
+    ...folders.map((path) => ({
+      id: `vault:${path}`,
+      label: path || vault.name,
+      detail: path ? undefined : "vault root",
+      run: () => open(path ? `${vault.path}/${path}` : vault.path),
+    })),
+  );
   for (const w of useWorkspaces.getState().list) {
     items.push({ id: `workspace:${w.id}`, label: w.cwd, detail: w.name, run: () => open(w.cwd) });
   }

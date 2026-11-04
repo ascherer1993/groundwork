@@ -312,7 +312,7 @@ function buildBlocks(state: EditorState): DecorationSet {
         case "FencedCode": {
           const info = node.getChild("CodeInfo");
           const lang = info && state.sliceDoc(info.from, info.to).trim();
-          if (lang === "mermaid" || lang === "todos") {
+          if (lang === "mermaid" || lang === "todos" || lang === "tickets") {
             const { from, to } = lineSpan(state, ref);
             block(from, to, new MarkdownBlockWidget(state.sliceDoc(from, to), source, 0));
           }

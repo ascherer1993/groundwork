@@ -13,6 +13,8 @@ import { api } from "../api/client";
 import type { NodeKind } from "../api/generated/NodeKind";
 import type { TreeNode } from "../api/generated/TreeNode";
 import { displayName } from "../lib/paths";
+import { openNoteWorkspace } from "../lib/commands";
+import { projectAt, ticketAt, useTickets } from "../state/tickets";
 import { confirmDialog, type MenuEntry, promptDialog, useUi } from "../state/ui";
 import { message, useVault } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
@@ -86,14 +88,30 @@ function menuFor(node: TreeNode): MenuEntry[] {
           }),
       },
       { label: "Open terminal here", action: () => void ws.openTerminal(absolute) },
-      "separator",
     );
+    const project = projectAt(node.path);
+    if (project) {
+      entries.push({
+        label: "New ticket…",
+        action: () => void useTickets.getState().newTicket({ projects: [project.id] }),
+      });
+    }
+    entries.push("separator");
   } else {
     entries.push(
       { label: "Open in new tab", action: () => ws.open(node.path, { newTab: true }) },
       { label: "Open to the right", action: () => ws.open(node.path, { split: "right" }) },
-      "separator",
     );
+    if (node.kind === "note") {
+      entries.push({ label: "Open workspace", action: () => void openNoteWorkspace(node.path) });
+      if (!ticketAt(node.path)) {
+        entries.push({
+          label: "Add worktree…",
+          action: () => void useTickets.getState().newTicket({ note: node.path }),
+        });
+      }
+    }
+    entries.push("separator");
   }
   if (!isRoot) {
     entries.push({ label: "Rename…", action: () => ui.setRenaming(node.path) });

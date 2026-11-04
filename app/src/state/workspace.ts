@@ -55,9 +55,16 @@ export function terminalTitle(title: string, cwd: string): string {
   return title.trim() || cwd.slice(cwd.lastIndexOf("/") + 1) || cwd;
 }
 
+export interface TerminalOptions {
+  /** Beside the active tab instead of in its group. */
+  split?: "right" | "below";
+  /** A command line to type into the new shell. */
+  run?: string;
+}
+
 export interface OpenOptions {
   newTab?: boolean;
-  split?: "right" | "below";
+  split?: "right" | "below" | "left";
   subpath?: string;
   line?: number;
   /** Put the cursor here and focus the editor; past the end means the end. */
@@ -101,11 +108,14 @@ interface WorkspaceState {
   newNote(folder?: string, opts?: OpenOptions): Promise<void>;
   /**
    * A shell in `cwd` in a new tab of the area on screen. By default it starts
-   * in the workspace's folder, or the vault root in the notes area.
+   * in the workspace's folder, or the vault root in the notes area. `run` is
+   * typed into it.
    */
-  openTerminal(cwd?: string): Promise<void>;
+  openTerminal(cwd?: string, opts?: TerminalOptions): Promise<void>;
   /** Shows a running terminal in a new tab of the area on screen. */
-  addTerminal(info: TerminalInfo): void;
+  addTerminal(info: TerminalInfo, opts?: TerminalOptions): void;
+  /** The tab showing `path` in an area, if one does. */
+  fileTab(area: string, path: string): IDockviewPanel | undefined;
   /** Shows a running terminal (by session id) in a tab, if one has it. */
   showTerminal(id: string): boolean;
   /** Every terminal in a tab, with the area it's in. */
@@ -323,7 +333,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       params: params as unknown as Record<string, unknown>,
       position: active
         ? opts.split
-          ? { referencePanel: active, direction: opts.split === "right" ? "right" : "below" }
+          ? { referencePanel: active, direction: opts.split }
           : { referencePanel: active, direction: "within" }
         : undefined,
     });
@@ -407,7 +417,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     get().dock?.activePanel?.api.close();
   },
 
-  async openTerminal(cwd) {
+  async openTerminal(cwd, opts = {}) {
     const area = get().area;
     try {
       // The view resizes it to fit once it's on screen.
@@ -416,13 +426,15 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         cwd ?? areaFolders(area),
         area === NOTES ? undefined : area,
       );
-      get().addTerminal(info);
+      get().addTerminal(info, opts);
+      // The shell reads it once it starts.
+      if (opts.run) await api.terminalInput(info.id, `${opts.run}\r`);
     } catch (err) {
       useUi.getState().notify(message(err));
     }
   },
 
-  addTerminal(info) {
+  addTerminal(info, opts = {}) {
     const dock = get().dock;
     if (!dock) return;
     const params: TerminalParams = { terminal: info.id, cwd: info.cwd };
@@ -432,8 +444,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       component: "terminal",
       title: terminalTitle(info.title, info.cwd),
       params: params as unknown as Record<string, unknown>,
-      position: active ? { referencePanel: active, direction: "within" } : undefined,
+      position: active ? { referencePanel: active, direction: opts.split ?? "within" } : undefined,
     });
+  },
+
+  fileTab(area, path) {
+    return get().docks[area]?.panels.find((p) => !isTerminal(p) && paramsOf(p).path === path);
   },
 
   showTerminal(id) {

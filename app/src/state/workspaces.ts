@@ -21,6 +21,10 @@ interface WorkspacesState {
   list: Workspace[];
   loaded: boolean;
   load(): Promise<void>;
+  /** Reloads the list (after the backend made or removed one), keeping the area. */
+  refresh(): Promise<void>;
+  /** Resolves once a workspace's dock is mounted, so it can take tabs. */
+  ready(id: string): Promise<boolean>;
   /** Asks for a name, creates the workspace, shows it and opens a terminal. */
   create(): Promise<void>;
   rename(id: string): Promise<void>;
@@ -46,6 +50,27 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
       set({ loaded: true });
       useUi.getState().notify(message(err));
     }
+  },
+
+  async refresh() {
+    try {
+      const list = await api.workspaces();
+      set({ list });
+      const area = useWorkspace.getState().area;
+      if (area !== NOTES && !list.some((w) => w.id === area)) {
+        useWorkspace.getState().setArea(NOTES);
+      }
+    } catch (err) {
+      useUi.getState().notify(message(err));
+    }
+  },
+
+  async ready(id) {
+    for (let i = 0; i < 50; i++) {
+      if (useWorkspace.getState().docks[id]) return true;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return false;
   },
 
   async create() {

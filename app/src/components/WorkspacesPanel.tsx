@@ -2,6 +2,8 @@ import { ArrowRight, Plus, SquareTerminal, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { TerminalInfo } from "../api/generated/TerminalInfo";
+import type { Workspace } from "../api/generated/Workspace";
+import { showSplit, useTickets } from "../state/tickets";
 import {
   mostUrgent,
   stateOf,
@@ -76,14 +78,24 @@ function AreaRow({ area, name, folder }: { area: string; name: string; folder?: 
   const states = tabs.map((t) => stateOf(byId[t.terminal]));
   const workspace = area !== NOTES;
 
-  const menu = (e: React.MouseEvent) => {
+  const menu = async (e: React.MouseEvent) => {
     if (!workspace) return;
     e.preventDefault();
-    useUi.getState().showMenu(e.clientX, e.clientY, [
+    const { clientX: x, clientY: y } = e;
+    // A ticket's workspace offers a terminal in each component it touches.
+    const note = useWorkspaces.getState().list.find((w) => w.id === area)?.note;
+    const context = note ? await api.context({ note }).catch(() => null) : null;
+    const components = (context?.components ?? []).filter((c) => c.absPath);
+    useUi.getState().showMenu(x, y, [
       {
         label: "New terminal",
         action: () => switchAnd(area, () => useWorkspace.getState().openTerminal()),
       },
+      ...components.map((c) => ({
+        label: `New terminal in ${c.id.slice(c.id.indexOf(":") + 1)}`,
+        action: () => switchAnd(area, () => useWorkspace.getState().openTerminal(c.absPath!)),
+      })),
+      ...(note ? [{ label: "Open note", action: () => void showSplit(note, area) }] : []),
       { label: "Rename…", action: () => void useWorkspaces.getState().rename(area) },
       {
         label: "Change folder…",
@@ -105,7 +117,7 @@ function AreaRow({ area, name, folder }: { area: string; name: string; folder?: 
         aria-current={current || undefined}
         title={folder}
         onClick={() => useWorkspace.getState().setArea(area)}
-        onContextMenu={menu}
+        onContextMenu={(e) => void menu(e)}
       >
         <span className="area-name">{name}</span>
         {folder && <span className="area-folder">{shortPath(folder, root)}</span>}
@@ -268,10 +280,51 @@ function Sessions() {
   );
 }
 
+type Grouping = "project" | "repo" | "none";
+const GROUP_KEY = "groundwork.workspacesGroup";
+
+function savedGrouping(): Grouping {
+  try {
+    const g = localStorage.getItem(GROUP_KEY);
+    return g === "repo" || g === "none" ? g : "project";
+  } catch {
+    return "project";
+  }
+}
+
 /** Workspaces and their terminals, with what each is doing, then every running terminal. */
 export function WorkspacesPanel() {
   useTick();
   const workspaces = useWorkspaces((s) => s.list);
+  const { tickets, projects, repos } = useTickets();
+  const [grouping, setGrouping] = useState<Grouping>(savedGrouping);
+
+  // A workspace belongs to its note's ticket's home project (or repo), or
+  // to the project folder its note is in.
+  const groupOf = (w: Workspace): string => {
+    if (grouping === "none") return "";
+    const ticket = w.note ? tickets.find((t) => t.path === w.note) : undefined;
+    if (grouping === "repo") {
+      const repo = ticket?.repo;
+      return repo ? (repos.find((r) => r.id === repo)?.name ?? repo) : "Other";
+    }
+    const id =
+      ticket?.projects[0] ??
+      projects
+        .filter((p) => w.note?.startsWith(`${p.folder}/`))
+        .sort((a, b) => b.folder.length - a.folder.length)[0]?.id;
+    return id ? (projects.find((p) => p.id === id)?.name ?? id) : "Other";
+  };
+  const groups = new Map<string, Workspace[]>();
+  for (const w of workspaces) {
+    const g = groupOf(w);
+    groups.set(g, [...(groups.get(g) ?? []), w]);
+  }
+  const names = [...groups.keys()].sort((a, b) =>
+    a === "Other" ? 1 : b === "Other" ? -1 : a.localeCompare(b),
+  );
+  const grouped = names.length > 1 || (names[0] ?? "") !== "Other";
+
   return (
     <div className="workspaces-panel">
       <div className="section-header workspaces-header">
@@ -285,10 +338,40 @@ export function WorkspacesPanel() {
           <Plus size={13} />
         </button>
       </div>
+      {workspaces.length > 1 && (
+        <div className="tickets-controls">
+          <label>
+            Group by{" "}
+            <select
+              value={grouping}
+              onChange={(e) => {
+                const g = e.target.value as Grouping;
+                setGrouping(g);
+                try {
+                  localStorage.setItem(GROUP_KEY, g);
+                } catch {
+                  // Not remembered.
+                }
+              }}
+            >
+              <option value="project">Project</option>
+              <option value="repo">Repo</option>
+              <option value="none">Nothing</option>
+            </select>
+          </label>
+        </div>
+      )}
       <ul className="area-list" aria-label="Workspaces">
         <AreaRow area={NOTES} name="Notes" />
-        {workspaces.map((w) => (
-          <AreaRow key={w.id} area={w.id} name={w.name} folder={w.cwd} />
+        {names.map((name) => (
+          <li key={name || "all"} className="area-group">
+            {grouped && name && <div className="area-group-name">{name}</div>}
+            <ul className="area-list">
+              {groups.get(name)!.map((w) => (
+                <AreaRow key={w.id} area={w.id} name={w.name} folder={w.cwd} />
+              ))}
+            </ul>
+          </li>
         ))}
       </ul>
       <Sessions />

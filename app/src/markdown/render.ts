@@ -295,7 +295,7 @@ function matchingClose(tokens: Token[], openIndex: number): Token | undefined {
   return undefined;
 }
 
-/** Headings carry their text for `#Heading` scrolling; mermaid and todos fences become placeholders. */
+/** Headings carry their text for `#Heading` scrolling; mermaid, todos and tickets fences become placeholders. */
 function headingsAndFences(md: MarkdownIt) {
   md.core.ruler.push("heading_ids", (state: StateCore) => {
     state.tokens.forEach((token, i) => {
@@ -313,6 +313,9 @@ function headingsAndFences(md: MarkdownIt) {
     }
     if (token.info.trim() === "todos") {
       return `<div class="todos-block" data-source="${encodeURIComponent(token.content)}"></div>`;
+    }
+    if (token.info.trim() === "tickets") {
+      return `<div class="tickets-block" data-source="${encodeURIComponent(token.content)}"></div>`;
     }
     return fence(tokens, idx, options, env, self);
   };

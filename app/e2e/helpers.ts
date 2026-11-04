@@ -21,7 +21,9 @@ export async function openVault(page: Page, vault: string) {
 export async function quickOpen(page: Page, query: string) {
   await page.keyboard.press("Meta+o");
   await page.getByLabel("Find a file").fill(query);
-  await expect(page.getByRole("option").first()).toBeVisible();
+  await expect(
+    page.getByRole("listbox", { name: "Files" }).getByRole("option").first(),
+  ).toBeVisible();
   await page.keyboard.press("Enter");
 }
 

@@ -15,6 +15,7 @@ import { displayName } from "../lib/paths";
 import { useUi } from "../state/ui";
 import { message, onVaultChange } from "../state/vault";
 import type { FocusTarget, ViewMode } from "../state/workspace";
+import { NoteBar } from "./NoteBar";
 import { ReadingView } from "./ReadingView";
 
 const SAVE_DELAY = 300;
@@ -203,6 +204,7 @@ export function NoteView({ path, mode, focus, editTitle }: Props) {
 
   return (
     <div className="note-view">
+      <NoteBar path={path} />
       <InlineTitle
         key={path}
         path={path}

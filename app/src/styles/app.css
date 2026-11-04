@@ -1268,3 +1268,256 @@ button.danger-button {
 .sessions-end {
   margin: 6px 8px;
 }
+
+/* Note bar: a ticket's (or a note's workspace's) controls above the title */
+
+.note-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  max-width: var(--line-width);
+  margin: 14px auto -10px;
+  padding: 0 32px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.note-bar-spacer {
+  flex: 1;
+}
+
+.ticket-key {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ticket-status {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: var(--bg-selected);
+}
+
+.ticket-status.status-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.ticket-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticket-git {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.ticket-git.warn {
+  color: var(--warning);
+}
+
+.ticket-meta .ticket-git {
+  flex: none;
+  white-space: nowrap;
+}
+
+button.note-bar-button,
+.segmented button {
+  padding: 2px 8px;
+  font-size: 12px;
+  gap: 4px;
+  color: var(--text-muted);
+}
+
+button.note-bar-button:hover,
+.segmented button:hover {
+  color: var(--text);
+}
+
+.segmented {
+  display: inline-flex;
+}
+
+.segmented button {
+  border-radius: 0;
+  margin-left: -1px;
+}
+
+.segmented button:first-child {
+  border-radius: var(--radius) 0 0 var(--radius);
+  margin-left: 0;
+}
+
+.segmented button:last-child {
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+/* New ticket */
+
+.ticket-dialog {
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+}
+
+.dialog-field select,
+.tickets-controls select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-input);
+}
+
+.ticket-choices {
+  margin: 0;
+  padding: 0;
+  border: none;
+  flex-flow: row wrap;
+  gap: 4px 14px;
+}
+
+.ticket-choices legend {
+  width: 100%;
+  padding: 0 0 4px;
+}
+
+label.check {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+label.check input {
+  flex: none;
+  width: auto;
+  margin: 0;
+}
+
+/* Tickets view and block */
+
+.tickets-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 4px;
+}
+
+.tickets-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tickets-controls label.check {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ticket-list ul,
+.strays ul,
+.tickets-view .ticket-list ul {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+}
+
+.tickets-view .ticket-list li {
+  margin: 0;
+}
+
+.ticket-open {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  text-align: left;
+}
+
+.ticket-open:hover {
+  background: var(--bg-hover);
+}
+
+.ticket-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticket-row.is-closed .ticket-title {
+  color: var(--text-muted);
+}
+
+.ticket-list .section-header {
+  display: flex;
+}
+
+.ticket-meta {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.stray {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+}
+
+.stray-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.tickets-view {
+  margin: 8px 0;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+.area-group-name {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  color: var(--text-faint);
+}

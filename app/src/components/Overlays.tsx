@@ -9,6 +9,7 @@ import { useUi } from "../state/ui";
 import { Palette } from "./Palette";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { SetupDialog } from "./SetupDialog";
+import { TicketDialog } from "./TicketDialog";
 
 /** Everything that floats above the layout. */
 export function Overlays() {
@@ -17,6 +18,7 @@ export function Overlays() {
     <>
       <ContextMenu />
       <Toast />
+      <TicketDialog />
       <Dialog />
       <HoverPreview />
       {switcherOpen && <QuickSwitcher />}

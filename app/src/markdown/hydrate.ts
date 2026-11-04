@@ -11,6 +11,7 @@ import { useUi } from "../state/ui";
 import { message } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
 import { renderMarkdown } from "./render";
+import { mountTickets } from "./tickets";
 import { mountTodos, parseTodosSpec } from "./todos";
 import {
   escapeHtml,
@@ -71,6 +72,7 @@ export async function hydrate(root: HTMLElement, source: string, depth = 0): Pro
   }
 
   mountTodoBlocks(root, source);
+  mountTicketBlocks(root, source);
   await Promise.all([
     ...embeds.map((el) => {
       const { target, subpath } = splitTarget(el.dataset.embed!);
@@ -136,6 +138,15 @@ async function renderEmbed(
   }
   el.className = "embed embed-card";
   el.innerHTML = `<span>${escapeHtml(path.slice(path.lastIndexOf("/") + 1))}</span><a class="internal-link" href="#" data-href="${escapeHtml(target)}" data-resolved="${escapeHtml(path)}">Open</a>`;
+}
+
+/** `tickets` blocks become live lists too. */
+function mountTicketBlocks(root: HTMLElement, source: string) {
+  for (const block of root.querySelectorAll<HTMLElement>(".tickets-block[data-source]")) {
+    const spec = decodeURIComponent(block.dataset.source!);
+    block.removeAttribute("data-source");
+    mountTickets(block, spec, source);
+  }
 }
 
 /** `todos` blocks become live lists (they update themselves from then on). */

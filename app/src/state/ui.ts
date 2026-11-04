@@ -60,7 +60,7 @@ interface Hover {
   y: number;
 }
 
-export type SidebarView = "files" | "search" | "tags" | "todos" | "workspaces";
+export type SidebarView = "files" | "search" | "tags" | "todos" | "workspaces" | "tickets";
 
 interface UiState {
   switcherOpen: boolean;

@@ -38,7 +38,9 @@ function editAt(view: EditorView, dom: HTMLElement) {
 function isInteractive(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&
-    !!target.closest("a, input, button, summary, .embed-note, .embed-page, .todos-view")
+    !!target.closest(
+      "a, input, button, summary, .embed-note, .embed-page, .todos-view, .tickets-view",
+    )
   );
 }
 

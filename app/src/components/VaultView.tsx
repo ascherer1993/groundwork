@@ -10,6 +10,7 @@ import {
   Search,
   SquareTerminal,
   TextSearch,
+  Ticket,
 } from "lucide-react";
 import { useEffect } from "react";
 import { openToday } from "../lib/commands";
@@ -17,6 +18,7 @@ import { api } from "../api/client";
 import { promptDialog, type SidebarView, useUi } from "../state/ui";
 import { message, useVault } from "../state/vault";
 import { watchTerminals } from "../state/terminals";
+import { watchTickets } from "../state/tickets";
 import { useWorkspace } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
 import { FileTree } from "./FileTree";
@@ -24,6 +26,7 @@ import { LinksPanel } from "./LinksPanel";
 import { SearchPanel } from "./SearchPanel";
 import { checkSetupOnce } from "./SetupDialog";
 import { TagsPanel } from "./TagsPanel";
+import { TicketsPanel } from "./TicketsPanel";
 import { TodosPanel } from "./TodosPanel";
 import { Workspace } from "./Workspace";
 import { WorkspacesPanel } from "./WorkspacesPanel";
@@ -48,6 +51,7 @@ const VIEWS: { id: SidebarView; label: string; icon: typeof Files }[] = [
   { id: "tags", label: "Tags", icon: Hash },
   { id: "todos", label: "Todos", icon: ListTodo },
   { id: "workspaces", label: "Workspaces", icon: SquareTerminal },
+  { id: "tickets", label: "Tickets", icon: Ticket },
 ];
 
 function SidebarTabs() {
@@ -86,6 +90,7 @@ export function VaultView() {
   useEffect(checkSetupOnce, []);
   useEffect(() => {
     watchTerminals();
+    watchTickets();
     void useWorkspaces.getState().load();
   }, [vault?.path]);
 
@@ -148,6 +153,7 @@ export function VaultView() {
           {sidebarView === "tags" && <TagsPanel />}
           {sidebarView === "todos" && <TodosPanel />}
           {sidebarView === "workspaces" && <WorkspacesPanel />}
+          {sidebarView === "tickets" && <TicketsPanel />}
         </div>
       </aside>
       <main className="content">
