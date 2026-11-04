@@ -24,10 +24,12 @@ import { promptDialog, type SidebarView, useUi } from "../state/ui";
 import { message, useVault } from "../state/vault";
 import { watchTerminals } from "../state/terminals";
 import { watchFollow } from "../state/follow";
+import { watchInbox } from "../state/inbox";
 import { watchTickets } from "../state/tickets";
 import { useWorkspace, type View } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
 import { FileTree } from "./FileTree";
+import { InboxButton } from "./Inbox";
 import { LinksPanel } from "./LinksPanel";
 import { SearchPanel } from "./SearchPanel";
 import { checkSetupOnce } from "./SetupDialog";
@@ -90,6 +92,7 @@ function TopBar({ notesShown, rightOpen }: { notesShown: boolean; rightOpen: boo
         ))}
       </div>
       <span className="topbar-fill" data-tauri-drag-region />
+      <InboxButton />
       {notesShown && (
         <button
           className="icon"
@@ -165,6 +168,7 @@ export function VaultView() {
     watchTerminals();
     watchTickets();
     watchFollow();
+    watchInbox();
     void useWorkspaces.getState().load();
   }, [vault?.path]);
 

@@ -186,4 +186,13 @@ The first project in `--project` is the ticket's home: its note goes in that pro
 
 ## Asking the user
 
-For now, ask questions in the conversation. (A `groundwork ask` command that shows the question in the app is planned.)
+When the user is in the conversation, ask there. When they may be elsewhere (a long task, a background agent, a terminal they aren't watching), use Groundwork's inbox:
+
+```sh
+groundwork ask "Which environment should I deploy to?" --choice staging --choice prod [--link "[[Note]]"] [--timeout 600]
+groundwork notify "Reorganised Meetings/ into one folder per month" [--link "[[Meetings]]"]
+```
+
+- `ask` shows the question in the app's inbox (with a macOS notification when the app is in the background), waits, and prints the answer. Choices are suggestions; the user can type something else. It fails if the user dismisses the question or `--timeout` passes, so decide what to do then.
+- `notify` posts something to know and returns at once. Use it when you finish something the user should look at, not for every step.
+- Both work while the app is closed: the item waits in the inbox until it opens. `--link` points at the note it's about.

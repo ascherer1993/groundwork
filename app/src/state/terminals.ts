@@ -1,17 +1,22 @@
 /**
  * What each terminal is doing, for the badges in the Workspaces view:
- * - waiting: it rang the bell or sent a notification you haven't seen
- * - finished: a command ended while you were looking elsewhere
- * - running: a program besides the shell is in the foreground (Claude Code
- *   only while it draws: its spinner runs while it works)
+ * - waiting: it rang the bell or sent a notification you haven't seen, or
+ *   Claude Code is waiting on you
+ * - finished: a command (or Claude's turn) ended while you were looking
+ *   elsewhere
+ * - running: a program besides the shell is in the foreground; Claude Code
+ *   while its hooks say it's working (without the plugin: while it draws)
  * - idle: anything else
  *
- * Fed by the events of every attached terminal, on screen or not.
+ * Fed by the events of every attached terminal, on screen or not, and by
+ * Claude Code's hooks (`agent.changed`).
  */
 import { create } from "zustand";
 import { api, transport } from "../api/client";
+import type { AgentState } from "../api/generated/AgentState";
 import type { TerminalInfo } from "../api/generated/TerminalInfo";
 import { isTauri } from "../api/transport";
+import { seenTerminal } from "./inbox";
 import { useUi } from "./ui";
 import { isTerminal, type TerminalParams, useWorkspace } from "./workspace";
 
@@ -29,6 +34,8 @@ export interface TerminalStatus {
   /** What it asked for attention with, until seen. */
   attention?: string;
   finished: boolean;
+  /** What Claude Code's hooks last said. */
+  agent?: AgentState;
 }
 
 /** Claude Code output this recent counts as running. */
@@ -70,6 +77,7 @@ export function stateOf(status: TerminalStatus | undefined, now = Date.now()): T
   if (status.finished) return "finished";
   const busy = !!status.process && status.process !== status.program;
   if (!busy) return "idle";
+  if (status.agent) return status.agent === "working" ? "running" : "idle";
   if (status.process === "claude")
     return now - status.lastOutput < RUNNING_FOR ? "running" : "idle";
   return "running";
@@ -97,6 +105,7 @@ function seen(id: string) {
   if (status && (status.attention !== undefined || status.finished)) {
     patch(id, { attention: undefined, finished: false });
   }
+  seenTerminal(id);
 }
 
 /** The tab showing a terminal, for messages: its title. */
@@ -122,8 +131,25 @@ const asked = new Set<string>();
 export function watchTerminals() {
   if (watching) return;
   watching = true;
+  void api
+    .agents()
+    .then((agents) => agents.forEach((a) => patch(a.tab, { agent: a.state })))
+    .catch(() => {});
   transport.listen((event) => {
     switch (event.event) {
+      case "agent.changed": {
+        const { tab: id, state, message } = event.payload.agent;
+        const looking = isSeen(id);
+        if (state === "waiting") {
+          patch(id, { agent: state, attention: looking ? undefined : (message ?? "") });
+          if (looking) seenTerminal(id);
+        } else if (state === "finished") {
+          patch(id, { agent: state, attention: undefined, finished: !looking });
+        } else {
+          patch(id, { agent: state, attention: undefined, finished: false });
+        }
+        return;
+      }
       case "terminal.output": {
         const { id } = event.payload;
         const now = Date.now();

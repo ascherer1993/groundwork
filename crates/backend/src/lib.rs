@@ -4,6 +4,7 @@
 //! every request through [`Backend::handle_value`], and forward the events it
 //! emits, so the UI behaves the same in either.
 
+mod agents;
 #[cfg(feature = "dev-server")]
 pub mod dev_server;
 mod page_server;
@@ -15,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use chrono::NaiveDate;
+use groundwork_core::inbox::{InboxKind, NewItem};
 use groundwork_core::pages;
 use groundwork_core::search;
 use groundwork_core::settings::Settings;
@@ -46,6 +48,7 @@ pub struct Backend {
     /// See [`page_server`].
     page_token: String,
     terminals: terminals::Terminals,
+    agents: agents::Agents,
 }
 
 impl Backend {
@@ -55,11 +58,22 @@ impl Backend {
             recent: RecentVaults::new(&data_dir),
             settings: Settings::new(&data_dir),
             terminals: terminals::Terminals::new(&data_dir, events.clone()),
+            agents: agents::Agents::new(&data_dir, events.clone()),
             data_dir,
             open: Mutex::new(None),
             events,
             page_token: page_server::new_token(),
         }
+    }
+
+    /// Starts answering the `groundwork` CLI on the app socket
+    /// (`GROUNDWORK_SOCKET` in terminals).
+    pub fn listen(self: &Arc<Self>) -> std::io::Result<()> {
+        agents::listen(self, self.socket())
+    }
+
+    fn socket(&self) -> PathBuf {
+        self.data_dir.join(agents::SOCKET_NAME)
     }
 
     /// Parses and handles a raw JSON request.
@@ -409,6 +423,51 @@ impl Backend {
                 session.config()?.repo(&id)?;
                 to_value(session.repos().locate(&id, &path, worktrees.as_deref())?)
             }
+            Request::InboxList => to_value(self.agents.open()),
+            Request::InboxAsk {
+                text,
+                choices,
+                link,
+                tab,
+            } => to_value(self.agents.add(
+                InboxKind::Ask,
+                NewItem {
+                    text,
+                    choices,
+                    link,
+                    tab,
+                    vault: self.vault_root(),
+                },
+            )?),
+            Request::InboxNotify { text, link, tab } => to_value(self.agents.add(
+                InboxKind::Notify,
+                NewItem {
+                    text,
+                    link,
+                    tab,
+                    vault: self.vault_root(),
+                    ..Default::default()
+                },
+            )?),
+            Request::InboxWait { id, timeout_ms } => to_value(self.agents.wait(
+                &id,
+                std::time::Duration::from_millis(timeout_ms.unwrap_or(30_000)),
+            )?),
+            Request::InboxAnswer { id, answer } => {
+                self.agents.answer(&id, answer)?;
+                Ok(Value::Null)
+            }
+            Request::AgentHook {
+                tab,
+                event,
+                session,
+                message,
+            } => {
+                self.agents
+                    .hook(tab, &event, session, message, self.vault_root())?;
+                Ok(Value::Null)
+            }
+            Request::AgentList => to_value(self.agents.list()),
             Request::ProjectList => to_value(self.session()?.project_list()?),
             Request::ProjectCreate { folder } => {
                 let (project, changes) = self.session()?.create_project(&folder)?;
@@ -483,7 +542,10 @@ impl Backend {
     /// vault, and the `groundwork` CLI on PATH, so Claude Code sessions in
     /// them work without "Set up Claude Code…".
     fn terminal_env(&self, vault: Option<&Path>) -> Vec<(String, String)> {
-        let mut env = Vec::new();
+        let mut env = vec![(
+            "GROUNDWORK_SOCKET".to_string(),
+            self.socket().display().to_string(),
+        )];
         if let Some(vault) = vault {
             env.push(("GROUNDWORK_VAULT".into(), vault.display().to_string()));
         }
@@ -566,6 +628,13 @@ impl Backend {
         let vault = self.session().ok();
         self.setup_env()
             .status(vault.as_ref().map(|s| s.vault().root()))
+    }
+
+    /// The open vault's folder, if one is open.
+    fn vault_root(&self) -> Option<String> {
+        self.session()
+            .ok()
+            .map(|s| s.vault().root().display().to_string())
     }
 
     fn session(&self) -> Result<Arc<Session>, ApiError> {
@@ -767,6 +836,118 @@ mod tests {
         fn call(&self, request: Value) -> Value {
             self.backend.handle_value(request).unwrap()
         }
+    }
+
+    #[test]
+    fn the_cli_asks_through_the_socket_and_hooks_report_states() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::os::unix::net::UnixStream;
+
+        let h = harness();
+        let backend = Arc::new(h.backend);
+        backend.listen().unwrap();
+        let socket = h.data.path().join(agents::SOCKET_NAME);
+        let call = |request: Value| -> Value {
+            let mut stream = UnixStream::connect(&socket).unwrap();
+            writeln!(stream, "{request}").unwrap();
+            let mut line = String::new();
+            BufReader::new(stream).read_line(&mut line).unwrap();
+            serde_json::from_str(&line).unwrap()
+        };
+
+        // A question waits for its answer.
+        let asked = call(json!({ "method": "inbox.ask",
+            "params": { "text": "Which env?", "choices": ["staging", "prod"], "tab": "t1" } }));
+        let id = asked["ok"]["id"].as_str().unwrap().to_string();
+        let root = h.vault.path().canonicalize().unwrap();
+        assert_eq!(asked["ok"]["vault"], json!(root.display().to_string()));
+        let waiting = {
+            let socket = socket.clone();
+            let id = id.clone();
+            std::thread::spawn(move || {
+                let mut stream = UnixStream::connect(&socket).unwrap();
+                writeln!(
+                    stream,
+                    "{}",
+                    json!({ "method": "inbox.wait", "params": { "id": id } })
+                )
+                .unwrap();
+                let mut line = String::new();
+                BufReader::new(stream).read_line(&mut line).unwrap();
+                serde_json::from_str::<Value>(&line).unwrap()
+            })
+        };
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        backend
+            .handle_value(
+                json!({ "method": "inbox.answer", "params": { "id": id, "answer": "staging" } }),
+            )
+            .unwrap();
+        let answered = waiting.join().unwrap();
+        assert_eq!(answered["ok"]["answer"], "staging");
+        assert_eq!(answered["ok"]["done"], true);
+        // A wait that times out returns the item as it is.
+        let n = call(json!({ "method": "inbox.notify", "params": { "text": "Done" } }));
+        let nid = n["ok"]["id"].as_str().unwrap();
+        let same =
+            call(json!({ "method": "inbox.wait", "params": { "id": nid, "timeoutMs": 10 } }));
+        assert_eq!(same["ok"]["done"], false);
+        let err = call(json!({ "method": "inbox.answer", "params": { "id": id } }));
+        assert_eq!(err["error"]["code"], "conflict");
+
+        // Hooks: a permission prompt posts one attention item; the next
+        // prompt clears it.
+        let hook = |event: &str, message: Option<&str>| {
+            let reply = call(json!({ "method": "agent.hook", "params": {
+                "tab": "t1", "event": event, "session": "s-1", "message": message } }));
+            assert!(reply.get("ok").is_some(), "{reply}");
+        };
+        hook("session-start", None);
+        hook(
+            "notification",
+            Some("Claude needs your permission to use Bash"),
+        );
+        hook("notification", Some("Claude is waiting for your input"));
+        let open = call(json!({ "method": "inbox.list" }))["ok"].clone();
+        let attention: Vec<_> = open
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|i| i["kind"] == "attention")
+            .collect();
+        assert_eq!(attention.len(), 1);
+        assert_eq!(attention[0]["text"], "Claude is waiting for your input");
+        let agents = call(json!({ "method": "agent.list" }))["ok"].clone();
+        assert_eq!(agents[0]["state"], "waiting");
+        assert_eq!(agents[0]["session"], "s-1");
+        hook("prompt", None);
+        let open = call(json!({ "method": "inbox.list" }))["ok"].clone();
+        assert!(
+            open.as_array()
+                .unwrap()
+                .iter()
+                .all(|i| i["kind"] != "attention")
+        );
+        assert_eq!(
+            call(json!({ "method": "agent.list" }))["ok"][0]["state"],
+            "working"
+        );
+        let bad =
+            call(json!({ "method": "agent.hook", "params": { "tab": "t1", "event": "nope" } }));
+        assert_eq!(bad["error"]["code"], "bad_request");
+
+        // The UI hears about it.
+        let events: Vec<Event> = h.events.try_iter().collect();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::AgentChanged { .. }))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::InboxChanged { added: Some(_) }))
+        );
     }
 
     #[test]

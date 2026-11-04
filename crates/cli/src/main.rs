@@ -11,6 +11,9 @@ use std::process::ExitCode;
 
 use chrono::{DateTime, Duration, Local, NaiveDate};
 use clap::{Args, Parser, Subcommand};
+mod app;
+mod inbox;
+
 use groundwork_core::activity::{ActivitySource, read_events};
 use groundwork_core::dates::parse_natural;
 use groundwork_core::pages;
@@ -125,6 +128,37 @@ enum Command {
         path: Option<String>,
         #[arg(long, default_value_t = 200)]
         limit: usize,
+    },
+    /// Asks the user something in Groundwork's inbox, waits for the answer
+    /// and prints it. Works while the app is closed: the question waits in
+    /// the inbox until it opens.
+    Ask {
+        question: String,
+        /// An answer to offer (repeat for several). The user may type
+        /// another.
+        #[arg(long = "choice")]
+        choices: Vec<String>,
+        /// A note it's about (`[[Note]]` or a path).
+        #[arg(long)]
+        link: Option<String>,
+        /// Give up after this many seconds (default: wait as long as it takes).
+        #[arg(long)]
+        timeout: Option<u64>,
+    },
+    /// Tells the user something in Groundwork's inbox; nothing waits.
+    Notify {
+        text: String,
+        /// A note it's about (`[[Note]]` or a path).
+        #[arg(long)]
+        link: Option<String>,
+    },
+    /// For Claude Code's hooks (the groundwork plugin calls it): reports a
+    /// terminal's agent state to the app. `session-start` also prints where
+    /// the terminal is, for Claude's context.
+    #[command(hide = true)]
+    Hook {
+        #[arg(value_parser = ["session-start", "prompt", "notification", "stop"])]
+        event: String,
     },
 }
 
@@ -474,6 +508,30 @@ fn priority_arg(text: &str) -> Fallible<u8> {
 }
 
 fn run(cli: Cli) -> Fallible<()> {
+    // These don't need a vault.
+    match cli.command {
+        Command::Ask {
+            question,
+            choices,
+            link,
+            timeout,
+        } => return inbox::ask(question, choices, link, timeout, cli.json),
+        Command::Notify { text, link } => return inbox::notify(text, link, cli.json),
+        Command::Hook { event } => {
+            inbox::hook(&event, || {
+                let (vault, _) = find_vault(cli.vault).ok()?;
+                let session =
+                    Session::open_for_tool(vault, &data_dir(), ActivitySource::Cli).ok()?;
+                let cwd = std::env::current_dir().ok()?;
+                let context = session.context(None, Some(&cwd)).ok()?;
+                let mut text = Vec::new();
+                print_context_to(&mut text, &context);
+                String::from_utf8(text).ok()
+            });
+            return Ok(());
+        }
+        _ => {}
+    }
     let (vault, source) = find_vault(cli.vault)?;
     if let Command::Vault = cli.command {
         let path = vault.root().display().to_string();
@@ -681,7 +739,9 @@ fn run(cli: Cli) -> Fallible<()> {
             }
             Ok(())
         }
-        Command::Vault => unreachable!("handled before opening the vault"),
+        Command::Vault | Command::Ask { .. } | Command::Notify { .. } | Command::Hook { .. } => {
+            unreachable!("handled before opening the vault")
+        }
         Command::Activity { since, path, limit } => {
             activity(session.vault().root(), &since, path, limit, json)
         }
@@ -689,66 +749,75 @@ fn run(cli: Cli) -> Fallible<()> {
 }
 
 fn print_context(c: &Context) {
+    print_context_to(&mut std::io::stdout(), c);
+}
+
+fn print_context_to(w: &mut impl std::io::Write, c: &Context) {
+    macro_rules! out {
+        ($($t:tt)*) => {{
+            let _ = writeln!(w, $($t)*);
+        }};
+    }
     if let Some(t) = &c.ticket {
-        println!("Ticket: {}", ticket_line(t));
+        out!("Ticket: {}", ticket_line(t));
         if let Some(url) = &t.url {
-            println!("  {url}");
+            out!("  {url}");
         }
         if let Some(b) = &t.branch {
-            println!("  branch {b}");
+            out!("  branch {b}");
         }
     } else if let Some(n) = &c.note {
-        println!("Note: {n}");
+        out!("Note: {n}");
     }
     for p in &c.projects {
         match &p.overview {
-            Some(o) => println!("Project: {} (overview: {o})", p.name),
-            None => println!("Project: {} ({})", p.name, p.folder),
+            Some(o) => out!("Project: {} (overview: {o})", p.name),
+            None => out!("Project: {} ({})", p.name, p.folder),
         }
     }
     if let Some(r) = &c.repo {
-        println!("Repo: {} ({})", r.name, r.id);
+        out!("Repo: {} ({})", r.name, r.id);
         if let Some(d) = &r.description {
-            println!("  {d}");
+            out!("  {d}");
         }
         match (&r.worktree_path, &r.path) {
-            (Some(w), _) => println!("  worktree: {w}"),
-            (None, Some(p)) => println!("  checkout: {p}"),
-            (None, None) => println!(
+            (Some(w), _) => out!("  worktree: {w}"),
+            (None, Some(p)) => out!("  checkout: {p}"),
+            (None, None) => out!(
                 "  not located on this machine: groundwork repo locate {} <path>",
                 r.id
             ),
         }
         if !r.docs.is_empty() {
-            println!("  read first: {}", r.docs.join(", "));
+            out!("  read first: {}", r.docs.join(", "));
         }
     }
     for comp in &c.components {
-        println!(
+        out!(
             "Component: {} ({})",
             comp.id,
             comp.abs_path.as_deref().unwrap_or(&comp.path)
         );
         if let Some(d) = &comp.description {
-            println!("  {d}");
+            out!("  {d}");
         }
         for (name, run) in &comp.commands {
-            println!("  {name}: {run}");
+            out!("  {name}: {run}");
         }
         if !comp.docs.is_empty() {
-            println!("  read first: {}", comp.docs.join(", "));
+            out!("  read first: {}", comp.docs.join(", "));
         }
     }
     if !c.actions.is_empty() {
-        println!("Actions:");
+        out!("Actions:");
         for a in &c.actions {
-            println!("  {} ({}): {}", a.label, a.kind, a.run);
+            out!("  {} ({}): {}", a.label, a.kind, a.run);
         }
     }
     if !c.related.is_empty() {
-        println!("Related notes:");
+        out!("Related notes:");
         for r in &c.related {
-            println!("  {r}");
+            out!("  {r}");
         }
     }
 }

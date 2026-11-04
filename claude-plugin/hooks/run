@@ -1,0 +1,7 @@
+#!/bin/sh
+# Claude Code's hooks. In a terminal inside Groundwork (which sets
+# GROUNDWORK_TAB_ID) they tell the app what Claude is doing, and SessionStart
+# tells Claude where it is. Anywhere else they do nothing.
+[ -n "$GROUNDWORK_TAB_ID" ] || exit 0
+command -v groundwork >/dev/null 2>&1 || exit 0
+exec groundwork hook "$1"

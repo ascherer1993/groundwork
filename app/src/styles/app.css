@@ -1728,3 +1728,150 @@ label.check input {
 .settings-note {
   font-size: 12px;
 }
+
+/* The inbox */
+
+.inbox-anchor {
+  position: relative;
+}
+
+.inbox-button {
+  position: relative;
+}
+
+.inbox-count {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+}
+
+.inbox-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: -40px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: min(380px, calc(100vw - 24px));
+  max-height: 70vh;
+  padding: 8px 0 4px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+}
+
+.inbox-popover .section-header {
+  padding: 0 12px 4px;
+}
+
+.inbox-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.inbox-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.inbox-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.inbox-kind {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.inbox-ask .inbox-kind,
+.inbox-attention .inbox-kind {
+  color: var(--accent);
+}
+
+.inbox-from {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox-age {
+  margin-left: auto;
+  flex: none;
+}
+
+.inbox-meta .icon {
+  padding: 2px;
+}
+
+.inbox-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.inbox-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.inbox-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.inbox-choices button {
+  padding: 3px 10px;
+}
+
+.inbox-typed {
+  display: flex;
+  gap: 6px;
+}
+
+.inbox-typed input {
+  flex: 1;
+  min-width: 0;
+}
+
+.inbox-typed button {
+  padding: 3px 10px;
+}
+
+button.inbox-go,
+button.link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 12px;
+}
+
+button.inbox-go:hover:not(:disabled),
+button.link-button:hover:not(:disabled) {
+  background: none;
+  text-decoration: underline;
+}

@@ -44,6 +44,9 @@ async fn main() {
         eprintln!("could not open vault: {e}");
         std::process::exit(1);
     }
+    if let Err(e) = backend.listen() {
+        eprintln!("the groundwork CLI can't reach this server: {e}");
+    }
 
     if let Err(e) = groundwork_backend::dev_server::serve(backend, hub, port).await {
         eprintln!("dev server failed: {e}");

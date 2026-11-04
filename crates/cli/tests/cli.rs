@@ -404,31 +404,132 @@ fn reads_and_sets_page_state() {
 }
 
 #[test]
-fn the_plugin_hook_speaks_only_inside_groundwork() {
+fn the_plugin_hooks_speak_only_inside_groundwork() {
     let plugin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../claude-plugin");
     let hooks: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(plugin.join("hooks/hooks.json")).unwrap())
             .unwrap();
-    let command = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
-        .as_str()
-        .unwrap();
-    assert_eq!(command, "\"${CLAUDE_PLUGIN_ROOT}/hooks/session-start\"");
+    for (event, arg) in [
+        ("SessionStart", "session-start"),
+        ("UserPromptSubmit", "prompt"),
+        ("Notification", "notification"),
+        ("Stop", "stop"),
+    ] {
+        let command = hooks["hooks"][event][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap();
+        assert_eq!(
+            command,
+            format!("\"${{CLAUDE_PLUGIN_ROOT}}/hooks/run\" {arg}")
+        );
+    }
 
-    let run = |tab: Option<&str>| {
-        let mut cmd = Command::new(plugin.join("hooks/session-start"));
-        cmd.env("GROUNDWORK_VAULT", "/Users/me/Notes")
-            .env_remove("GROUNDWORK_TAB_ID");
+    let data = tempfile::tempdir().unwrap();
+    // The built CLI first on PATH, as in a Groundwork terminal.
+    let bin = Path::new(env!("CARGO_BIN_EXE_groundwork"))
+        .parent()
+        .unwrap();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let run = |event: &str, tab: Option<&str>| {
+        let mut cmd = Command::new(plugin.join("hooks/run"));
+        cmd.arg(event)
+            .env("PATH", &path)
+            .env("GROUNDWORK_VAULT", "/Users/me/Notes")
+            .env("GROUNDWORK_DATA_DIR", data.path())
+            // No app is listening: the hooks still succeed.
+            .env("GROUNDWORK_SOCKET", data.path().join("none.sock"))
+            .env_remove("GROUNDWORK_TAB_ID")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped());
         if let Some(tab) = tab {
             cmd.env("GROUNDWORK_TAB_ID", tab);
         }
-        let out = cmd.output().unwrap();
+        let mut child = cmd.spawn().unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(br#"{"session_id":"s-1","message":"hi"}"#)
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
         assert!(out.status.success());
         String::from_utf8(out.stdout).unwrap()
     };
-    let inside = run(Some("t0123"));
+    let inside = run("session-start", Some("t0123"));
     assert!(inside.contains("The vault is /Users/me/Notes."), "{inside}");
     assert!(inside.contains("load the groundwork skill"), "{inside}");
-    assert_eq!(run(None), "");
+    assert!(inside.contains("groundwork ask"), "{inside}");
+    assert_eq!(run("session-start", None), "");
+    // UserPromptSubmit output would become context: it says nothing.
+    assert_eq!(run("prompt", Some("t0123")), "");
+}
+
+#[test]
+fn ask_and_notify_use_the_inbox_while_the_app_is_closed() {
+    use groundwork_core::inbox::{Inbox, InboxKind};
+
+    let data = tempfile::tempdir().unwrap();
+    let cli = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_groundwork"))
+            .args(args)
+            .env("GROUNDWORK_DATA_DIR", data.path())
+            .env("GROUNDWORK_SOCKET", data.path().join("none.sock"))
+            .env("GROUNDWORK_TAB_ID", "t9")
+            .env_remove("GROUNDWORK_VAULT")
+            .output()
+            .unwrap()
+    };
+
+    let out = cli(&["notify", "Reorganised Meetings/", "--link", "[[Meetings]]"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let inbox = Inbox::new(data.path());
+    let open = inbox.open();
+    assert_eq!(open.len(), 1);
+    assert_eq!(open[0].kind, InboxKind::Notify);
+    assert_eq!(open[0].link.as_deref(), Some("[[Meetings]]"));
+    assert_eq!(open[0].tab.as_deref(), Some("t9"));
+
+    // Someone answers in the file, as the app would once it opens.
+    let answerer = {
+        let dir = data.path().to_path_buf();
+        std::thread::spawn(move || {
+            let inbox = Inbox::new(&dir);
+            for _ in 0..100 {
+                if let Some(q) = inbox.open().into_iter().find(|i| i.kind == InboxKind::Ask) {
+                    inbox.answer(&q.id, Some("staging".into())).unwrap();
+                    return q;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            panic!("no question appeared");
+        })
+    };
+    let out = cli(&[
+        "ask",
+        "Which env?",
+        "--choice",
+        "staging",
+        "--choice",
+        "prod",
+    ]);
+    let question = answerer.join().unwrap();
+    assert_eq!(question.choices, ["staging", "prod"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8(out.stdout).unwrap(), "staging\n");
+
+    // Unanswered, it gives up and withdraws the question.
+    let out = cli(&["ask", "Anyone?", "--timeout", "1"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no answer after 1 seconds"));
+    assert!(inbox.open().iter().all(|i| i.text != "Anyone?"));
 }
 
 /// A git repo with one commit on `main`, pushed to a bare `origin`.

@@ -107,6 +107,7 @@ pub fn run() {
         .menu(menu)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let handle = app.handle().clone();
             let backend = Arc::new(Backend::new(
@@ -116,6 +117,9 @@ pub fn run() {
                     let _ = handle.emit(EVENT_CHANNEL, &event);
                 }),
             ));
+            if let Err(e) = backend.listen() {
+                eprintln!("the groundwork CLI can't reach the app: {e}");
+            }
             app.manage(backend);
             Ok(())
         })

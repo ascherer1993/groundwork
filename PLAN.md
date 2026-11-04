@@ -476,7 +476,7 @@ Daily notes follow `daily-notes.json`. Cmd+Shift+D opens today's note. Daily not
 - **Plugin** (`claude-plugin/`), installed through a local plugin marketplace:
   - **Skill `groundwork`:** what the vault is, the conventions, the CLI commands, the templates, and how to ask the user something.
   - **Hooks:** SessionStart, UserPromptSubmit, Stop and Notification each call `groundwork hook <event>`. Outside a Groundwork tab (`GROUNDWORK_TAB_ID` unset) the hook does nothing.
-  - *Pulled forward in Phase 4:* the plugin's SessionStart hook (`claude-plugin/hooks/session-start`, a shell script for now) tells Claude in a Groundwork tab that it's inside Groundwork, which vault is open beside it, and to load the skill before touching the vault. The first real session in a Groundwork terminal didn't know what the app renders, so it checked Mermaid by running the app's source.
+  - *Pulled forward in Phase 4:* the plugin's SessionStart hook (now `groundwork hook session-start`, through `claude-plugin/hooks/run`) tells Claude in a Groundwork tab that it's inside Groundwork, which vault is open beside it, and to load the skill before touching the vault. The first real session in a Groundwork terminal didn't know what the app renders, so it checked Mermaid by running the app's source.
   - **What the hooks give us:** each tab's Claude session id and a live state (working, waiting for input, finished). SessionStart also adds the `groundwork context` summary for the tab's ticket or project.
 - **Fork:** the tab menu's "Fork session" opens a new tab in the same cwd running `claude --resume <id> --fork-session`.
 - **Inbox ("waiting on me"):**
@@ -708,6 +708,15 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
 - Agent actions, including **New ticket from Jira**
 - Todo triage skill (stale and overdue tasks become inbox questions)
 - **Checkpoint:** agents create tickets, triage todos, ask you questions and report back
+- Started 2026-11-04, after the Phase 5 checkpoint was left for the user to run when convenient. Built in three stages:
+  1. **Agents report in** *(built)*: the app socket, hooks and agent states, the inbox, notifications and the dock badge.
+  2. **Live CLI commands**: `open`, `workspace`, `tab`; Fork session; Resume conversation.
+  3. **Agent actions**: New ticket from Jira, the triage skill.
+- Built in the first stage:
+  - **The app socket** is `groundwork.sock` in the data folder, given to terminals as `GROUNDWORK_SOCKET` (`crates/backend/src/agents.rs`). It takes the same requests as the UI, a JSON line each way. The newest app or dev server to start takes it over.
+  - **Hooks:** the plugin runs `hooks/run <event>` for SessionStart, UserPromptSubmit, Notification and Stop, which calls `groundwork hook session-start|prompt|notification|stop` only in a Groundwork terminal. The app keeps each terminal's Claude session id and state (idle, working, waiting, finished), in memory. Badges use the state while Claude is in the foreground: working is Running, Notification is Waiting on you, Stop is Finished until seen. A Notification also posts one attention item for the terminal, cleared by the next prompt or stop, or by looking at the terminal.
+  - **The inbox** is `inbox.json` in the data folder, app-wide rather than per vault (items note the vault). `groundwork ask` posts a question and waits (`inbox.wait`, in slices); `groundwork notify` posts and returns. With the app closed both write the file directly and `ask` watches it, so a question waits for the app to open; if the app closes mid-wait, `ask` carries on from the file. Done items are kept a day, so an answer can still be read. `--timeout` withdraws an unanswered question.
+  - **In the app:** an inbox button in the top bar (with a count, ⇧⌘I) opens a list: answer a question (a choice, or typed), follow an item's link, go to its terminal, or dismiss. A new item shows a toast while the window has focus (not for attention from the terminal on screen), else a macOS notification (`tauri-plugin-notification`) and a dock bounce. The dock icon counts open items.
 
 ### Phase 7 — Smart search, command bar, polish
 - qmd integration (collection registration, auto-update, `search --smart`)

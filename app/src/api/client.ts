@@ -4,6 +4,8 @@ import type { CreatedTicket } from "./generated/CreatedTicket";
 import type { GitState } from "./generated/GitState";
 import type { NewTicket } from "./generated/NewTicket";
 import type { ProjectInfo } from "./generated/ProjectInfo";
+import type { AgentInfo } from "./generated/AgentInfo";
+import type { InboxItem } from "./generated/InboxItem";
 import type { RepoInfo } from "./generated/RepoInfo";
 import type { RepoLocation } from "./generated/RepoLocation";
 import type { StrayWorktree } from "./generated/StrayWorktree";
@@ -102,6 +104,13 @@ interface Results {
   "repo.list": RepoInfo[];
   "repo.locate": RepoLocation;
   "project.list": ProjectInfo[];
+  "inbox.list": InboxItem[];
+  "inbox.ask": InboxItem;
+  "inbox.notify": InboxItem;
+  "inbox.wait": InboxItem;
+  "inbox.answer": null;
+  "agent.hook": null;
+  "agent.list": AgentInfo[];
   "project.create": ProjectInfo;
   "ticket.list": Ticket[];
   "ticket.git": GitState;
@@ -222,6 +231,9 @@ export const api = {
   locateRepo: (id: string, path: string, worktrees?: string) =>
     call("repo.locate", { id, path, worktrees }),
   projects: () => call("project.list"),
+  inbox: () => call("inbox.list"),
+  answerInbox: (id: string, answer?: string) => call("inbox.answer", { id, answer }),
+  agents: () => call("agent.list"),
   createProject: (folder: string) => call("project.create", { folder }),
   tickets: (filter: TicketFilter = {}) => call("ticket.list", { filter }),
   ticketGit: (path: string) => call("ticket.git", { path }),

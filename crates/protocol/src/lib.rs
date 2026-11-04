@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 
+use groundwork_core::inbox::InboxItem;
 use groundwork_core::settings::AppSettings;
 use groundwork_core::tickets::{NewTicket, TicketFilter};
 use groundwork_core::todos::{TaskChange, TodoFilter};
@@ -331,6 +332,59 @@ pub enum Request {
         #[ts(optional)]
         worktrees: Option<String>,
     },
+    /// → `InboxItem[]`: what's open in the inbox, oldest first.
+    #[serde(rename = "inbox.list")]
+    InboxList,
+    /// → `InboxItem`: posts a question. `inbox.wait` waits for the answer.
+    #[serde(rename = "inbox.ask")]
+    InboxAsk {
+        text: String,
+        #[serde(default)]
+        choices: Vec<String>,
+        #[ts(optional)]
+        link: Option<String>,
+        #[ts(optional)]
+        tab: Option<String>,
+    },
+    /// → `InboxItem`: posts something to know; nothing waits.
+    #[serde(rename = "inbox.notify")]
+    InboxNotify {
+        text: String,
+        #[ts(optional)]
+        link: Option<String>,
+        #[ts(optional)]
+        tab: Option<String>,
+    },
+    /// → `InboxItem`: once it's answered or dismissed, or as it is after
+    /// `timeoutMs` (at most a minute).
+    #[serde(rename = "inbox.wait", rename_all = "camelCase")]
+    InboxWait {
+        id: String,
+        #[ts(optional, type = "number")]
+        timeout_ms: Option<u64>,
+    },
+    /// → `null`: answers a question, or (with no answer) dismisses an item.
+    #[serde(rename = "inbox.answer")]
+    InboxAnswer {
+        id: String,
+        #[ts(optional)]
+        answer: Option<String>,
+    },
+    /// → `null`: from Claude Code's hooks in a terminal (`groundwork hook`).
+    /// `event` is `session-start`, `prompt`, `notification` or `stop`.
+    #[serde(rename = "agent.hook")]
+    AgentHook {
+        tab: String,
+        event: String,
+        #[ts(optional)]
+        session: Option<String>,
+        #[ts(optional)]
+        message: Option<String>,
+    },
+    /// → `AgentInfo[]`: what the hooks have said about each terminal.
+    #[serde(rename = "agent.list")]
+    AgentList,
+
     /// → `ProjectInfo[]`
     #[serde(rename = "project.list")]
     ProjectList,
@@ -430,6 +484,46 @@ pub enum Event {
     /// need attaching again.
     #[serde(rename = "terminal.disconnected")]
     TerminalDisconnected,
+    /// An item was added to the inbox, or answered or dismissed.
+    #[serde(rename = "inbox.changed")]
+    InboxChanged {
+        /// The item added, if one was.
+        #[ts(optional)]
+        added: Option<InboxItem>,
+    },
+    /// An agent in a terminal changed state.
+    #[serde(rename = "agent.changed")]
+    AgentChanged { agent: AgentInfo },
+}
+
+/// What Claude Code in a terminal is doing, from its hooks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum AgentState {
+    /// Started, or at its prompt.
+    Idle,
+    /// Working on a prompt.
+    Working,
+    /// Waiting on you: a permission prompt, or a question.
+    Waiting,
+    /// Finished what it was asked.
+    Finished,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AgentInfo {
+    /// The terminal (`GROUNDWORK_TAB_ID`).
+    pub tab: String,
+    /// Claude Code's session id, for resuming or forking it.
+    #[ts(optional)]
+    pub session: Option<String>,
+    pub state: AgentState,
+    /// What it said when it last asked for attention.
+    #[ts(optional)]
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]

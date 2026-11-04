@@ -9,6 +9,9 @@
     "core:default",
     "dialog:default",
     "opener:default",
-    "core:window:allow-start-dragging"
+    "core:window:allow-start-dragging",
+    "notification:default",
+    "core:window:allow-set-badge-count",
+    "core:window:allow-request-user-attention"
   ]
 }

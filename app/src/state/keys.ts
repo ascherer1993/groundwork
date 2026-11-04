@@ -31,6 +31,7 @@ export const KEY_COMMANDS: KeyCommand[] = [
   { id: "search", label: "Search in all notes", group: "General", key: "Shift+Cmd+F" },
   { id: "settings", label: "Settings", group: "General", key: "Cmd+," },
   { id: "close-tab", label: "Close tab", group: "General", key: "Cmd+W" },
+  { id: "inbox", label: "Show the inbox", group: "General", key: "Shift+Cmd+I" },
   { id: "toggle-right", label: "Toggle links panel", group: "General", key: "Shift+Cmd+B" },
   { id: "undo-file", label: "Undo the last file change", group: "General", key: "Cmd+Z" },
   { id: "new-note", label: "New note", group: "Notes", key: "Cmd+N" },

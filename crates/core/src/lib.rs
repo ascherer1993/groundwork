@@ -10,6 +10,7 @@ pub mod dates;
 mod error;
 pub mod frontmatter;
 pub mod git;
+pub mod inbox;
 pub mod index;
 pub mod moment;
 pub mod pages;

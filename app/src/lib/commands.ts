@@ -7,6 +7,7 @@ import { formDialog, type PaletteItem, promptDialog, useUi } from "../state/ui";
 import { message, newNoteFolder, useVault } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
+import { useInbox } from "../state/inbox";
 import { keyLabel } from "../state/keys";
 import {
   closeTicket,
@@ -172,6 +173,11 @@ function commands(): Command[] {
     { id: "next-workspace", label: "Next workspace", run: () => stepWorkspace(1) },
     { id: "previous-workspace", label: "Previous workspace", run: () => stepWorkspace(-1) },
     { id: "settings", label: "Settings…", run: () => ui.setSettingsOpen(true) },
+    {
+      id: "inbox",
+      label: "Show the inbox",
+      run: () => useInbox.getState().setOpen(!useInbox.getState().open),
+    },
     {
       id: "workspaces",
       label: "Show workspaces and terminals",
