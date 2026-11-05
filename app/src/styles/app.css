@@ -2088,3 +2088,178 @@ button.link-button:hover:not(:disabled) {
   color: var(--text-faint);
   overflow-wrap: anywhere;
 }
+
+/* Project view */
+
+.project-view {
+  container-type: inline-size;
+  height: 100%;
+  overflow: auto;
+  padding: 24px max(24px, calc((100% - 760px) / 2)) 48px;
+}
+
+.project-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 16px;
+}
+
+.project-head h1 {
+  margin: 0;
+  font-size: 24px;
+  color: var(--text-heading);
+}
+
+.project-head p {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+}
+
+.project-tabs {
+  margin-bottom: 12px;
+}
+
+.project-tabs button {
+  padding: 4px 12px;
+  font-size: 13px;
+}
+
+.project-tabs .count {
+  margin-left: 6px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.project-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.project-search {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.project-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.project-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px 12px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+}
+
+.project-row:hover {
+  background: var(--bg-hover);
+}
+
+.project-section[aria-label="People"] .project-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.project-when {
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.project-row.is-upcoming .project-when {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.project-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.project-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+/* An event's people go under its title. */
+.project-section[aria-label="Events"] .project-detail {
+  grid-column: 2;
+}
+
+.project-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.project-tag {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.project-tag.is-mentioned {
+  background: var(--bg-selected);
+  color: var(--text-muted);
+}
+
+.project-empty {
+  margin: 16px 8px;
+  font-size: 13px;
+}
+
+.section-header .ticket-group-link {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+}
+
+.section-header .ticket-group-link:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+/* A narrow pane: one column. */
+@container (max-width: 520px) {
+  .project-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .project-section[aria-label="Events"] .project-detail {
+    grid-column: auto;
+  }
+}

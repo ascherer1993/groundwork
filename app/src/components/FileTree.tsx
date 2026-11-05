@@ -15,7 +15,7 @@ import type { NodeKind } from "../api/generated/NodeKind";
 import type { TreeNode } from "../api/generated/TreeNode";
 import { displayName } from "../lib/paths";
 import { openNoteWorkspace } from "../lib/commands";
-import { createProject, projectAt, ticketAt, useTickets } from "../state/tickets";
+import { createProject, openProjectView, projectAt, ticketAt, useTickets } from "../state/tickets";
 import { confirmDialog, formDialog, type MenuEntry, promptDialog, useUi } from "../state/ui";
 import { message, useVault } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
@@ -105,6 +105,7 @@ function menuFor(node: TreeNode): MenuEntry[] {
     );
     const project = projectAt(node.path);
     if (project) {
+      entries.push({ label: "Open project view", action: () => openProjectView(project.id) });
       entries.push({
         label: "New ticket…",
         action: () => void useTickets.getState().newTicket({ projects: [project.id] }),

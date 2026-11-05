@@ -147,6 +147,7 @@ projects: ["[[Acme]]"]
 - Make them with `groundwork add` (the user's Quick add, ⇧⌘A in the app). It names the note, uses the user's template, and sets `projects:` from `--project`. Pass the project whenever you know it.
 - Older meeting notes may live in a project's folder with `type: meeting`. They count as events of that project; leave them where they are.
 - Link people from events and notes as `[[Jane Doe]]`, and list who attended in the event's `people:`.
+- `groundwork project show <project>` lists a project's events (newest first) and people: members (their `projects:` names it) and anyone its notes link to, with how many notes mention them. Use it to answer "who's on X" or "when did we last meet about X". The user sees the same in the app's project view.
 
 ## Daily notes
 
@@ -197,7 +198,7 @@ A typical flow: build the page, ask the user to open it in Groundwork and tell y
 
 ```sh
 groundwork context [--note <note> | --cwd <dir>] [--json]   # default: the current folder
-groundwork project list | show <project>
+groundwork project list | show <project>   # show: folders, code, tickets, events and people
 groundwork project create <folder>     # makes a folder (new or existing) a project
 groundwork repo list | show <repo>
 groundwork repo locate <repo> <path> [--worktrees <dir>]

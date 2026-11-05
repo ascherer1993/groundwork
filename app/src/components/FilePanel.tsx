@@ -1,16 +1,17 @@
 import { AppWindow, ArrowLeft, ArrowRight, BookOpen, Code, PencilLine } from "lucide-react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { FileContent } from "../api/generated/FileContent";
 import { vaultFileUrl } from "../lib/fileUrl";
-import { isPagePath } from "../lib/paths";
+import { isPagePath, projectOfView } from "../lib/paths";
 import { isImage } from "../markdown/syntax";
 import { useKeyLabel } from "../state/keys";
 import { message, useVault } from "../state/vault";
 import { type PanelParams, useWorkspace, type ViewMode } from "../state/workspace";
 import { NoteView } from "./NoteView";
 import { PageView } from "./PageView";
+import { ProjectView } from "./ProjectView";
 
 const MODES: { mode: ViewMode; label: string; Icon: typeof BookOpen }[] = [
   { mode: "live", label: "Live preview", Icon: PencilLine },
@@ -39,6 +40,15 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
   const modes = note ? MODES : page ? PAGE_MODES : null;
   const toggleKey = useKeyLabel("toggle-reading");
   const current = page && mode !== "source" ? "reading" : mode;
+  const project = projectOfView(path);
+  const [viewTitle, setViewTitle] = useState<string | null>(null);
+  const setTitle = useCallback(
+    (title: string) => {
+      panel.setTitle(title);
+      setViewTitle(title);
+    },
+    [panel],
+  );
 
   return (
     <article className="file-panel" aria-label={path} data-panel-id={panel.id}>
@@ -60,7 +70,7 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
           <ArrowRight size={14} />
         </button>
         <nav className="crumbs" aria-label="Path">
-          {path.split("/").map((part, i, parts) => (
+          {(project ? ["Project", viewTitle ?? project] : path.split("/")).map((part, i, parts) => (
             <span key={i} className={i === parts.length - 1 ? "crumb current" : "crumb"}>
               {i === parts.length - 1 && note ? part.replace(/\.md$/i, "") : part}
             </span>
@@ -89,7 +99,9 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
         )}
       </header>
       <div className="file-body">
-        {note ? (
+        {project ? (
+          <ProjectView id={project} setTitle={setTitle} />
+        ) : note ? (
           <NoteView path={path} mode={mode} focus={focus} editTitle={editTitle} />
         ) : page && mode !== "source" ? (
           <PageView path={path} />

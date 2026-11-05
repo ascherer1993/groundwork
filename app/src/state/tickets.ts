@@ -15,6 +15,7 @@ import type { RepoInfo } from "../api/generated/RepoInfo";
 import type { SetupStep } from "../api/generated/SetupStep";
 import type { Ticket } from "../api/generated/Ticket";
 import { openExternalUrl } from "../lib/fileUrl";
+import { projectViewPath } from "../lib/paths";
 import { confirmDialog, formDialog, useUi } from "./ui";
 import { message, onVaultChange, useVault } from "./vault";
 import { isTerminal, type TerminalParams, useWorkspace, type View } from "./workspace";
@@ -325,6 +326,11 @@ export async function pickAction(note: string) {
 }
 
 /** A project's vault folder, if `path` is one. */
+/** Opens a project's view in the current tab, or a new one. */
+export function openProjectView(id: string, opts: { newTab?: boolean } = {}) {
+  useWorkspace.getState().open(projectViewPath(id), opts);
+}
+
 export function projectAt(folder: string): ProjectInfo | undefined {
   return useTickets.getState().projects.find((p) => p.folder === folder);
 }

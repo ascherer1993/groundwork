@@ -6,6 +6,7 @@
 import { create } from "zustand";
 import { api } from "../api/client";
 import type { QuickAddChoice } from "../api/generated/QuickAddChoice";
+import { projectOfView } from "../lib/paths";
 import { today } from "../markdown/syntax";
 import { type KeyCommand, keyLabel, useKeys } from "./keys";
 import { useTickets } from "./tickets";
@@ -97,8 +98,11 @@ export async function openQuickAdd() {
   });
 }
 
-/** Asks what a choice needs, then runs it. */
-export async function runChoice(name: string) {
+/**
+ * Asks what a choice needs, then runs it. The project offered first is
+ * `opts.project`, else the project view's you're in, else the note's.
+ */
+export async function runChoice(name: string, opts: { project?: string } = {}) {
   const choice = useQuickAdd.getState().choices.find((c) => c.name === name);
   try {
     const form = await api.quickAddForm(name, whereYouAre());
@@ -108,7 +112,11 @@ export async function runChoice(name: string) {
       if (!useTickets.getState().projects.length) await useTickets.getState().load();
       fields.push({
         label: "Project",
-        value: form.defaultProject ?? "",
+        value:
+          opts.project ??
+          projectOfView(useWorkspace.getState().activePath) ??
+          form.defaultProject ??
+          "",
         options: [
           { value: "", label: "No project" },
           ...useTickets.getState().projects.map((p) => ({ value: p.id, label: p.name })),

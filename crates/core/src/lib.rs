@@ -15,6 +15,7 @@ pub mod index;
 pub mod moment;
 pub mod pages;
 pub mod parse;
+pub mod project_view;
 pub mod quickadd;
 pub mod recent;
 pub mod repos;
@@ -23,6 +24,8 @@ pub mod session;
 pub mod settings;
 pub mod setup;
 pub mod template;
+#[cfg(test)]
+mod test_vault;
 pub mod tickets;
 pub mod todos;
 mod tree;

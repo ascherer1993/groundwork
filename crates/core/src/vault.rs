@@ -163,7 +163,14 @@ mod tests {
         assert!(!top.iter().any(|n| n.starts_with('.')), "{top:?}");
         assert_eq!(
             top,
-            ["Contacts", "Daily", "Projects", "Templates", "Welcome.md"]
+            [
+                "Contacts",
+                "Daily",
+                "Events",
+                "Projects",
+                "Templates",
+                "Welcome.md"
+            ]
         );
     }
 

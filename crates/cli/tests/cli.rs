@@ -272,6 +272,32 @@ fn quick_add_makes_people_and_events() {
 }
 
 #[test]
+fn project_show_lists_its_events_and_people() {
+    let v = Vault::new();
+    let show = v.ok(&["project", "show", "acme"]);
+    assert!(
+        show.contains(
+            "  event: 2026-11-04 14:00 · Vendor call · Events/2026-11-04 Vendor call.md\n  \
+             event: 2026-11-02 · Kickoff · Projects/Acme/Meetings/2026-11-02 Kickoff.md\n"
+        ),
+        "{show}"
+    );
+    assert!(
+        show.contains("  person: Jane Doe · Staff Engineer · Acme · member, mentioned in 5\n")
+            && show.contains("  person: Sam Lee · Account manager · Contoso · mentioned in 1\n")
+            && !show.contains("Lee Park"),
+        "{show}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&v.ok(&["--json", "project", "show", "acme"])).unwrap();
+    assert_eq!(json["people"][1]["name"], "Priya Shah");
+    assert_eq!(
+        json["events"][0]["people"],
+        serde_json::json!(["Jane Doe", "Sam Lee"])
+    );
+}
+
+#[test]
 fn todos_round_trip() {
     let v = Vault::new();
     let id = v

@@ -6,6 +6,7 @@
  */
 import type { ProjectInfo } from "../api/generated/ProjectInfo";
 import type { Workspace } from "../api/generated/Workspace";
+import { projectOfView } from "../lib/paths";
 import { useTickets } from "./tickets";
 import { useWorkspace } from "./workspace";
 import { useWorkspaces } from "./workspaces";
@@ -34,11 +35,12 @@ export function workspaceFor(
 export function follow() {
   const ws = useWorkspace.getState();
   if (ws.pinned || !ws.activePath) return;
-  const target = workspaceFor(
-    ws.activePath,
-    useWorkspaces.getState().list,
-    useTickets.getState().projects,
-  );
+  // A project's view follows like its overview note.
+  const project = projectOfView(ws.activePath);
+  const projects = useTickets.getState().projects;
+  const path = project ? projects.find((p) => p.id === project)?.overview : ws.activePath;
+  if (!path) return;
+  const target = workspaceFor(path, useWorkspaces.getState().list, projects);
   // The view stays as it is: following never brings terminals on screen.
   if (target && target.id !== ws.workspace) ws.showWorkspace(target.id, ws.view);
 }

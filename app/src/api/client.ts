@@ -4,6 +4,7 @@ import type { CreatedTicket } from "./generated/CreatedTicket";
 import type { GitState } from "./generated/GitState";
 import type { NewTicket } from "./generated/NewTicket";
 import type { ProjectInfo } from "./generated/ProjectInfo";
+import type { ProjectView } from "./generated/ProjectView";
 import type { QuickAddChoice } from "./generated/QuickAddChoice";
 import type { QuickAdded } from "./generated/QuickAdded";
 import type { QuickAddForm } from "./generated/QuickAddForm";
@@ -118,6 +119,7 @@ interface Results {
   "repo.list": RepoInfo[];
   "repo.locate": RepoLocation;
   "project.list": ProjectInfo[];
+  "project.view": ProjectView;
   "inbox.list": InboxItem[];
   "inbox.history": InboxItem[];
   "inbox.ask": InboxItem;
@@ -259,6 +261,8 @@ export const api = {
   locateRepo: (id: string, path: string, worktrees?: string) =>
     call("repo.locate", { id, path, worktrees }),
   projects: () => call("project.list"),
+  /** A project's events and people. */
+  projectView: (project: string) => call("project.view", { project }),
   inbox: () => call("inbox.list"),
   inboxHistory: () => call("inbox.history"),
   answerInbox: (id: string, answer?: string) => call("inbox.answer", { id, answer }),

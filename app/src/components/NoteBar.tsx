@@ -1,4 +1,4 @@
-import { ChevronDown, ExternalLink, GitBranch } from "lucide-react";
+import { ChevronDown, ExternalLink, GitBranch, LayoutList } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Action } from "../api/generated/Action";
@@ -6,6 +6,7 @@ import type { GitState } from "../api/generated/GitState";
 import {
   closeTicket,
   noteMode,
+  openProjectView,
   restoreTicket,
   runAction,
   showNote,
@@ -59,6 +60,7 @@ function gitSummary(git: GitState): { text: string; warn: boolean } {
  */
 export function NoteBar({ path }: { path: string }) {
   const ticket = useTickets((s) => s.tickets.find((t) => t.path === path));
+  const project = useTickets((s) => s.projects.find((p) => p.overview === path));
   const linked = useLinkedWorkspace(path);
   const workspaceId = ticket?.workspace ?? linked;
   const workspace = useWorkspaces((s) => s.list.find((w) => w.id === workspaceId));
@@ -96,7 +98,7 @@ export function NoteBar({ path }: { path: string }) {
     };
   }, [path, isTicket, worktreePath, active]);
 
-  if (!ticket && !workspace) return null;
+  if (!ticket && !workspace && !project) return null;
   const mode = workspace ? noteMode(workspace.id) : null;
   const quick = actions.filter((a) => a.id === "open-ticket" || a.id === "open-vscode");
   const summary = git?.exists ? gitSummary(git) : null;
@@ -111,7 +113,11 @@ export function NoteBar({ path }: { path: string }) {
   };
 
   return (
-    <div className="note-bar" role="toolbar" aria-label={ticket ? "Ticket" : "Workspace"}>
+    <div
+      className="note-bar"
+      role="toolbar"
+      aria-label={ticket ? "Ticket" : workspace ? "Workspace" : "Project"}
+    >
       {ticket && (
         <>
           {ticket.key && <span className="ticket-key">{ticket.key}</span>}
@@ -134,6 +140,16 @@ export function NoteBar({ path }: { path: string }) {
         </>
       )}
       <span className="note-bar-spacer" />
+      {project && (
+        <button
+          type="button"
+          className="note-bar-button"
+          title="This project’s events, people and tickets"
+          onClick={(e) => openProjectView(project.id, { newTab: e.metaKey })}
+        >
+          <LayoutList size={12} /> Project view
+        </button>
+      )}
       {workspace && mode && (
         <div className="segmented" role="group" aria-label="View">
           {(["note", "split", "terminal"] as const).map((m) => (

@@ -274,7 +274,7 @@ enum ProjectCommand {
         /// The folder, from the vault root.
         folder: String,
     },
-    /// A project's folders, code and open tickets.
+    /// A project's folders, code, open tickets, events and people.
     Show {
         /// Its id, name or folder.
         project: String,
@@ -1070,8 +1070,14 @@ fn project(session: &Session, cmd: ProjectCommand, json: bool) -> Fallible<()> {
                     ..Default::default()
                 })
                 .map_err(err)?;
+            let view = session.project_view(&p.id).map_err(err)?;
             if json {
-                return print_json(&serde_json::json!({ "project": p, "tickets": tickets }));
+                return print_json(&serde_json::json!({
+                    "project": p,
+                    "tickets": tickets,
+                    "events": view.events,
+                    "people": view.people,
+                }));
             }
             println!("{} ({})", p.name, p.id);
             println!("  folder: {}", p.folder);
@@ -1084,6 +1090,27 @@ fn project(session: &Session, cmd: ProjectCommand, json: bool) -> Fallible<()> {
             }
             for t in &tickets {
                 println!("  ticket: {}", ticket_line(t));
+            }
+            for e in &view.events {
+                let when = match (&e.date, &e.time) {
+                    (Some(d), Some(t)) => format!("{d} {t}"),
+                    (Some(d), None) => d.clone(),
+                    _ => "undated".into(),
+                };
+                println!("  event: {when} · {} · {}", e.title, e.path);
+            }
+            for person in &view.people {
+                let mut about: Vec<String> = [&person.role, &person.company]
+                    .into_iter()
+                    .flatten()
+                    .cloned()
+                    .collect();
+                about.push(match (person.member, person.mentions) {
+                    (true, 0) => "member".into(),
+                    (true, n) => format!("member, mentioned in {n}"),
+                    (false, n) => format!("mentioned in {n}"),
+                });
+                println!("  person: {} · {}", person.name, about.join(" · "));
             }
             Ok(())
         }

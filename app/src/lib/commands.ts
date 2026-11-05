@@ -1,10 +1,12 @@
 import { api } from "../api/client";
+import type { ProjectInfo } from "../api/generated/ProjectInfo";
 import type { TreeNode } from "../api/generated/TreeNode";
 import { undoLast } from "../components/NoteView";
 import { editorFor } from "../editor/active";
 import { insertRendered } from "../editor/templates";
 import { EDITOR_COMMANDS } from "../editor/commands";
 import { EditorView } from "@codemirror/view";
+import { isViewPath } from "./paths";
 import { formDialog, type PaletteItem, promptDialog, useUi } from "../state/ui";
 import { message, newNoteFolder, useVault } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
@@ -17,6 +19,7 @@ import {
   closeTicket,
   locateRepo,
   noteWorkspace,
+  openProjectView,
   pickAction,
   showSplit,
   ticketAt,
@@ -112,7 +115,12 @@ interface Command {
   run(): void | Promise<void>;
 }
 
-const hasActive = () => !!useWorkspace.getState().activePath;
+/** A file is open (not a view, like a project's). */
+const hasActive = () => {
+  const path = useWorkspace.getState().activePath;
+  return !!path && !isViewPath(path);
+};
+const hasTab = () => !!useWorkspace.getState().activePath;
 
 function activeEditor(): EditorView | null {
   const path = useWorkspace.getState().activePath;
@@ -129,6 +137,7 @@ function commands(): Command[] {
       run: () => ui.setSwitcher(true),
     },
     { id: "new-note", label: "New note", run: () => ws.newNote() },
+    { id: "project-view", label: "Open a project’s view…", run: pickProjectView },
     { id: "new-from-template", label: "New note from template…", run: newNoteFromTemplate },
     { id: "quick-add", label: "Quick add…", run: openQuickAdd },
     ...useQuickAdd.getState().choices.map((c) => ({
@@ -175,13 +184,13 @@ function commands(): Command[] {
     {
       id: "split-right",
       label: "Split right",
-      when: hasActive,
+      when: hasTab,
       run: () => ws.open(ws.activePath!, { split: "right" }),
     },
     {
       id: "split-down",
       label: "Split down",
-      when: hasActive,
+      when: hasTab,
       run: () => ws.open(ws.activePath!, { split: "below" }),
     },
     { id: "back", label: "Go back", run: () => ws.back() },
@@ -295,6 +304,37 @@ function commands(): Command[] {
 export async function openNoteWorkspace(path: string) {
   const id = await noteWorkspace(path);
   if (id) await showSplit(path, id);
+}
+
+/** Lists the projects; the chosen one's view opens. The one you're in comes first. */
+export async function pickProjectView() {
+  await useTickets.getState().load();
+  const { projects } = useTickets.getState();
+  if (!projects.length) {
+    useUi
+      .getState()
+      .notify("No projects yet. Right-click a folder and choose “Make this a project”.");
+    return;
+  }
+  const path = useWorkspace.getState().activePath;
+  const here = path && !isViewPath(path) ? noteProject(path, projects) : undefined;
+  const sorted = here ? [here, ...projects.filter((p) => p !== here)] : projects;
+  useUi.getState().openPalette({
+    placeholder: "Open a project’s view…",
+    items: sorted.map((p) => ({
+      id: p.id,
+      label: p.name,
+      detail: p.folder,
+      run: () => openProjectView(p.id),
+    })),
+  });
+}
+
+/** The project whose folder a note is in (the innermost). */
+function noteProject(path: string, projects: ProjectInfo[]): ProjectInfo | undefined {
+  return projects
+    .filter((p) => path.startsWith(`${p.folder}/`))
+    .sort((a, b) => b.folder.length - a.folder.length)[0];
 }
 
 /** Picks a repo, then opens the new-ticket dialog for it. */

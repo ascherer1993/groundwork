@@ -993,7 +993,9 @@ pub(crate) mod tests {
             sources,
             [
                 "Daily/2026-11-03.md",
+                "Events/2026-11-04 Vendor call.md",
                 "Projects/Acme/Acme.md",
+                "Projects/Acme/Meetings/2026-10-28 Planning.md",
                 "Projects/Acme/Meetings/2026-11-02 Kickoff.md",
                 "Projects/Acme/Work/TEAM-123 Fix login.md",
                 "Welcome.md",

@@ -398,32 +398,9 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Vault;
     use crate::daily::DailySettings;
 
-    const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/vault");
-
-    /// The fixture vault copied to `<dir>/vault`.
-    fn session() -> (tempfile::TempDir, Session) {
-        let dir = tempfile::tempdir().unwrap();
-        let vault = dir.path().join("vault");
-        copy_dir(std::path::Path::new(FIXTURE), &vault);
-        let session =
-            Session::open(Vault::open(&vault).unwrap(), &dir.path().join("data")).unwrap();
-        (dir, session)
-    }
-
-    fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
-        fs::create_dir_all(to).unwrap();
-        for entry in fs::read_dir(from).unwrap().flatten() {
-            let target = to.join(entry.file_name());
-            if entry.file_type().unwrap().is_dir() {
-                copy_dir(&entry.path(), &target);
-            } else {
-                fs::copy(entry.path(), target).unwrap();
-            }
-        }
-    }
+    use crate::test_vault::session;
 
     fn read(dir: &tempfile::TempDir, path: &str) -> String {
         fs::read_to_string(dir.path().join("vault").join(path)).unwrap()

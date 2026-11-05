@@ -14,6 +14,7 @@ use ts_rs::TS;
 use crate::config::{ActionDef, Config, Project, Repo, slugify};
 use crate::frontmatter::{self, Prop};
 use crate::git::{self, GitState};
+use crate::index::Index;
 use crate::parse::LinkKind;
 use crate::session::FileChange;
 use crate::workspaces::Workspace;
@@ -272,7 +273,40 @@ pub struct ProjectInfo {
 /// How many recently changed project notes `context` lists.
 const RECENT_NOTES: usize = 5;
 
-fn fm_str(fm: Option<&Value>, key: &str) -> Option<String> {
+/// `Session::note_projects`, with the index already in hand.
+pub(crate) fn note_projects_in(index: &Index, config: &Config, path: &str) -> Vec<String> {
+    let fm = index.note(path).and_then(|n| n.frontmatter.as_ref());
+    let mut ids: Vec<String> = Vec::new();
+    for item in fm_list(fm, "projects") {
+        let inner = item
+            .strip_prefix("[[")
+            .and_then(|s| s.strip_suffix("]]"))
+            .map(|s| s.split(['|', '#']).next().unwrap_or(s));
+        let project = match inner {
+            Some(target) => index.resolve(target, path).and_then(|resolved| {
+                config
+                    .projects
+                    .iter()
+                    .find(|p| p.overview.as_deref() == Some(resolved.as_str()))
+                    .or_else(|| config.project(file_stem(&resolved)))
+            }),
+            None => config.project(&item),
+        };
+        if let Some(p) = project
+            && !ids.contains(&p.id)
+        {
+            ids.push(p.id.clone());
+        }
+    }
+    if let Some(p) = config.project_of_folder(path)
+        && !ids.contains(&p.id)
+    {
+        ids.push(p.id.clone());
+    }
+    ids
+}
+
+pub(crate) fn fm_str(fm: Option<&Value>, key: &str) -> Option<String> {
     match fm?.get(key)? {
         Value::String(s) if !s.trim().is_empty() => Some(s.trim().to_string()),
         Value::Number(n) => Some(n.to_string()),
@@ -280,7 +314,7 @@ fn fm_str(fm: Option<&Value>, key: &str) -> Option<String> {
     }
 }
 
-fn fm_list(fm: Option<&Value>, key: &str) -> Vec<String> {
+pub(crate) fn fm_list(fm: Option<&Value>, key: &str) -> Vec<String> {
     match fm.and_then(|f| f.get(key)) {
         Some(Value::String(s)) if !s.trim().is_empty() => vec![s.trim().to_string()],
         Some(Value::Array(items)) => items
@@ -293,7 +327,7 @@ fn fm_list(fm: Option<&Value>, key: &str) -> Vec<String> {
     }
 }
 
-fn file_stem(path: &str) -> &str {
+pub(crate) fn file_stem(path: &str) -> &str {
     let name = path.rsplit('/').next().unwrap_or(path);
     name.strip_suffix(".md").unwrap_or(name)
 }
@@ -466,36 +500,7 @@ impl Session {
     /// frontmatter (by overview note, id or name), then the project folder
     /// it's in.
     pub fn note_projects(&self, config: &Config, path: &str) -> Vec<String> {
-        let index = self.index();
-        let fm = index.note(path).and_then(|n| n.frontmatter.as_ref());
-        let mut ids: Vec<String> = Vec::new();
-        for item in fm_list(fm, "projects") {
-            let inner = item
-                .strip_prefix("[[")
-                .and_then(|s| s.strip_suffix("]]"))
-                .map(|s| s.split(['|', '#']).next().unwrap_or(s));
-            let project = match inner {
-                Some(target) => index.resolve(target, path).and_then(|resolved| {
-                    config
-                        .projects
-                        .iter()
-                        .find(|p| p.overview.as_deref() == Some(resolved.as_str()))
-                        .or_else(|| config.project(file_stem(&resolved)))
-                }),
-                None => config.project(&item),
-            };
-            if let Some(p) = project
-                && !ids.contains(&p.id)
-            {
-                ids.push(p.id.clone());
-            }
-        }
-        if let Some(p) = config.project_of_folder(path)
-            && !ids.contains(&p.id)
-        {
-            ids.push(p.id.clone());
-        }
-        ids
+        note_projects_in(&self.index(), config, path)
     }
 
     fn ticket_of(&self, config: &Config, path: &str) -> Option<Ticket> {

@@ -4,7 +4,8 @@ import { api } from "../api/client";
 import type { Backlinks } from "../api/generated/Backlinks";
 import type { Mention } from "../api/generated/Mention";
 import type { OutgoingLink } from "../api/generated/OutgoingLink";
-import { displayName } from "../lib/paths";
+import { displayName, projectOfView } from "../lib/paths";
+import { useTickets } from "../state/tickets";
 import { useUi } from "../state/ui";
 import { message, useVault } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
@@ -40,7 +41,11 @@ function title(path: string) {
  * files (pages, images) get their backlinks.
  */
 export function LinksPanel() {
-  const path = useWorkspace((s) => s.activePath);
+  const active = useWorkspace((s) => s.activePath);
+  // A project's view shows its overview note's links.
+  const project = projectOfView(active);
+  const overview = useTickets((s) => s.projects.find((p) => p.id === project)?.overview ?? null);
+  const path = project ? overview : active;
   const revision = useVault((s) => s.revision);
   const [data, setData] = useState<Data | null>(null);
 

@@ -4,7 +4,14 @@ import { api } from "../api/client";
 import type { GitState } from "../api/generated/GitState";
 import type { Ticket } from "../api/generated/Ticket";
 import { openExternalUrl } from "../lib/fileUrl";
-import { closeTicket, noteWorkspace, restoreTicket, showSplit, useTickets } from "../state/tickets";
+import {
+  closeTicket,
+  noteWorkspace,
+  openProjectView,
+  restoreTicket,
+  showSplit,
+  useTickets,
+} from "../state/tickets";
 import { useUi } from "../state/ui";
 import { useWorkspace } from "../state/workspace";
 
@@ -172,7 +179,22 @@ export function TicketList({
         <section key={name} aria-label={name || "Tickets"}>
           {name && (
             <div className="section-header">
-              {name}
+              {group === "project" && projects.find((p) => p.name === name) ? (
+                <button
+                  type="button"
+                  className="ticket-group-link"
+                  title={`Open ${name}’s project view`}
+                  onClick={(e) =>
+                    openProjectView(projects.find((p) => p.name === name)!.id, {
+                      newTab: e.metaKey,
+                    })
+                  }
+                >
+                  {name}
+                </button>
+              ) : (
+                name
+              )}
               <span className="count">{groups.get(name)!.length}</span>
             </div>
           )}

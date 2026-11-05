@@ -603,6 +603,8 @@ impl Backend {
                 to_value(project)
             }
 
+            Request::ProjectView { project } => to_value(self.session()?.project_view(&project)?),
+
             Request::TicketList { filter } => to_value(self.session()?.tickets(&filter)?),
             Request::TicketGit { path } => to_value(self.session()?.ticket_git(&path)?),
             Request::TicketCreate { ticket } => {
@@ -1277,7 +1279,7 @@ mod tests {
         let h = harness();
         let outcome = h.call(json!({ "method": "file.rename", "params": {
             "from": "Contacts/Jane Doe.md", "to": "Contacts/Jane Smith.md" } }));
-        assert_eq!(outcome["updatedNotes"].as_array().unwrap().len(), 5);
+        assert_eq!(outcome["updatedNotes"].as_array().unwrap().len(), 7);
         let Event::VaultChanged { changes } = h.events.try_recv().unwrap() else {
             panic!("expected a vault change");
         };
