@@ -5,14 +5,16 @@
 //! name, whether to update it) is machine-local, in the vault's data folder.
 //!
 //! qmd is a Node script, and an app opened from the Finder has a bare PATH,
-//! so it runs through the user's login shell, as their terminals would.
-//! `GROUNDWORK_QMD` names a qmd to run directly instead (tests use a fake).
+//! so it's looked for as the user's shells would find it, then where Node
+//! tools are usually installed (each nvm version's, Homebrew's…), and run
+//! with its own folder first on the PATH, so it gets the Node it was
+//! installed with. `GROUNDWORK_QMD` names the qmd to run (tests use a fake).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use chrono::Local;
@@ -24,8 +26,12 @@ use crate::config::slugify;
 use crate::index::Index;
 use crate::{CoreError, Result, Session};
 
-/// How long after the last change the index is brought up to date.
-const SETTLE: Duration = Duration::from_secs(20);
+/// How long notes must be quiet before the index is brought up to date.
+/// The editor saves as you type, so this waits out a writing session's pauses.
+const SETTLE: Duration = Duration::from_secs(2 * 60);
+/// The least time between updates made for changes. Plain search reads the
+/// files live, so smart search can be this far behind; Update now isn't held back.
+const GAP: Duration = Duration::from_secs(10 * 60);
 
 /// What Groundwork remembers about the vault's collection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +41,8 @@ struct State {
     auto_update: bool,
     last_update: Option<String>,
     last_error: Option<String>,
+    /// qmd's models are downloaded (`qmd pull`, the first time it updates).
+    models: bool,
 }
 
 impl Default for State {
@@ -44,6 +52,7 @@ impl Default for State {
             auto_update: true,
             last_update: None,
             last_error: None,
+            models: false,
         }
     }
 }
@@ -55,6 +64,8 @@ impl Default for State {
 pub struct QmdStatus {
     /// qmd runs on this machine.
     pub installed: bool,
+    /// Where it is.
+    pub path: Option<String>,
     /// The vault's qmd collection, once set up.
     pub collection: Option<String>,
     /// Updated as files change.
@@ -78,6 +89,8 @@ pub struct SmartResult {
     pub score: f64,
     /// The passage that matched, when qmd gives one.
     pub snippet: Option<String>,
+    /// Where in the note it matched (zero-based).
+    pub line: Option<u32>,
 }
 
 /// The vault's qmd collection.
@@ -108,31 +121,116 @@ impl Session {
         let index = self.index();
         Ok(found
             .into_iter()
-            .filter_map(|(file, score, snippet)| {
-                let path = vault_path(&index, &file)?;
+            .filter_map(|hit| {
+                let path = vault_path(&index, &hit.file)?;
                 Some(SmartResult {
                     title: crate::index::link_name(&path, crate::NodeKind::Note).to_string(),
                     path,
-                    score,
-                    snippet,
+                    score: hit.score,
+                    snippet: hit.snippet,
+                    line: hit.line,
                 })
             })
             .collect())
     }
 }
 
-fn run(args: &[&str]) -> Result<String> {
-    let mut cmd = match std::env::var_os("GROUNDWORK_QMD") {
-        Some(qmd) => Command::new(qmd),
-        None => {
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-            let mut c = Command::new(shell);
-            c.args(["-l", "-c", "qmd \"$@\"", "qmd"]);
-            c
-        }
+/// Where qmd is, once found.
+static FOUND: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+
+/// Finds qmd: `GROUNDWORK_QMD`; else where it was last found (remembered in
+/// the data folder, since looking takes the shells a second or two); else
+/// the login shell's PATH, the folders Node tools are usually installed
+/// in, and the interactive shell's PATH.
+pub fn locate() -> Option<PathBuf> {
+    if let Some(qmd) = std::env::var_os("GROUNDWORK_QMD") {
+        let qmd = PathBuf::from(qmd);
+        return qmd.is_file().then_some(qmd);
+    }
+    let found = FOUND.get_or_init(|| Mutex::new(None));
+    let mut found = found.lock().unwrap();
+    if found.as_ref().is_none_or(|p| !p.is_file()) {
+        let remembered = crate::data_dir().join("qmd-path");
+        *found = std::fs::read_to_string(&remembered)
+            .ok()
+            .map(|p| PathBuf::from(p.trim()))
+            .filter(|p| p.is_file())
+            .or_else(|| {
+                let path = from_shell(&["-l"])
+                    .or_else(installed_somewhere)
+                    .or_else(|| from_shell(&["-i", "-l"]))?;
+                let _ = std::fs::create_dir_all(crate::data_dir());
+                let _ = std::fs::write(&remembered, path.display().to_string());
+                Some(path)
+            });
+    }
+    found.clone()
+}
+
+/// `command -v qmd` in the user's shell (`-i` also reads their `.zshrc`,
+/// where nvm is usually set up).
+fn from_shell(flags: &[&str]) -> Option<PathBuf> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    let out = Command::new(shell)
+        .args(flags)
+        .args(["-c", "command -v qmd"])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let path = PathBuf::from(text.lines().rev().find(|l| l.starts_with('/'))?.trim());
+    path.is_file().then_some(path)
+}
+
+/// The usual places: each nvm and fnm Node (newest first), Volta, Bun,
+/// Homebrew, npm's global folder.
+fn installed_somewhere() -> Option<PathBuf> {
+    let home = PathBuf::from(std::env::var_os("HOME")?);
+    let versions = |dir: PathBuf, bin: &str| -> Vec<PathBuf> {
+        let mut found: Vec<(Vec<u64>, PathBuf)> = std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                let version = name
+                    .trim_start_matches('v')
+                    .split('.')
+                    .map(|n| n.parse().unwrap_or(0))
+                    .collect();
+                (version, e.path().join(bin))
+            })
+            .collect();
+        found.sort_by(|a, b| b.0.cmp(&a.0));
+        found.into_iter().map(|(_, p)| p).collect()
     };
-    let out = cmd
+    let mut candidates = versions(home.join(".nvm/versions/node"), "bin/qmd");
+    candidates.extend(versions(
+        home.join(".local/share/fnm/node-versions"),
+        "installation/bin/qmd",
+    ));
+    candidates.extend([
+        home.join(".volta/bin/qmd"),
+        home.join(".bun/bin/qmd"),
+        PathBuf::from("/opt/homebrew/bin/qmd"),
+        PathBuf::from("/usr/local/bin/qmd"),
+        home.join(".npm-global/bin/qmd"),
+    ]);
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+fn run(args: &[&str]) -> Result<String> {
+    let qmd = locate().ok_or_else(not_installed)?;
+    let mut path = std::ffi::OsString::new();
+    if let Some(dir) = qmd.parent() {
+        path.push(dir);
+        path.push(":");
+    }
+    path.push(std::env::var_os("PATH").unwrap_or_else(|| "/usr/bin:/bin".into()));
+    let out = Command::new(&qmd)
         .args(args)
+        .env("PATH", path)
         .stdin(std::process::Stdio::null())
         .output()
         .map_err(|e| CoreError::Qmd(format!("couldn't run qmd: {e}")))?;
@@ -148,27 +246,16 @@ fn run(args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// Whether qmd runs here.
-pub fn installed() -> bool {
-    match std::env::var_os("GROUNDWORK_QMD") {
-        Some(qmd) => Path::new(&qmd).is_file(),
-        None => {
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-            Command::new(shell)
-                .args(["-l", "-c", "command -v qmd"])
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .is_ok_and(|s| s.success())
-        }
-    }
+fn not_installed() -> CoreError {
+    CoreError::Qmd("qmd isn't installed: npm install -g @tobilu/qmd".into())
 }
 
-/// qmd's results' files are `qmd://<collection>/<path>`, or absolute with
-/// `--full-path`. qmd may change a path's case and punctuation, so failing
-/// an exact match, the note whose path reads the same that way.
+/// qmd's results' files are `qmd://<collection>/<path>` (plus `?index=…`
+/// from a named index), or absolute with `--full-path`. qmd may change a
+/// path's case and punctuation, so failing an exact match, the note whose
+/// path reads the same that way.
 fn vault_path(index: &Index, file: &str) -> Option<String> {
+    let file = file.split_once('?').map_or(file, |(f, _)| f);
     let rel = match file.strip_prefix("qmd://") {
         Some(rest) => rest.split_once('/')?.1.to_string(),
         None => {
@@ -228,8 +315,10 @@ impl Qmd {
 
     pub fn status(&self, updating: bool) -> QmdStatus {
         let state = self.state();
+        let path = locate();
         QmdStatus {
-            installed: installed(),
+            installed: path.is_some(),
+            path: path.map(|p| p.display().to_string()),
             collection: state.collection,
             auto_update: state.auto_update,
             updating,
@@ -241,11 +330,7 @@ impl Qmd {
     /// Makes the vault a qmd collection (its notes, `**/*.md`), unless it
     /// is one already. `refresh` then indexes it.
     pub fn setup(&self) -> Result<String> {
-        if !installed() {
-            return Err(CoreError::Qmd(
-                "qmd isn't installed: npm install -g @tobilu/qmd".into(),
-            ));
-        }
+        locate().ok_or_else(not_installed)?;
         let root = self.root.display().to_string();
         if run(&["collection", "show", &self.name]).is_err() {
             run(&[
@@ -275,15 +360,23 @@ impl Qmd {
     }
 
     /// Brings the index up to date: new and changed notes, then their
-    /// embeddings (the first time, qmd downloads its model).
+    /// embeddings. The first time, it downloads qmd's models (about 2 GB),
+    /// so the first search needn't.
     pub fn refresh(&self) -> Result<()> {
         let mut state = self.state();
-        if state.collection.is_none() {
+        let Some(name) = state.collection.clone() else {
             return Err(not_set_up());
-        }
-        let result = run(&["update"]).and_then(|_| run(&["embed"]));
+        };
+        let models = || match state.models {
+            true => Ok(String::new()),
+            false => run(&["pull"]),
+        };
+        let result = models()
+            .and_then(|_| run(&["update"]))
+            .and_then(|_| run(&["embed", "-c", &name]));
         match &result {
             Ok(_) => {
+                state.models = true;
                 state.last_update = Some(Local::now().format("%Y-%m-%d %H:%M").to_string());
                 state.last_error = None;
             }
@@ -310,28 +403,58 @@ impl Qmd {
         self.save(&state)
     }
 
-    /// `(file, score, snippet)` for each hit, best first.
-    fn query(&self, query: &str, limit: usize) -> Result<Vec<(String, f64, Option<String>)>> {
+    /// The hits for `query`, best first.
+    fn query(&self, query: &str, limit: usize) -> Result<Vec<Hit>> {
         let name = self.collection().ok_or_else(not_set_up)?;
         let n = limit.to_string();
-        let out = run(&["query", "--json", "-n", &n, "-c", &name, query])?;
-        let start = out.find('[').unwrap_or(0);
-        let hits: Vec<Value> = serde_json::from_str(out[start..].trim())
-            .map_err(|e| CoreError::Qmd(format!("qmd's answer wasn't readable: {e}")))?;
-        Ok(hits
-            .iter()
-            .filter_map(|h| {
-                let file = h.get("file")?.as_str()?.to_string();
-                let score = h.get("score").and_then(Value::as_f64).unwrap_or(0.0);
-                let snippet = h
-                    .get("snippet")
-                    .and_then(Value::as_str)
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty());
-                Some((file, score, snippet))
-            })
-            .collect())
+        parse_hits(&run(&["query", "--json", "-n", &n, "-c", &name, query])?)
     }
+}
+
+/// One of qmd's results.
+#[derive(Debug, PartialEq)]
+struct Hit {
+    file: String,
+    score: f64,
+    snippet: Option<String>,
+    /// Zero-based.
+    line: Option<u32>,
+}
+
+/// Reads `qmd … --json`. Progress (the expanded queries…) can come first on
+/// stdout, and each snippet starts with a `@@ -11,4 @@ (…)` line saying
+/// where it's from.
+fn parse_hits(out: &str) -> Result<Vec<Hit>> {
+    let start = out
+        .lines()
+        .position(|l| l.trim_start().starts_with('['))
+        .map(|i| out.lines().take(i).map(|l| l.len() + 1).sum::<usize>())
+        .ok_or_else(|| CoreError::Qmd("qmd answered with no results list".into()))?;
+    let hits: Vec<Value> = serde_json::from_str(out[start..].trim())
+        .map_err(|e| CoreError::Qmd(format!("qmd's answer wasn't readable: {e}")))?;
+    Ok(hits
+        .iter()
+        .filter_map(|h| {
+            let snippet = h.get("snippet").and_then(Value::as_str).map(|s| {
+                let s = s.trim_start();
+                match s.starts_with("@@") {
+                    true => s.split_once('\n').map_or("", |(_, rest)| rest),
+                    false => s,
+                }
+                .trim()
+                .to_string()
+            });
+            Some(Hit {
+                file: h.get("file")?.as_str()?.to_string(),
+                score: h.get("score").and_then(Value::as_f64).unwrap_or(0.0),
+                snippet: snippet.filter(|s| !s.is_empty()),
+                line: h
+                    .get("line")
+                    .and_then(Value::as_u64)
+                    .and_then(|l| u32::try_from(l.checked_sub(1)?).ok()),
+            })
+        })
+        .collect())
 }
 
 fn not_set_up() -> CoreError {
@@ -342,7 +465,8 @@ fn not_set_up() -> CoreError {
 }
 
 /// Keeps the collection up to date in the background: after files change
-/// (once they've settled), or at once when asked.
+/// (once they've settled, and not more often than every `GAP`), or at once
+/// when asked.
 pub struct Updater {
     tx: Mutex<mpsc::Sender<bool>>,
     busy: Arc<AtomicBool>,
@@ -350,11 +474,16 @@ pub struct Updater {
 
 impl Updater {
     pub fn start(qmd: Qmd) -> Self {
+        Self::with_timing(qmd, SETTLE, GAP)
+    }
+
+    fn with_timing(qmd: Qmd, settle: Duration, gap: Duration) -> Self {
         let (tx, rx) = mpsc::channel::<bool>();
         let busy = Arc::new(AtomicBool::new(false));
         let flag = busy.clone();
         std::thread::spawn(move || {
             let mut due: Option<Instant> = None;
+            let mut last: Option<Instant> = None;
             loop {
                 let wait = due.map_or(Duration::from_secs(3600), |d| {
                     d.saturating_duration_since(Instant::now())
@@ -365,7 +494,8 @@ impl Updater {
                     Ok(false) => {
                         let state = qmd.state();
                         if state.collection.is_some() && state.auto_update {
-                            due = Some(Instant::now() + SETTLE);
+                            let settled = Instant::now() + settle;
+                            due = Some(last.map_or(settled, |l| settled.max(l + gap)));
                         }
                         continue;
                     }
@@ -376,6 +506,7 @@ impl Updater {
                     due = None;
                     flag.store(true, Ordering::SeqCst);
                     let _ = qmd.refresh();
+                    last = Some(Instant::now());
                     flag.store(false, Ordering::SeqCst);
                 }
             }
@@ -405,6 +536,8 @@ impl Updater {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use std::path::Path;
+
     use super::*;
     use crate::test_vault::session;
 
@@ -445,6 +578,7 @@ pub(crate) mod tests {
         let found = s.smart_search("contract terms", 5).unwrap();
         assert_eq!(found[0].path, "Events/2026-11-04 Vendor call.md");
         assert_eq!(found[0].title, "2026-11-04 Vendor call");
+        assert_eq!(found[0].line, Some(11));
         assert!(
             found[0]
                 .snippet
@@ -475,7 +609,90 @@ pub(crate) mod tests {
         assert!(!updater.busy());
         assert!(qmd.status(false).last_update.is_some());
         let calls = std::fs::read_to_string(dir.path().join("qmd-bin/calls")).unwrap();
-        assert!(calls.contains("update\nembed\n"), "{calls}");
+        // The first time, the models; then only the vault's embeddings.
+        assert!(
+            calls.ends_with("pull\nupdate\nembed -c groundwork-vault\n"),
+            "{calls}"
+        );
+        updater.refresh();
+        while updater.busy() {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let calls = std::fs::read_to_string(dir.path().join("qmd-bin/calls")).unwrap();
+        assert!(
+            calls.ends_with("embed -c groundwork-vault\nupdate\nembed -c groundwork-vault\n"),
+            "{calls}"
+        );
+    }
+
+    #[test]
+    fn changes_wait_to_settle_and_updates_are_spaced_out() {
+        let (dir, s) = session();
+        let _qmd = fake(dir.path());
+        let qmd = s.qmd();
+        qmd.setup().unwrap();
+        let calls = dir.path().join("qmd-bin/calls");
+        let updates = || {
+            std::fs::read_to_string(&calls)
+                .unwrap()
+                .lines()
+                .filter(|l| *l == "update")
+                .count()
+        };
+        let ms = Duration::from_millis;
+        let updater = Updater::with_timing(qmd, ms(150), ms(800));
+        // Changes keep pushing the update back until they stop.
+        for _ in 0..4 {
+            updater.changed();
+            std::thread::sleep(ms(60));
+        }
+        assert_eq!(updates(), 0);
+        std::thread::sleep(ms(300));
+        assert_eq!(updates(), 1);
+        // Another change has to wait out the gap since that update.
+        updater.changed();
+        std::thread::sleep(ms(350));
+        assert_eq!(updates(), 1);
+        std::thread::sleep(ms(700));
+        assert_eq!(updates(), 2);
+    }
+
+    #[test]
+    fn reads_qmds_answers() {
+        // As qmd 2.8 prints them (`vsearch` shows its expanded queries first).
+        let out = r##"├─ what did we agree with the vendor
+└─ hyde: Understanding what did we agree [with] the vendor…
+Searching 4 vector queries...
+[
+  {
+    "docid": "#742c9b",
+    "score": 0.77,
+    "file": "qmd://gw/Events/2026-11-04 Vendor call.md?index=probe",
+    "line": 12,
+    "title": "Vendor call",
+    "snippet": "@@ -11,4 @@ (10 before, 2 after)\n\nSam walked through the contract terms.\n\n## Action items"
+  },
+  { "file": "qmd://gw/Welcome.md", "score": 0.3, "snippet": "Hello" }
+]
+"##;
+        let hits = parse_hits(out).unwrap();
+        assert_eq!(
+            hits[0],
+            Hit {
+                file: "qmd://gw/Events/2026-11-04 Vendor call.md?index=probe".into(),
+                score: 0.77,
+                snippet: Some("Sam walked through the contract terms.\n\n## Action items".into()),
+                line: Some(11),
+            }
+        );
+        assert_eq!(hits[1].snippet.as_deref(), Some("Hello"));
+        assert_eq!(hits[1].line, None);
+        assert!(parse_hits("Searching…\n").is_err());
+        let (_dir, s) = session();
+        assert_eq!(
+            vault_path(&s.index(), &hits[0].file).as_deref(),
+            Some("Events/2026-11-04 Vendor call.md")
+        );
     }
 
     #[test]

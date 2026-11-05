@@ -76,7 +76,7 @@ function SmartResults({ ask }: { ask: SmartAsk | null }) {
               <button
                 className="search-title smart-title"
                 title={r.path}
-                onClick={(e) => open(r.path, { newTab: e.metaKey })}
+                onClick={(e) => open(r.path, { line: r.line ?? undefined, newTab: e.metaKey })}
               >
                 {r.title}
                 <span className="search-folder">{folderOf(r.path)}</span>
@@ -88,7 +88,7 @@ function SmartResults({ ask }: { ask: SmartAsk | null }) {
             {r.snippet && (
               <button
                 className="search-line smart-snippet"
-                onClick={(e) => open(r.path, { newTab: e.metaKey })}
+                onClick={(e) => open(r.path, { line: r.line ?? undefined, newTab: e.metaKey })}
               >
                 {r.snippet}
               </button>

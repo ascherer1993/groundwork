@@ -1,7 +1,8 @@
 #!/bin/sh
 # A stand-in for qmd (smart search), for tests. Collections are files next to
 # itself naming their folder; `query` ranks notes by how many of the query's
-# words they contain, and answers like `qmd query --json`.
+# words they contain, and answers like `qmd query --json` (qmd 2.8): progress
+# first, then the list, each snippet headed by where it's from.
 here=$(dirname "$0")
 mkdir -p "$here/collections"
 echo "$*" >>"$here/calls"
@@ -29,7 +30,7 @@ case "$1 $2" in
 esac
 
 case "$1" in
-context | update | embed)
+context | update | embed | pull)
   exit 0
   ;;
 query)
@@ -45,6 +46,7 @@ query)
   root=$(cat "$here/collections/$name") || exit 1
   words=$(echo "$1" | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '\n' | grep -v '^$')
   cd "$root" || exit 1
+  echo "Searching 2 queries..."
   echo "["
   find . -name '*.md' -not -path '*/.*' | sed 's|^\./||' | while IFS= read -r f; do
     c=0
@@ -54,9 +56,11 @@ query)
     sep=""
     while IFS="$tab" read -r c f; do
       first=$(echo "$words" | head -n 1)
-      snippet=$(grep -i -m 1 -- "$(echo "$words" | tail -n 1)" "$f" | sed 's/\\/\\\\/g; s/"/\\"/g')
-      printf '%s{"docid":"#%06d","score":0.%d,"file":"qmd://%s/%s","title":"%s","snippet":"%s"}\n' \
-        "$sep" "$c" "$((c > 9 ? 9 : c))" "$name" "$f" "$first" "$snippet"
+      match=$(grep -i -n -m 1 -- "$(echo "$words" | tail -n 1)" "$f")
+      line=${match%%:*}
+      snippet=$(echo "${match#*:}" | sed 's/\\/\\\\/g; s/"/\\"/g')
+      printf '%s{"docid":"#%06d","score":0.%d,"file":"qmd://%s/%s","line":%d,"title":"%s","snippet":"@@ -%d,1 @@ (0 before, 0 after)\\n%s"}\n' \
+        "$sep" "$c" "$((c > 9 ? 9 : c))" "$name" "$f" "${line:-1}" "$first" "${line:-1}" "$snippet"
       sep=","
     done
   }

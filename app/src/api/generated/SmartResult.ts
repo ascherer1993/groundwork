@@ -11,4 +11,8 @@ score: number,
 /**
  * The passage that matched, when qmd gives one.
  */
-snippet: string | null, };
+snippet: string | null, 
+/**
+ * Where in the note it matched (zero-based).
+ */
+line: number | null, };

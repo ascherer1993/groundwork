@@ -62,8 +62,9 @@ test("smart search is set up in Settings and finds notes by meaning", async ({ p
   const results = page.getByRole("list", { name: "Search results" });
   await expect(results.locator(".search-title").first()).toHaveText("2026-11-04 Vendor callEvents");
   await expect(results.locator(".smart-snippet").first()).toContainText("contract terms");
-  await results.locator(".search-title").first().click();
+  await results.locator(".smart-snippet").first().click();
   await expect(page.getByLabel("Note title")).toHaveValue("2026-11-04 Vendor call");
+  await expect(editor(page).locator(".cm-activeLine")).toContainText("contract terms");
 
   // Off again, for the other tests.
   await page.keyboard.press("Meta+,");

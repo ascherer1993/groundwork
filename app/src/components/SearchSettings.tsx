@@ -51,6 +51,7 @@ export function SearchSettings() {
                 qmd is installed. Setting up adds the vault’s notes to qmd’s index. The first time,
                 qmd downloads its models (about 2 GB), so it takes a while.
               </p>
+              {status.path && <p className="muted small">Found qmd at {status.path}</p>}
               <button type="button" className="primary" onClick={() => void change(api.qmdSetup)}>
                 Set up smart search
               </button>
@@ -60,6 +61,7 @@ export function SearchSettings() {
               <p>
                 <strong>On.</strong> The vault is qmd collection <code>{status.collection}</code>.
               </p>
+              {status.path && <p className="muted small">qmd: {status.path}</p>}
               <p className="muted" role="status">
                 {status.updating
                   ? "Updating the index…"

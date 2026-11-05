@@ -9,6 +9,10 @@ export type QmdStatus = {
  */
 installed: boolean, 
 /**
+ * Where it is.
+ */
+path: string | null, 
+/**
  * The vault's qmd collection, once set up.
  */
 collection: string | null, 

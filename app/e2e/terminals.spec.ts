@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { FIXTURE_VAULT as VAULT } from "./fixtures";
 import { openVault } from "./helpers";
@@ -350,7 +351,15 @@ test("terminals open in a chosen folder", async ({ page }) => {
 });
 
 test("agent actions start Claude in a tab with their prompt", async ({ page }) => {
-  const flat = async () => (await screen(page)).replace(/\n/g, "");
+  // What the fake `claude` was run with: its screen output can be drawn over
+  // by the shell's prompt, so it logs its calls.
+  const calls = () => {
+    try {
+      return readFileSync(join(process.env.GROUNDWORK_E2E_SETUP!, "claude-bin/calls"), "utf8");
+    } catch {
+      return "";
+    }
+  };
   const palette = async (name: string) => {
     await page.keyboard.press("Meta+p");
     await page.keyboard.type(name);
@@ -367,9 +376,9 @@ test("agent actions start Claude in a tab with their prompt", async ({ page }) =
   await dialog.getByLabel("What should it focus on?").fill("decisions");
   await dialog.getByRole("button", { name: "Start" }).click();
   await expect
-    .poll(flat)
+    .poll(calls)
     .toContain(
-      "fake claude was asked: Summarise [[Projects/Acme/Meetings/2026-11-02 Kickoff.md]] " +
+      "Summarise [[Projects/Acme/Meetings/2026-11-02 Kickoff.md]] " +
         "for the Acme project, focusing on decisions.",
     );
 
@@ -380,12 +389,10 @@ test("agent actions start Claude in a tab with their prompt", async ({ page }) =
   await jira.getByLabel("Jira key or link").fill("TEAM-42");
   await page.keyboard.press("Enter");
   await expect
-    .poll(flat)
-    .toContain(
-      "fake claude was asked: Set up a ticket in the user's Groundwork vault for this Jira issue: TEAM-42",
-    );
+    .poll(calls)
+    .toContain("Set up a ticket in the user's Groundwork vault for this Jira issue: TEAM-42");
 
   // Triage, from the palette.
   await palette("Triage todos");
-  await expect.poll(flat).toContain("fake claude was asked: Triage my todos in Groundwork");
+  await expect.poll(calls).toContain("Triage my todos in Groundwork");
 });
