@@ -1,14 +1,14 @@
 /**
  * The inbox: questions from `groundwork ask`, notes from `groundwork notify`,
- * and Claude Code waiting on you in a terminal. New items notify you (a macOS
- * notification while the window is in the background) and the dock icon
- * counts what's open.
+ * and Claude Code waiting on you in a terminal. New items show a toast while
+ * the window has focus; in the background the desktop shell sends a macOS
+ * notification (src-tauri/src/notifications.rs), which can answer a question
+ * itself. The dock icon counts what's open.
  */
 import { create } from "zustand";
 import { api, transport } from "../api/client";
 import type { InboxItem } from "../api/generated/InboxItem";
 import { isTauri } from "../api/transport";
-import { desktopNotify } from "../lib/notify";
 import { useTerminals } from "./terminals";
 import { useUi } from "./ui";
 import { message } from "./vault";
@@ -113,28 +113,53 @@ async function badge(count: number) {
   }
 }
 
-/** A notification for a new item; macOS's while the window is in the background. */
-async function announce(item: InboxItem) {
-  if (document.hasFocus()) {
-    // Attention for the terminal on screen needs no word.
-    if (item.kind === "attention") return;
-    useUi.getState().notify(`${title(item)}: ${item.text}`, {
-      label: item.kind === "ask" ? "Answer" : "Show",
-      run: () => useInbox.getState().setOpen(true),
-    });
+/** A toast for a new item while the window has focus; else the shell notifies. */
+function announce(item: InboxItem) {
+  // Attention for the terminal on screen needs no word.
+  if (!document.hasFocus() || item.kind === "attention") return;
+  useUi.getState().notify(`${title(item)}: ${item.text}`, {
+    label: item.kind === "ask" ? "Answer" : "Show",
+    run: () => useInbox.getState().setOpen(true),
+  });
+}
+
+/** Shows what a clicked notification was about. */
+async function showItem(id: string) {
+  await useInbox.getState().load();
+  const item = useInbox.getState().items.find((i) => i.id === id);
+  if (item?.kind !== "ask" && item && goToTab(item)) return;
+  if (item?.kind === "notify" && item.link) {
+    void useWorkspace.getState().openLink("", item.link.replace(/^\[\[|\]\]$/g, ""));
     return;
   }
-  if (!isTauri()) return;
-  const failed = await desktopNotify(title(item), item.text);
-  if (failed) console.warn("notification:", failed);
+  useInbox.getState().setOpen(true);
+}
+
+/** Asks the shell for a sample question notification; resolves to why it can't, or null. */
+export async function testNotification(): Promise<string | null> {
+  if (!isTauri()) return "notifications only work in the desktop app";
   try {
-    const { getCurrentWindow, UserAttentionType } = await import("@tauri-apps/api/window");
-    await getCurrentWindow().requestUserAttention(
-      item.kind === "notify" ? UserAttentionType.Informational : UserAttentionType.Critical,
-    );
-  } catch {
-    // The badge still counts it.
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("test_notification");
+    return null;
+  } catch (err) {
+    return String(err);
   }
+}
+
+async function followNotifications() {
+  const { listen } = await import("@tauri-apps/api/event");
+  await listen<{ id?: string; test?: string | null }>("groundwork://notification", (e) => {
+    if (e.payload.id) void showItem(e.payload.id);
+    else if ("test" in e.payload)
+      useUi
+        .getState()
+        .notify(
+          e.payload.test
+            ? `The notification answered "${e.payload.test}". Notifications work.`
+            : "Notifications work.",
+        );
+  });
 }
 
 let watching = false;
@@ -158,7 +183,8 @@ export function watchInbox() {
       return;
     }
     void useInbox.getState().load();
-    if (added) void announce(added);
+    if (added) announce(added);
   });
   window.addEventListener("focus", () => void useInbox.getState().load());
+  if (isTauri()) void followNotifications();
 }

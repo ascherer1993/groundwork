@@ -7,6 +7,18 @@ use serde_json::Value;
 use tauri::http::{Response, StatusCode, header};
 use tauri::{Emitter, Manager, RunEvent};
 
+#[cfg(target_os = "macos")]
+mod notifications;
+#[cfg(target_os = "macos")]
+use notifications::test_notification;
+
+/// Without macOS there's nothing to test.
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn test_notification() -> Result<(), String> {
+    Err("notifications are only sent on macOS".into())
+}
+
 /// Name of the Tauri event carrying backend `Event`s to the UI.
 const EVENT_CHANNEL: &str = "groundwork://event";
 
@@ -101,37 +113,22 @@ fn menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     Menu::with_items(app, &[&app_menu, &edit, &window])
 }
 
-/// In development tauri-plugin-notification sends notifications in
-/// Terminal.app's name. `make dev` instead runs the app inside a "Groundwork
-/// Dev" bundle (`scripts/dev-app`) and names it here, so they come from the
-/// app itself. Only the first `set_application` counts, so this runs before
-/// any notification.
-#[cfg(all(target_os = "macos", debug_assertions))]
-fn notify_as_dev_bundle() {
-    if let Ok(id) = std::env::var("GROUNDWORK_NOTIFY_AS")
-        && !id.is_empty()
-        && let Err(e) = mac_notification_sys::set_application(&id)
-    {
-        eprintln!("notifications can't be sent as {id}: {e}");
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(all(target_os = "macos", debug_assertions))]
-    notify_as_dev_bundle();
-
     let app = tauri::Builder::default()
         .menu(menu)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            notifications::setup(&app.config().identifier);
             let handle = app.handle().clone();
             let backend = Arc::new(Backend::new(
                 Host::Desktop,
                 groundwork_core::data_dir(),
                 Arc::new(move |event| {
+                    #[cfg(target_os = "macos")]
+                    notifications::on_event(&handle, &event);
                     let _ = handle.emit(EVENT_CHANNEL, &event);
                 }),
             ));
@@ -146,7 +143,7 @@ pub fn run() {
             let path = request.uri().path().to_string();
             std::thread::spawn(move || responder.respond(serve_vault_file(&backend, &path)));
         })
-        .invoke_handler(tauri::generate_handler![api])
+        .invoke_handler(tauri::generate_handler![api, test_notification])
         .build(tauri::generate_context!())
         .expect("error while building Groundwork");
 

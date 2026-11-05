@@ -8,7 +8,7 @@ import { message, newNoteFolder, useVault } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
 import { useInbox } from "../state/inbox";
-import { desktopNotify } from "./notify";
+import { testNotification } from "../state/inbox";
 import { keyLabel } from "../state/keys";
 import {
   closeTicket,
@@ -178,13 +178,11 @@ function commands(): Command[] {
       id: "test-notification",
       label: "Send a test notification",
       run: async () => {
-        const failed = await desktopNotify("Groundwork", "Notifications work.");
+        const failed = await testNotification();
         ui.notify(
           failed
-            ? `The notification failed: ${failed}`
-            : import.meta.env.DEV
-              ? "Sent. Not shown? Allow Groundwork Dev in System Settings → Notifications (run with `make dev`)."
-              : "Sent. Not shown? Allow Groundwork in System Settings → Notifications.",
+            ? `No notification: ${failed}`
+            : "A test question arrives in 5 seconds: switch to another app to see it.",
         );
       },
     },

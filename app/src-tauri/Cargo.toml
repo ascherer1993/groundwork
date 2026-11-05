@@ -21,12 +21,12 @@ percent-encoding = "2"
 serde_json.workspace = true
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
-tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
 
 [lints]
 workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# The library tauri-plugin-notification sends through; see `notify_as_dev_bundle`.
+# Inbox notifications with choices and replies (src/notifications.rs).
 mac-notification-sys = "0.6"
+objc2 = "0.6"
