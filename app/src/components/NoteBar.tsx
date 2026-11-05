@@ -5,44 +5,12 @@ import type { Action } from "../api/generated/Action";
 import type { GitState } from "../api/generated/GitState";
 import {
   closeTicket,
-  noteMode,
   openProjectView,
   restoreTicket,
   runAction,
-  showNote,
-  showSplit,
-  showWorkspace,
   useTickets,
 } from "../state/tickets";
 import { useUi } from "../state/ui";
-import { onVaultChange } from "../state/vault";
-import { useWorkspace } from "../state/workspace";
-import { useWorkspaces } from "../state/workspaces";
-
-/** The `workspace:` property of a note, following edits. */
-function useLinkedWorkspace(path: string): string | undefined {
-  const [id, setId] = useState<string>();
-  useEffect(() => {
-    let cancelled = false;
-    const load = () =>
-      api
-        .note(path)
-        .then((note) => {
-          const value = note?.frontmatter?.workspace;
-          if (!cancelled) setId(typeof value === "string" ? value : undefined);
-        })
-        .catch(() => {});
-    void load();
-    const stop = onVaultChange((changes) => {
-      if (changes.some((c) => c.path === path)) void load();
-    });
-    return () => {
-      cancelled = true;
-      stop();
-    };
-  }, [path]);
-  return id;
-}
 
 function gitSummary(git: GitState): { text: string; warn: boolean } {
   const parts: string[] = [];
@@ -54,18 +22,12 @@ function gitSummary(git: GitState): { text: string; warn: boolean } {
 }
 
 /**
- * Above a ticket's note, or any note with a workspace: the ticket's key,
- * status and git state, Note · Split · Workspace, actions, and close or
- * restore.
+ * Above a ticket's note: its key, status and git state, actions, and close
+ * or restore. Above a project's overview note: its project view.
  */
 export function NoteBar({ path }: { path: string }) {
   const ticket = useTickets((s) => s.tickets.find((t) => t.path === path));
   const project = useTickets((s) => s.projects.find((p) => p.overview === path));
-  const linked = useLinkedWorkspace(path);
-  const workspaceId = ticket?.workspace ?? linked;
-  const workspace = useWorkspaces((s) => s.list.find((w) => w.id === workspaceId));
-  useWorkspace((s) => s.view);
-  useWorkspace((s) => s.workspace);
   const [git, setGit] = useState<GitState | null>(null);
   const [actions, setActions] = useState<Action[]>([]);
   const active = !!ticket && ticket.status !== "closed";
@@ -98,8 +60,7 @@ export function NoteBar({ path }: { path: string }) {
     };
   }, [path, isTicket, worktreePath, active]);
 
-  if (!ticket && !workspace && !project) return null;
-  const mode = workspace ? noteMode(workspace.id) : null;
+  if (!ticket && !project) return null;
   const quick = actions.filter((a) => a.id === "open-ticket" || a.id === "open-vscode");
   const summary = git?.exists ? gitSummary(git) : null;
 
@@ -113,11 +74,7 @@ export function NoteBar({ path }: { path: string }) {
   };
 
   return (
-    <div
-      className="note-bar"
-      role="toolbar"
-      aria-label={ticket ? "Ticket" : workspace ? "Workspace" : "Project"}
-    >
+    <div className="note-bar" role="toolbar" aria-label={ticket ? "Ticket" : "Project"}>
       {ticket && (
         <>
           {ticket.key && <span className="ticket-key">{ticket.key}</span>}
@@ -149,26 +106,6 @@ export function NoteBar({ path }: { path: string }) {
         >
           <LayoutList size={12} /> Project view
         </button>
-      )}
-      {workspace && mode && (
-        <div className="segmented" role="group" aria-label="View">
-          {(["note", "split", "terminal"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={mode === m}
-              onClick={() =>
-                void (m === "note"
-                  ? showNote(path)
-                  : m === "split"
-                    ? showSplit(path, workspace.id)
-                    : showWorkspace(workspace.id))
-              }
-            >
-              {m === "note" ? "Note" : m === "split" ? "Split" : "Terminal"}
-            </button>
-          ))}
-        </div>
       )}
       {quick.map((a) => (
         <button

@@ -6,6 +6,7 @@ import {
   FolderKanban,
   FolderOpen,
   Globe,
+  LayoutList,
   PanelsTopLeft,
   type LucideIcon,
 } from "lucide-react";
@@ -13,7 +14,8 @@ import { type DragEvent, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { NodeKind } from "../api/generated/NodeKind";
 import type { TreeNode } from "../api/generated/TreeNode";
-import { displayName } from "../lib/paths";
+import type { ProjectInfo } from "../api/generated/ProjectInfo";
+import { displayName, projectViewPath } from "../lib/paths";
 import { openNoteWorkspace } from "../lib/commands";
 import { createProject, openProjectView, projectAt, ticketAt, useTickets } from "../state/tickets";
 import { confirmDialog, formDialog, type MenuEntry, promptDialog, useUi } from "../state/ui";
@@ -239,6 +241,59 @@ function RenameInput({ node }: { node: TreeNode }) {
   );
 }
 
+/**
+ * A project folder's entries with its view among them: right under its
+ * overview note, else first after its folders.
+ */
+function withProjectView(
+  children: TreeNode[],
+  project: ProjectInfo | undefined,
+): (TreeNode | ProjectInfo)[] {
+  if (!project) return children;
+  const overview = children.findIndex((c) => c.path === project.overview);
+  const firstFile = children.findIndex((c) => c.kind !== "folder");
+  const at = overview >= 0 ? overview + 1 : firstFile >= 0 ? firstFile : children.length;
+  return [...children.slice(0, at), project, ...children.slice(at)];
+}
+
+/** A project's view, listed in its folder like a file. */
+function ProjectViewItem({ project, depth }: { project: ProjectInfo; depth: number }) {
+  const path = projectViewPath(project.id);
+  const selected = useWorkspace((s) => s.activePath === path);
+  const ws = useWorkspace.getState;
+  return (
+    <li role="treeitem" aria-selected={selected} aria-label={`${project.name} project view`}>
+      <button
+        className={`tree-row${selected ? " selected" : ""}`}
+        style={{ paddingLeft: 8 + depth * 14 }}
+        title="This project’s events, people and tickets"
+        onClick={(e) => openProjectView(project.id, { newTab: e.metaKey || e.ctrlKey })}
+        onAuxClick={(e) => {
+          if (e.button === 1) openProjectView(project.id, { newTab: true });
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          useUi.getState().showMenu(e.clientX, e.clientY, [
+            {
+              label: "Open in new tab",
+              action: () => openProjectView(project.id, { newTab: true }),
+            },
+            { label: "Open to the right", action: () => ws().open(path, { split: "right" }) },
+          ]);
+        }}
+      >
+        <span className="chevron" />
+        <LayoutList size={14} className="kind-icon kind-project" />
+        <span className="tree-label">
+          {project.name}
+          <span className="ext"> project view</span>
+        </span>
+      </button>
+    </li>
+  );
+}
+
 function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
   const expanded = useVault((s) => s.expanded.has(node.path));
   const toggleFolder = useVault((s) => s.toggleFolder);
@@ -248,7 +303,10 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
   const [dropping, setDropping] = useState(false);
   const isFolder = node.kind === "folder";
   const { base, ext } = displayName(node.name, node.kind);
-  const isProject = useTickets((s) => isFolder && s.projects.some((p) => p.folder === node.path));
+  const project = useTickets((s) =>
+    isFolder ? s.projects.find((p) => p.folder === node.path) : undefined,
+  );
+  const isProject = !!project;
   const Icon = isProject
     ? FolderKanban
     : node.kind === "folder"
@@ -336,9 +394,13 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
       )}
       {isFolder && expanded && node.children && node.children.length > 0 && (
         <ul role="group">
-          {node.children.map((child) => (
-            <TreeItem key={child.path} node={child} depth={depth + 1} />
-          ))}
+          {withProjectView(node.children, project).map((child) =>
+            "id" in child ? (
+              <ProjectViewItem key="project-view" project={child} depth={depth + 1} />
+            ) : (
+              <TreeItem key={child.path} node={child} depth={depth + 1} />
+            ),
+          )}
         </ul>
       )}
     </li>

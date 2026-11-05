@@ -70,6 +70,23 @@ test("a project's view lists its events, with search, filters and sort", async (
     .getByRole("button", { name: /Kickoff/ })
     .click();
   await expect(page.locator(".notes-side .dv-tab.dv-active-tab")).toContainText("Kickoff");
+
+  // The tree lists it in the project's folder, right under the overview note.
+  const tree = page.getByRole("tree", { name: "Files" });
+  const acme = tree.getByRole("treeitem", { name: "Acme", exact: true }).first();
+  await expect
+    .poll(() =>
+      acme
+        .locator(":scope > ul > li")
+        .evaluateAll((items) => items.map((i) => i.getAttribute("aria-label"))),
+    )
+    .toEqual(["demos", "Meetings", "Work", "Acme", "Acme project view"]);
+  await tree.getByRole("treeitem", { name: "Acme project view" }).click();
+  await expect(view(page).getByRole("heading", { name: "Acme" })).toBeVisible();
+  await expect(tree.getByRole("treeitem", { name: "Acme project view" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
 });
 
 test("a project's people are its members and the people its notes mention", async ({ page }) => {

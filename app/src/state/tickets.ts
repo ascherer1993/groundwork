@@ -18,7 +18,7 @@ import { openExternalUrl } from "../lib/fileUrl";
 import { projectViewPath } from "../lib/paths";
 import { confirmDialog, formDialog, useUi } from "./ui";
 import { message, onVaultChange, useVault } from "./vault";
-import { isTerminal, type TerminalParams, useWorkspace, type View } from "./workspace";
+import { isTerminal, type TerminalParams, useWorkspace } from "./workspace";
 import { useWorkspaces } from "./workspaces";
 
 interface TicketsState {
@@ -165,28 +165,6 @@ async function openCreated(created: CreatedTicket) {
   await useWorkspaces.getState().refresh();
   await useWorkspaces.getState().ready(workspace.id);
   await showSplit(created.ticket.path, workspace.id, setupLine(created.setup));
-}
-
-/**
- * Note · Split · Terminal for a note with a workspace: the view on screen,
- * counting split and terminal only while its workspace is the current one.
- */
-export function noteMode(workspace: string): View {
-  const ws = useWorkspace.getState();
-  return ws.workspace === workspace ? ws.view : "note";
-}
-
-/** The note alone. */
-export function showNote(path: string) {
-  useWorkspace.getState().setView("note");
-  useWorkspace.getState().open(path);
-}
-
-/** The note's workspace's terminals alone, with a terminal if it has none. */
-export async function showWorkspace(workspace: string) {
-  const ws = useWorkspace.getState();
-  ws.showWorkspace(workspace, "terminal");
-  if (!ws.docks[workspace]?.panels.length) await ws.openTerminal();
 }
 
 /** The note beside its workspace's terminals. `run` goes to a new terminal. */

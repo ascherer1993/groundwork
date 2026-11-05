@@ -67,6 +67,7 @@ async function command(page: Page, name: string) {
 const tab = (page: Page, name: string | RegExp) =>
   page.locator(`${NOTES} .dv-tab`).filter({ hasText: name });
 const bar = (page: Page) => page.locator(`${NOTES} .note-bar`).first();
+const views = (page: Page) => page.getByRole("group", { name: "Main view" });
 const terminals = (page: Page) => page.locator(TERMINALS);
 
 test("a ticket gets a worktree, a note and a workspace, and closes and restores", async ({
@@ -107,22 +108,22 @@ test("a ticket gets a worktree, a note and a workspace, and closes and restores"
   await expect(bar(page)).toContainText("TEAM-200");
   await expect(bar(page)).toContainText("Active");
   await expect(bar(page)).toContainText("TEAM-200-fix-signup");
-  await expect(bar(page).getByRole("button", { name: "Split" })).toHaveAttribute(
+  await expect(views(page).getByRole("button", { name: "Split" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
 
-  // Note · Split · Terminal.
-  await bar(page).getByRole("button", { name: "Note" }).click();
+  // Notes · Split · Terminals, in the top bar.
+  await views(page).getByRole("button", { name: "Notes" }).click();
   await expect(terminals(page)).toHaveCount(0);
   await expect(tab(page, "TEAM-200 Fix signup")).toBeVisible();
-  await expect(bar(page).getByRole("button", { name: "Note" })).toHaveAttribute(
+  await expect(views(page).getByRole("button", { name: "Notes" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
-  await bar(page).getByRole("button", { name: "Split" }).click();
+  await views(page).getByRole("button", { name: "Split" }).click();
   await expect(terminals(page)).toHaveCount(1);
-  await bar(page).getByRole("button", { name: "Terminal" }).click();
+  await views(page).getByRole("button", { name: "Terminals" }).click();
   await expect(page.getByRole("region", { name: "Notes", exact: true })).toBeHidden();
   await expect(terminals(page)).toHaveCount(1);
   await page.keyboard.press("Control+Meta+2");
@@ -194,11 +195,11 @@ test("tickets blocks, adding a worktree to a note, and workspaces for any note",
   expect(existsSync(join(CODE, "acme-worktrees", "TEAM-500-welcome"))).toBe(true);
 
   // Any note can have a workspace; Jane works on Acme, so it starts there.
-  await bar(page).getByRole("button", { name: "Note" }).click();
+  await views(page).getByRole("button", { name: "Notes" }).click();
   await quickOpen(page, "Jane Doe");
   await command(page, "Open this note’s workspace");
   await expect(terminals(page)).toHaveCount(1);
-  await expect(bar(page).getByRole("button", { name: "Split" })).toHaveAttribute(
+  await expect(views(page).getByRole("button", { name: "Split" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
