@@ -2409,14 +2409,21 @@ button.link-button:hover:not(:disabled) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-decoration: line-through;
+  border-style: dashed;
 }
 
 .command-bar-chip[aria-pressed="true"] {
+  border-style: solid;
   border-color: transparent;
   background: var(--accent-soft);
   color: var(--link);
-  text-decoration: none;
+}
+
+.command-bar-scope {
+  align-self: center;
+  margin-right: 2px;
+  color: var(--text-faint);
+  font-size: 12px;
 }
 
 .command-bar-chip:hover {
@@ -2433,16 +2440,15 @@ button.link-button:hover:not(:disabled) {
   margin-left: 6px;
 }
 
-/* Its own window: the bar fills it. */
+/* Its own window, a transparent panel with the system's shadow: the bar fills it. */
 .command-bar-body {
-  background: var(--bg-elevated);
+  background: transparent;
   overflow: hidden;
 }
 
 .command-bar-window .command-bar {
   width: 100%;
   box-sizing: border-box;
-  border: none;
-  border-radius: 0;
+  border-radius: 12px;
   box-shadow: none;
 }

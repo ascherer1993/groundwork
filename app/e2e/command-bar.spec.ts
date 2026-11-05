@@ -20,7 +20,7 @@ function calls(from = 0): string {
   }
 }
 
-test("the command bar starts Claude in the Agents workspace with what was open", async ({
+test("the command bar starts Claude on the whole vault, or what you point it at", async ({
   page,
 }) => {
   await page.keyboard.press("Meta+o");
@@ -32,24 +32,24 @@ test("the command bar starts Claude in the Agents workspace with what was open",
   // Its shortcut, which the desktop app makes global.
   await page.keyboard.press("Control+Alt+Space");
   const bar = page.getByRole("form", { name: "Ask Claude" });
-  const chips = bar.getByRole("group", { name: "What Claude is told about" }).getByRole("button");
+  const chips = bar.getByRole("group", { name: "Point Claude at" }).getByRole("button");
   await expect(chips).toHaveText(["2026-11-02 Kickoff", "Acme"]);
-  await expect(bar.getByRole("textbox", { name: "Ask Claude" })).toBeFocused();
-  // Leave the project out.
-  await chips.filter({ hasText: "Acme" }).click();
+  // They start off: the whole vault is in scope.
+  await expect(chips.filter({ hasText: "Kickoff" })).toHaveAttribute("aria-pressed", "false");
   await expect(chips.filter({ hasText: "Acme" })).toHaveAttribute("aria-pressed", "false");
-  await page.keyboard.type("Summarise the decisions");
+  await expect(bar.getByRole("textbox", { name: "Ask Claude" })).toBeFocused();
+  await page.keyboard.type("Open a worktree for TEAM-9");
   await page.keyboard.press("Enter");
 
   // It works in the background: the notes stay as they were.
   await expect(bar).toBeHidden();
   await expect(page.locator(".toast")).toContainText("Claude is on it, in the Agents workspace.");
   await expect(page.getByRole("region", { name: "Terminals" })).toBeHidden();
-  await expect.poll(() => calls(before)).toContain("Summarise the decisions");
+  await expect.poll(() => calls(before)).toContain("Open a worktree for TEAM-9");
   const call = calls(before);
   expect(call).toContain("--append-system-prompt The user started this session from Groundwork's");
-  expect(call).toContain("- The note they had open: Projects/Acme/Meetings/2026-11-02 Kickoff.md");
-  expect(call).not.toContain("Their project");
+  expect(call).toContain("all of it is in scope");
+  expect(call).not.toContain("They pointed you at");
 
   // ⌘↩ shows it; the palette opens the bar too. Agents isn't offered as a chip.
   const again = calls().length;
@@ -57,13 +57,19 @@ test("the command bar starts Claude in the Agents workspace with what was open",
   await page.keyboard.type("Ask Claude");
   await page.keyboard.press("Enter");
   await expect(chips).toHaveText(["2026-11-02 Kickoff", "Acme"]);
-  await page.keyboard.type("What’s next for Acme?");
+  // Pointed at the note, not the project.
+  await chips.filter({ hasText: "Kickoff" }).click();
+  await expect(chips.filter({ hasText: "Kickoff" })).toHaveAttribute("aria-pressed", "true");
+  await expect(bar.getByRole("textbox", { name: "Ask Claude" })).toBeFocused();
+  await page.keyboard.type("Summarise this");
   await page.keyboard.press("Meta+Enter");
   const terminals = page.getByRole("region", { name: "Terminals" });
   await expect(terminals).toBeVisible();
   await expect(terminals.locator(".terminals-name")).toHaveText("Agents");
-  await expect.poll(() => calls(again)).toContain("What’s next for Acme?");
-  expect(calls(again)).toContain("- Their project: Acme (`groundwork project show acme`)");
+  await expect.poll(() => calls(again)).toContain("Summarise this");
+  expect(calls(again)).toContain("They pointed you at");
+  expect(calls(again)).toContain("- The note Projects/Acme/Meetings/2026-11-02 Kickoff.md");
+  expect(calls(again)).not.toContain("- The project Acme");
 
   // Esc closes it without starting anything.
   await page.keyboard.press("Control+Alt+Space");

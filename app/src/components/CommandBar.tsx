@@ -6,7 +6,8 @@ const ICONS = { note: FileText, project: FolderKanban, workspace: SquareTerminal
 const LINES = 6;
 
 /**
- * Ask Claude: a request, typed or dictated, and chips for what you had open.
+ * Ask Claude: a request, typed or dictated. The whole vault is in scope;
+ * chips for what you had open point Claude at it, and start off.
  * ↩ starts it in the background, ⌘↩ starts it and shows it, ⇧↩ adds a line.
  */
 export function CommandBar({
@@ -19,7 +20,7 @@ export function CommandBar({
   onClose: () => void;
 }) {
   const [prompt, setPrompt] = useState("");
-  const [off, setOff] = useState<Set<string>>(new Set());
+  const [on, setOn] = useState<Set<string>>(new Set());
   const input = useRef<HTMLTextAreaElement>(null);
   const key = (c: BarChip) => `${c.kind}:${c.value}`;
 
@@ -34,7 +35,7 @@ export function CommandBar({
 
   const start = (show: boolean) => {
     if (!prompt.trim()) return;
-    void onStart({ prompt: prompt.trim(), chips: chips.filter((c) => !off.has(key(c))), show });
+    void onStart({ prompt: prompt.trim(), chips: chips.filter((c) => on.has(key(c))), show });
   };
 
   return (
@@ -71,22 +72,25 @@ export function CommandBar({
         />
       </div>
       <div className="command-bar-foot">
-        <div className="command-bar-chips" role="group" aria-label="What Claude is told about">
+        <div className="command-bar-chips" role="group" aria-label="Point Claude at">
+          {chips.length > 0 && <span className="command-bar-scope">Whole vault, or:</span>}
           {chips.map((c) => {
             const Icon = ICONS[c.kind];
-            const on = !off.has(key(c));
+            const pressed = on.has(key(c));
             return (
               <button
                 key={key(c)}
                 type="button"
                 className="command-bar-chip"
-                aria-pressed={on}
-                title={on ? `Claude is told about this ${c.kind}` : `Not told about this ${c.kind}`}
+                aria-pressed={pressed}
+                title={
+                  pressed ? `Claude is pointed at this ${c.kind}` : `Point Claude at this ${c.kind}`
+                }
                 onClick={() => {
-                  setOff((was) => {
+                  setOn((was) => {
                     const next = new Set(was);
-                    if (on) next.add(key(c));
-                    else next.delete(key(c));
+                    if (pressed) next.delete(key(c));
+                    else next.add(key(c));
                     return next;
                   });
                   input.current?.focus();

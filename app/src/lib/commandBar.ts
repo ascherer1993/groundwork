@@ -4,7 +4,7 @@
  * loads only this, not the app's state.
  */
 
-/** Something you had open, which the session is told about unless you turn it off. */
+/** Something you had open, which you can point the session at (they start off). */
 export interface BarChip {
   kind: "note" | "project" | "workspace";
   /** A vault path, a project id or a workspace name. */
@@ -15,7 +15,7 @@ export interface BarChip {
 /** What the bar asks for. */
 export interface BarRequest {
   prompt: string;
-  /** The chips left on. */
+  /** The chips turned on. */
   chips: BarChip[];
   /** Show the session, rather than leave it to work in the background. */
   show: boolean;
@@ -24,8 +24,6 @@ export interface BarRequest {
 /** What the bar's window is told when it opens. */
 export interface BarOpening {
   chips: BarChip[];
-  /** Whether Groundwork was in front: if not, closing the bar goes back to the app you were in. */
-  wasActive: boolean;
 }
 
 /** The bar's window → the main window: start this. */

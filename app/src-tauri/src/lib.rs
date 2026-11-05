@@ -7,6 +7,7 @@ use serde_json::Value;
 use tauri::http::{Response, StatusCode, header};
 use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 
+mod command_bar;
 #[cfg(target_os = "macos")]
 mod notifications;
 #[cfg(target_os = "macos")]
@@ -113,6 +114,17 @@ fn menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     Menu::with_items(app, &[&app_menu, &edit, &window])
 }
 
+/// Lets the command bar's window be a macOS panel.
+#[cfg(target_os = "macos")]
+fn tauri_nspanel_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri_nspanel::init()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn tauri_nspanel_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("nspanel").build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -120,9 +132,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_nspanel_plugin())
         .setup(|app| {
             #[cfg(target_os = "macos")]
             notifications::setup(&app.config().identifier);
+            command_bar::setup(app.handle())?;
             let handle = app.handle().clone();
             let backend = Arc::new(Backend::new(
                 Host::Desktop,
@@ -144,7 +158,12 @@ pub fn run() {
             let path = request.uri().path().to_string();
             std::thread::spawn(move || responder.respond(serve_vault_file(&backend, &path)));
         })
-        .invoke_handler(tauri::generate_handler![api, test_notification])
+        .invoke_handler(tauri::generate_handler![
+            api,
+            test_notification,
+            command_bar::show_command_bar,
+            command_bar::hide_command_bar
+        ])
         .build(tauri::generate_context!())
         .expect("error while building Groundwork");
 

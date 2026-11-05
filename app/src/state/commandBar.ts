@@ -3,9 +3,11 @@
  * a global shortcut opens it in a floating window of its own
  * (`command-bar.html`, `commandBar.tsx`); in the browser, and from the
  * palette, it opens over the app. Enter starts a fresh Claude session in the
- * "Agents" workspace, in the vault, with what you had open (the chips you
- * kept) added to its system prompt. Its questions reach the inbox.
+ * "Agents" workspace, in the vault. The whole vault is in scope: Claude finds
+ * what you mean itself. Chips for what you had open can point it at
+ * something; they start off. Its questions reach the inbox.
  */
+import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -126,17 +128,15 @@ export async function startFromBar(request: BarRequest): Promise<boolean> {
 // ---- The desktop app: a global shortcut and a window of its own -------------
 
 const BAR_WINDOW = "command-bar";
+/**
+ * Shows the bar's window: a panel that floats over whatever app and Space
+ * you're on without bringing Groundwork forward (`command_bar.rs`).
+ */
 async function showBarWindow(): Promise<boolean> {
-  const bar = await WebviewWindow.getByLabel(BAR_WINDOW);
-  if (!bar) return false;
-  const opening: BarOpening = {
-    chips: await currentChips(),
-    wasActive: await getCurrentWindow().isFocused(),
-  };
+  if (!(await WebviewWindow.getByLabel(BAR_WINDOW))) return false;
+  const opening: BarOpening = { chips: await currentChips() };
   await emitTo(BAR_WINDOW, OPEN_EVENT, opening);
-  await bar.center();
-  await bar.show();
-  await bar.setFocus();
+  await invoke("show_command_bar");
   return true;
 }
 

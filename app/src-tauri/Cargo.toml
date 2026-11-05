@@ -19,7 +19,8 @@ groundwork-core.workspace = true
 groundwork-protocol.workspace = true
 percent-encoding = "2"
 serde_json.workspace = true
-tauri = { version = "2", features = [] }
+# macos-private-api: the command bar's panel (tauri-nspanel) is transparent.
+tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2"
 # The command bar's shortcut, from any app (PLAN §5.10).
 tauri-plugin-global-shortcut = "2"
@@ -32,3 +33,5 @@ workspace = true
 # Inbox notifications with choices and replies (src/notifications.rs).
 mac-notification-sys = "0.6"
 objc2 = "0.6"
+# The command bar as a panel that doesn't bring the app forward (src/command_bar.rs).
+tauri-nspanel = "2.1"

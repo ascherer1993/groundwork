@@ -1,14 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "command-bar",
-  "description": "The command bar's window: it hides itself, fits its size, and hands requests to the main window",
+  "description": "The command bar's window: it fits its size and hands requests to the main window (src/command_bar.rs shows and hides it)",
   "windows": [
     "command-bar"
   ],
   "permissions": [
     "core:default",
-    "core:window:allow-hide",
-    "core:window:allow-set-size",
-    "core:app:allow-app-hide"
+    "core:window:allow-set-size"
   ]
 }

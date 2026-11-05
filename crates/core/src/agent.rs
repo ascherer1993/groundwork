@@ -114,20 +114,32 @@ impl Session {
         }
     }
 
-    /// What Claude is told about a command bar session.
+    /// What Claude is told about a command bar session. The whole vault is
+    /// in scope: it finds what the user means itself. Chips the user turned
+    /// on point it at something in particular.
     pub fn command_bar_context(&self, context: &AgentContext) -> Result<String> {
         let mut text = String::from(
             "The user started this session from Groundwork's command bar: a quick request, \
              typed or dictated, from wherever they were. The working directory is their \
-             Groundwork notes vault; use the groundwork skill and CLI to work in it. When you \
-             need to ask them something, use `groundwork ask`, so it reaches their inbox: they \
-             may not be watching this terminal.\n",
+             Groundwork notes vault, and all of it is in scope. Work out what they mean and \
+             where it lives yourself, rather than asking them to find it, using the groundwork \
+             skill and CLI:\n\
+             - Find notes, people, projects and tickets: `groundwork search` (by words), \
+             `groundwork search --smart` (by meaning, when smart search is set up), \
+             `groundwork who <topic>`, `groundwork project list` / `show`, `groundwork ticket list`.\n\
+             - Do things in the app for them: `groundwork ticket create` makes a ticket's note, \
+             worktree and workspace; `groundwork workspace open`, `groundwork tab new \
+             --workspace <name> --cwd <folder>` and `groundwork open <note>` show things in \
+             Groundwork's window.\n\
+             - When it's ambiguous or you need a decision, ask with `groundwork ask`, so it \
+             reaches their inbox: they may not be watching this terminal. When you're done, say \
+             what you did in a line or two.\n",
         );
-        let mut open = Vec::new();
+        let mut pointed = Vec::new();
         if let Some(note) = context.note.as_deref().filter(|n| !n.is_empty()) {
             self.vault().resolve(note)?;
-            open.push(format!(
-                "- The note they had open: {note} (`groundwork note read {}`)",
+            pointed.push(format!(
+                "- The note {note} (`groundwork note read {}`)",
                 shell_quote(note)
             ));
         }
@@ -136,22 +148,21 @@ impl Session {
             let p = config
                 .project(project)
                 .ok_or_else(|| CoreError::NotFound(format!("project {project}")))?;
-            open.push(format!(
-                "- Their project: {} (`groundwork project show {}`), in {}/",
+            pointed.push(format!(
+                "- The project {} (`groundwork project show {}`), in {}/",
                 p.name, p.id, p.folder
             ));
         }
         if let Some(workspace) = context.workspace.as_deref().filter(|w| !w.is_empty()) {
-            open.push(format!(
-                "- Their workspace in Groundwork: {workspace} (`groundwork workspace list`)"
+            pointed.push(format!(
+                "- Their workspace {workspace} in Groundwork (`groundwork workspace list`)"
             ));
         }
-        if !open.is_empty() {
+        if !pointed.is_empty() {
             text.push_str(
-                "\nWhat they were working on, which their request may be about (\"this\", \
-                 \"here\"…):\n",
+                "\nThey pointed you at these, so \"this\" or \"here\" probably means them:\n",
             );
-            text.push_str(&open.join("\n"));
+            text.push_str(&pointed.join("\n"));
             text.push('\n');
         }
         Ok(text)
@@ -290,21 +301,22 @@ mod tests {
         assert_eq!(files.len(), 2, "{command}");
         let system = fs::read_to_string(files[0]).unwrap();
         assert!(system.contains("Groundwork's command bar"));
+        assert!(system.contains("all of it is in scope"));
         assert!(system.contains(
-            "- The note they had open: Projects/Acme/Meetings/2026-11-02 Kickoff.md \
+            "- The note Projects/Acme/Meetings/2026-11-02 Kickoff.md \
              (`groundwork note read 'Projects/Acme/Meetings/2026-11-02 Kickoff.md'`)"
         ));
         assert!(
-            system.contains(
-                "- Their project: Acme (`groundwork project show acme`), in Projects/Acme/"
-            )
+            system
+                .contains("- The project Acme (`groundwork project show acme`), in Projects/Acme/")
         );
-        assert!(system.contains("- Their workspace in Groundwork: TEAM-12"));
+        assert!(system.contains("- Their workspace TEAM-12 in Groundwork"));
         assert_eq!(fs::read_to_string(files[1]).unwrap(), "Summarise this");
 
-        // With every chip off, only what the session is.
+        // With every chip off (as they start), the whole vault.
         let bare = s.command_bar_context(&AgentContext::default()).unwrap();
-        assert!(bare.contains("groundwork ask") && !bare.contains("What they were working on"));
+        assert!(bare.contains("groundwork search --smart") && bare.contains("groundwork ask"));
+        assert!(!bare.contains("They pointed you at"));
         let outside = AgentContext {
             note: Some("../secrets.md".into()),
             ..Default::default()
