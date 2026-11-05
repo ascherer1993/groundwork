@@ -1193,6 +1193,10 @@ button.terminals-name:hover {
   margin-left: auto;
 }
 
+.workspaces-header .icon + .icon {
+  margin-left: 0;
+}
+
 .area-list,
 .area-tabs,
 .session-list {

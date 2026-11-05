@@ -4,6 +4,7 @@
 //! to `.obsidian/`; Groundwork's own vault config lives in `.groundwork/`.
 
 pub mod activity;
+pub mod agent;
 pub mod config;
 pub mod daily;
 pub mod dates;

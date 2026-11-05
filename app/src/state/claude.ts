@@ -1,13 +1,13 @@
 /**
  * Claude Code in terminal tabs: the session each tab last ran (from the
  * hooks; kept in the tab's params too, so it outlives a restart), and the
- * tab menu's Fork session and Resume conversation.
+ * tab menu's Fork session and Resume conversation. Also agents: a Claude
+ * Code session started with a prompt, in a tab you can watch.
  */
 import { api } from "../api/client";
 import { useTerminals } from "./terminals";
-import type { MenuEntry } from "./ui";
-import { useUi } from "./ui";
-import { message } from "./vault";
+import { formDialog, type MenuEntry, useUi } from "./ui";
+import { message, useVault } from "./vault";
 import { type TerminalParams, useWorkspace } from "./workspace";
 
 /** Session ids are typed into a shell. */
@@ -83,4 +83,62 @@ export function terminalMenu(terminal: string): MenuEntry[] {
 export function showTerminalMenu(e: React.MouseEvent, terminal: string) {
   e.preventDefault();
   useUi.getState().showMenu(e.clientX, e.clientY, terminalMenu(terminal));
+}
+
+interface AgentOptions {
+  /** Where it starts: the vault by default. */
+  cwd?: string;
+  /** The workspace whose terminals it joins: the current one by default. */
+  workspace?: string;
+  /** Asked first; the answers fill `{{input.<name>}}`. */
+  inputs?: { name: string; label: string }[];
+  /** The dialog's title, when there are inputs. */
+  title?: string;
+}
+
+/**
+ * Starts Claude Code in a new terminal tab with a prompt: an agent action's
+ * own, or a named one (`new-ticket`, `triage`). Returns whether it started.
+ */
+export async function launchAgent(
+  which: { prompt: string } | { name: string },
+  opts: AgentOptions = {},
+): Promise<boolean> {
+  const vars: Record<string, string> = {};
+  if (opts.inputs?.length) {
+    const values = await formDialog({
+      title: opts.title ?? "Start Claude",
+      fields: opts.inputs.map((i) => ({ label: i.label })),
+      confirmLabel: "Start",
+    });
+    if (!values) return false;
+    opts.inputs.forEach((input, i) => (vars[`input.${input.name}`] = values[i]?.trim() ?? ""));
+  }
+  try {
+    const command = await api.agentCommand(which, vars);
+    const ws = useWorkspace.getState();
+    if (opts.workspace && ws.docks[opts.workspace]) ws.showWorkspace(opts.workspace);
+    else if (ws.view === "note") ws.setView("split");
+    await ws.openTerminal(opts.cwd ?? useVault.getState().vault?.path, { run: command });
+    return true;
+  } catch (err) {
+    useUi.getState().notify(message(err));
+    return false;
+  }
+}
+
+/** "New ticket from Jira": Claude reads the issue and sets the ticket up. */
+export function newTicketFromJira() {
+  return launchAgent(
+    { name: "new-ticket" },
+    {
+      title: "New ticket from Jira",
+      inputs: [{ name: "ticket", label: "Jira key or link" }],
+    },
+  );
+}
+
+/** Claude goes through overdue and stale todos, asking about each in the inbox. */
+export function triageTodos() {
+  return launchAgent({ name: "triage" });
 }

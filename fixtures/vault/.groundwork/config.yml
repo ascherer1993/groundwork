@@ -15,3 +15,8 @@ actions:
     label: Show worktree in Finder
     kind: shell
     run: open "{{worktree.path}}"
+  - id: summarise
+    label: Summarise with Claude
+    kind: agent                   # a Claude Code session in a tab
+    input: { focus: "What should it focus on?" }
+    prompt: "Summarise [[{{note.path}}]] for the {{project.name}} project, focusing on {{input.focus}}."

@@ -198,14 +198,26 @@ pub struct ComponentContext {
 pub struct Action {
     pub id: String,
     pub label: String,
-    /// `shell`, `terminal` or `url`.
+    /// `shell`, `terminal`, `url` or `agent`.
     pub kind: String,
+    /// The command line, the URL, or an agent's prompt (with its
+    /// `{{input.<name>}}` tags left for the answers).
     pub run: String,
+    /// An agent's questions for the user before it starts.
+    pub inputs: Vec<ActionInput>,
     /// Absolute.
     pub cwd: String,
     /// Where it's defined: `built-in`, `vault`, `project:<id>`, `repo:<id>`
     /// or `component:<repo>:<component>`.
     pub source: String,
+}
+
+/// Something an agent action asks for before it starts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+pub struct ActionInput {
+    pub name: String,
+    pub label: String,
 }
 
 /// Everything an agent (or the app) needs to know about a place: a note, or
@@ -1340,6 +1352,7 @@ impl Session {
                 label: "Open in VS Code".into(),
                 kind: "shell".into(),
                 run: format!("code {}", shell_quote(w)),
+                inputs: Vec::new(),
                 cwd: w.clone(),
                 source: "built-in".into(),
             });
@@ -1350,18 +1363,54 @@ impl Session {
                 label: "Open Jira ticket".into(),
                 kind: "url".into(),
                 run: url,
+                inputs: Vec::new(),
                 cwd: default_cwd.clone(),
                 source: "built-in".into(),
             });
         }
         let mut add =
             |def: &ActionDef, source: String, vars: &HashMap<String, String>, cwd: &str| {
-                if !matches!(def.kind.as_str(), "shell" | "terminal" | "url" | "") {
-                    return; // Agent actions come with Phase 6.
-                }
-                let Some(run) = expand(&def.run, vars) else {
+                if !matches!(
+                    def.kind.as_str(),
+                    "shell" | "terminal" | "url" | "agent" | ""
+                ) {
                     return;
+                }
+                let agent = def.kind == "agent";
+                let run = if agent {
+                    // The answers come later: their tags stay as they are.
+                    let mut vars = vars.clone();
+                    for name in def.input.keys() {
+                        vars.insert(format!("input.{name}"), format!("{{{{input.{name}}}}}"));
+                    }
+                    let prompt = match (&def.prompt, &def.prompt_file) {
+                        (Some(p), _) => Some(p.clone()),
+                        (None, Some(file)) => self
+                            .vault()
+                            .resolve(file)
+                            .ok()
+                            .and_then(|path| std::fs::read_to_string(path).ok()),
+                        (None, None) => None,
+                    };
+                    match prompt.and_then(|p| expand(&p, &vars)) {
+                        Some(p) => p,
+                        None => return,
+                    }
+                } else {
+                    match expand(&def.run, vars) {
+                        Some(run) => run,
+                        None => return,
+                    }
                 };
+                let inputs = def
+                    .input
+                    .iter()
+                    .filter(|_| agent)
+                    .map(|(name, label)| ActionInput {
+                        name: name.clone(),
+                        label: label.clone(),
+                    })
+                    .collect();
                 let cwd = match &def.cwd {
                     Some(c) => match expand(c, vars) {
                         Some(c) => c,
@@ -1390,6 +1439,7 @@ impl Session {
                         def.kind.clone()
                     },
                     run,
+                    inputs,
                     cwd,
                     source,
                 });
@@ -2019,6 +2069,7 @@ mod tests {
                 "open-vscode",
                 "open-ticket",
                 "worktree-finder",
+                "summarise",
                 "storybook",
                 "acme-platform:web:dev",
                 "acme-platform:web:test"
@@ -2026,7 +2077,7 @@ mod tests {
         );
         let finder = &ctx.actions[2];
         assert_eq!(finder.run, format!("open \"{}\"", wt.display()));
-        let storybook = &ctx.actions[3];
+        let storybook = &ctx.actions[4];
         assert_eq!(
             (storybook.kind.as_str(), storybook.cwd.as_str()),
             ("terminal", wt.join("apps/web").to_str().unwrap())

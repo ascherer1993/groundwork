@@ -1,7 +1,8 @@
-import { Plus } from "lucide-react";
+import { Plus, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { StrayWorktree } from "../api/generated/StrayWorktree";
+import { newTicketFromJira } from "../state/claude";
 import { useTickets } from "../state/tickets";
 import { onVaultChange } from "../state/vault";
 import { type TicketGrouping, TicketList } from "./TicketList";
@@ -82,6 +83,14 @@ export function TicketsPanel() {
     <div className="tickets-panel">
       <div className="section-header workspaces-header">
         Tickets
+        <button
+          className="icon"
+          aria-label="New ticket from Jira"
+          title="New ticket from Jira: Claude reads the issue and sets it up"
+          onClick={() => void newTicketFromJira()}
+        >
+          <Sparkles size={13} />
+        </button>
         <button
           className="icon"
           aria-label="New ticket"

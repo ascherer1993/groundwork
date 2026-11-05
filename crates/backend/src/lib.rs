@@ -633,6 +633,20 @@ impl Backend {
                 self.session()?
                     .context(note.as_deref(), cwd.as_deref().map(Path::new))?,
             ),
+            Request::AgentCommand { prompt, name, vars } => {
+                let session = self.session()?;
+                let prompt = match (prompt, name) {
+                    (Some(p), _) => p,
+                    (None, Some(name)) => session.agent_prompt(&name)?,
+                    (None, None) => {
+                        return Err(ApiError::new(
+                            ErrorCode::BadRequest,
+                            "give a prompt or a prompt's name",
+                        ));
+                    }
+                };
+                to_value(session.agent_command(&prompt, &vars)?)
+            }
             Request::ActionRun { id, note, cwd } => {
                 let context = self
                     .session()?

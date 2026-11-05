@@ -81,6 +81,7 @@ pub fn ask(
     choices: Vec<String>,
     link: Option<String>,
     timeout: Option<u64>,
+    no_wait: bool,
     json: bool,
 ) -> Fallible<()> {
     let item = post(
@@ -93,18 +94,30 @@ pub fn ask(
             vault: vault(),
         },
     )?;
+    if no_wait {
+        if json {
+            return print_json(&item);
+        }
+        println!("{}", item.id);
+        return Ok(());
+    }
+    wait(&item.id, timeout, json)
+}
+
+/// Waits for the answer to a question posted with `ask --no-wait`.
+pub fn wait(id: &str, timeout: Option<u64>, json: bool) -> Fallible<()> {
     let deadline = timeout.map(|s| Instant::now() + Duration::from_secs(s));
     let item = loop {
         let left = deadline.map(|d| d.saturating_duration_since(Instant::now()));
         if left == Some(Duration::ZERO) {
-            dismiss(&item.id);
+            dismiss(id);
             return Err(format!(
                 "no answer after {} seconds; the question was withdrawn",
                 timeout.unwrap_or_default()
             ));
         }
         let slice = left.map_or(Duration::from_secs(30), |l| l.min(Duration::from_secs(30)));
-        if let Some(done) = wait_once(&item.id, slice)? {
+        if let Some(done) = wait_once(id, slice)? {
             break done;
         }
     };

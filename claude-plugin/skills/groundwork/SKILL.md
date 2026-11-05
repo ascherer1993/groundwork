@@ -1,6 +1,6 @@
 ---
 name: groundwork
-description: Use when working in the user's Groundwork notes vault (an Obsidian-compatible folder of Markdown notes) — reading or writing notes, daily notes, todos, templates, interactive HTML pages, or searching what they've written. Covers the vault's conventions and the `groundwork` CLI.
+description: Use when working in the user's Groundwork notes vault (an Obsidian-compatible folder of Markdown notes) — reading or writing notes, daily notes, todos (including triaging them), templates, interactive HTML pages, or searching what they've written. Covers the vault's conventions and the `groundwork` CLI.
 ---
 
 # Working in a Groundwork vault
@@ -126,6 +126,25 @@ Statuses: `[ ]` open, `[x]` done, `[-]` cancelled, `[/]` in progress.
 
 **Priorities** order what to raise with the user: overdue p0/p1 todos matter most. When the user asks what's on their plate, start with `groundwork todo list --due today` and `--due overdue`.
 
+### Triaging todos
+
+When the user asks you to triage, review or clean up their todos (the app's "Triage todos" starts a session asking for it), go through the ones that need a decision and ask about each through the inbox, so they can answer from anywhere:
+
+1. **Gather them.** `groundwork todo list --due overdue --json`, then `groundwork todo list --stale 14d --due none --json` (old and undated). Most urgent first: overdue before stale, then by priority. Take at most 10 in a run; say how many are left.
+2. **Ask about them all at once.** For each, post a question without waiting, and keep the id it prints:
+
+   ```sh
+   groundwork ask "Overdue since Nov 2 (p1): Ask Jane about the auth migration" \
+     --choice Keep --choice Tomorrow --choice "Next week" --choice Drop --choice "Make it a ticket" \
+     --link "[[2026-11-02]]" --no-wait
+   ```
+
+   Say why it's there (overdue since when, or how old) and its priority, quote the todo, and link the note it's in. Then `groundwork wait <id>` for each answer in turn; the user answers them in whatever order.
+3. **Do what they answered.** Keep: leave it as it is. Tomorrow, Next week or a typed date: `groundwork todo reschedule <id> <date>` (`tomorrow`, `+1w`, `fri`…). Drop: `groundwork todo cancel <id>`. Make it a ticket: `groundwork ticket create --title "<todo>" --project <its project> --no-worktree` (ask which project if its note has none; the worktree comes when they start on it), then `groundwork todo done <id>`. Anything else they typed: do what it says, or ask in the conversation if it's unclear. A dismissed question means leave the todo alone.
+4. **Report.** One `groundwork notify` with what changed ("Triaged 7 todos: 3 rescheduled, 2 dropped, 1 ticket, 1 kept"), linking any ticket you made.
+
+It can also run unattended, from cron or a scheduler: `claude -p "Triage my todos"` asks the same questions and waits for the answers.
+
 ## People and events
 
 People and events are notes in top-level folders, `Contacts/` and `Events/`, never inside a project. They belong to projects through their `projects:` property, so nothing needs moving later.
@@ -219,6 +238,8 @@ When the user is in the conversation, ask there. When they may be elsewhere (a l
 
 ```sh
 groundwork ask "Which environment should I deploy to?" --choice staging --choice prod [--link "[[Note]]"] [--timeout 600]
+groundwork ask "…" --no-wait            # prints the question's id and returns, to ask several at once
+groundwork wait <id> [--timeout 600]    # then the answer to each
 groundwork notify "Reorganised Meetings/ into one folder per month" [--link "[[Meetings]]"]
 ```
 

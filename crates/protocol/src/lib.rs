@@ -523,6 +523,19 @@ pub enum Request {
         #[ts(optional)]
         cwd: Option<String>,
     },
+    /// → `string`: the command line that starts Claude Code with a prompt:
+    /// `prompt` itself (an agent action's), or the one called `name`
+    /// (`new-ticket`, `triage`, or the vault's `.groundwork/prompts/<name>.md`).
+    /// `vars` fill its `{{tags}}`, e.g. `input.ticket`.
+    #[serde(rename = "agent.command")]
+    AgentCommand {
+        #[ts(optional)]
+        prompt: Option<String>,
+        #[ts(optional)]
+        name: Option<String>,
+        #[serde(default)]
+        vars: HashMap<String, String>,
+    },
     /// → `null`: runs a `shell` action from the note's (or folder's) context,
     /// in the background. Terminal and URL actions are run by the app.
     #[serde(rename = "action.run")]

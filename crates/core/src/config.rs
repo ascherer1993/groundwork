@@ -57,10 +57,18 @@ impl Tracker {
 pub struct ActionDef {
     pub id: String,
     pub label: String,
-    /// `shell` (runs quietly), `terminal` (a tab in the workspace) or `agent`.
+    /// `shell` (runs quietly), `terminal` (a tab in the workspace) or `agent`
+    /// (a Claude Code session in a tab, started with `prompt`).
     pub kind: String,
     pub run: String,
     pub cwd: Option<String>,
+    /// Agent: what Claude is asked, with `{{…}}` tags.
+    pub prompt: Option<String>,
+    /// Agent: the prompt's vault path, instead of `prompt`.
+    pub prompt_file: Option<String>,
+    /// Agent: what to ask the user first, as name → label; the answers fill
+    /// `{{input.<name>}}`.
+    pub input: BTreeMap<String, String>,
     /// For a repo's actions: the component it belongs to (`repo:component`).
     pub component: Option<String>,
 }

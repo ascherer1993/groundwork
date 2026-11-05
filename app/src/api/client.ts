@@ -138,6 +138,7 @@ interface Results {
   "ticket.strays": StrayWorktree[];
   "context.get": Context;
   "action.run": null;
+  "agent.command": string;
 }
 
 type Method = Request["method"];
@@ -278,6 +279,12 @@ export const api = {
   context: (where: { note?: string; cwd?: string }) => call("context.get", where),
   runAction: (id: string, where: { note?: string; cwd?: string }) =>
     call("action.run", { id, ...where }),
+  /**
+   * The command line starting Claude Code with a prompt: `prompt` itself, or
+   * the one called `name`. `vars` fill its `{{tags}}`.
+   */
+  agentCommand: (which: { prompt: string } | { name: string }, vars: Record<string, string> = {}) =>
+    call("agent.command", { ...which, vars }),
 };
 
 export { ApiCallError } from "./transport";

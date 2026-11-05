@@ -2,7 +2,8 @@
 # A stand-in for Claude Code's `claude plugin` commands, for tests. It keeps
 # its marketplace and plugin state in files next to itself and logs each call.
 # e2e terminals find it first on PATH, so `claude --resume …` (Fork session,
-# Resume conversation) just says what it was asked.
+# Resume conversation) and `claude "<prompt>"` (agents) just say what they
+# were asked.
 here=$(dirname "$0")
 echo "$*" >>"$here/calls"
 mkt=$(cat "$here/marketplace" 2>/dev/null)
@@ -45,8 +46,12 @@ case "$*" in
 "--resume "*)
   echo "fake claude: $*"
   ;;
-*)
+-* | plugin\ *)
   echo "fake claude: unsupported: $*" >&2
   exit 1
+  ;;
+*)
+  # An agent's prompt.
+  echo "fake claude was asked: $*"
   ;;
 esac

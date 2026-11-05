@@ -15,6 +15,7 @@ import type { RepoInfo } from "../api/generated/RepoInfo";
 import type { SetupStep } from "../api/generated/SetupStep";
 import type { Ticket } from "../api/generated/Ticket";
 import { openExternalUrl } from "../lib/fileUrl";
+import { launchAgent } from "./claude";
 import { projectViewPath } from "../lib/paths";
 import { confirmDialog, formDialog, useUi } from "./ui";
 import { message, onVaultChange, useVault } from "./vault";
@@ -264,6 +265,19 @@ export async function runAction(action: Action, note?: string): Promise<void> {
       case "url":
         await openExternalUrl(action.run);
         return;
+      case "agent": {
+        const workspace = note ? ticketAt(note)?.workspace : undefined;
+        await launchAgent(
+          { prompt: action.run },
+          {
+            cwd: action.cwd,
+            workspace: workspace ?? undefined,
+            inputs: action.inputs,
+            title: action.label,
+          },
+        );
+        return;
+      }
       case "terminal": {
         const workspace = note ? ticketAt(note)?.workspace : undefined;
         const ws = useWorkspace.getState();
@@ -294,7 +308,12 @@ export async function pickAction(note: string) {
       items: context.actions.map((a) => ({
         id: a.id,
         label: a.label,
-        detail: a.kind === "url" ? a.run : a.kind === "terminal" ? a.run : undefined,
+        detail:
+          a.kind === "agent"
+            ? "Claude"
+            : a.kind === "url" || a.kind === "terminal"
+              ? a.run
+              : undefined,
         run: () => runAction(a, note),
       })),
     });

@@ -163,6 +163,17 @@ enum Command {
         /// Give up after this many seconds (default: wait as long as it takes).
         #[arg(long)]
         timeout: Option<u64>,
+        /// Print the question's id and return at once; `groundwork wait <id>`
+        /// gets the answer. For asking several things at a time.
+        #[arg(long, conflicts_with = "timeout")]
+        no_wait: bool,
+    },
+    /// Waits for the answer to a question asked with `ask --no-wait`.
+    Wait {
+        id: String,
+        /// Give up after this many seconds, withdrawing the question.
+        #[arg(long)]
+        timeout: Option<u64>,
     },
     /// Tells the user something in Groundwork's inbox; nothing waits.
     Notify {
@@ -680,7 +691,9 @@ fn run(cli: Cli) -> Fallible<()> {
             choices,
             link,
             timeout,
-        } => return inbox::ask(question, choices, link, timeout, cli.json),
+            no_wait,
+        } => return inbox::ask(question, choices, link, timeout, no_wait, cli.json),
+        Command::Wait { id, timeout } => return inbox::wait(&id, timeout, cli.json),
         Command::Notify { text, link } => return inbox::notify(text, link, cli.json),
         Command::Open { target, line } => return live::open(target, line, cli.json),
         Command::Workspace(command) => {
@@ -940,6 +953,7 @@ fn run(cli: Cli) -> Fallible<()> {
         }
         Command::Vault
         | Command::Ask { .. }
+        | Command::Wait { .. }
         | Command::Notify { .. }
         | Command::Hook { .. }
         | Command::Open { .. }

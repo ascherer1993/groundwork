@@ -36,6 +36,7 @@ test("Quick add makes an event for the project you're in, and formats as you typ
   await expect(page.locator(".notes-side .dv-tab.dv-active-tab")).toContainText(
     `${today()} Design review`,
   );
+  await expect(editor(page)).toBeFocused();
   await page.keyboard.type("Jane walked us through it");
   await expectFile(
     VAULT,

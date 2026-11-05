@@ -642,6 +642,30 @@ fn ask_and_notify_use_the_inbox_while_the_app_is_closed() {
     );
     assert_eq!(String::from_utf8(out.stdout).unwrap(), "staging\n");
 
+    // Several at a time: post them, then wait for each.
+    let ids: Vec<String> = ["First?", "Second?"]
+        .iter()
+        .map(|q| {
+            let out = cli(&["ask", q, "--no-wait"]);
+            assert!(out.status.success());
+            String::from_utf8(out.stdout).unwrap().trim().to_string()
+        })
+        .collect();
+    assert_eq!(
+        inbox
+            .open()
+            .iter()
+            .filter(|i| i.kind == InboxKind::Ask)
+            .count(),
+        2
+    );
+    inbox.answer(&ids[1], Some("two".into())).unwrap();
+    inbox.answer(&ids[0], Some("one".into())).unwrap();
+    for (id, answer) in ids.iter().zip(["one\n", "two\n"]) {
+        let out = cli(&["wait", id]);
+        assert_eq!(String::from_utf8(out.stdout).unwrap(), answer);
+    }
+
     // Unanswered, it gives up and withdraws the question.
     let out = cli(&["ask", "Anyone?", "--timeout", "1"]);
     assert!(!out.status.success());

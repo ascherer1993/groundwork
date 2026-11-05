@@ -169,6 +169,11 @@ impl Session {
         &self.vault
     }
 
+    /// Machine-local state for this vault, in the data folder.
+    pub(crate) fn state_dir(&self) -> &Path {
+        &self.state_dir
+    }
+
     /// This vault's workspaces (machine-local).
     pub fn workspaces(&self) -> &crate::workspaces::Workspaces {
         &self.workspaces

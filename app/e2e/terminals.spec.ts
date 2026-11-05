@@ -348,3 +348,44 @@ test("terminals open in a chosen folder", async ({ page }) => {
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(moving).toHaveCount(0);
 });
+
+test("agent actions start Claude in a tab with their prompt", async ({ page }) => {
+  const flat = async () => (await screen(page)).replace(/\n/g, "");
+  const palette = async (name: string) => {
+    await page.keyboard.press("Meta+p");
+    await page.keyboard.type(name);
+    await page.keyboard.press("Enter");
+  };
+
+  // The vault's own, from a note's actions: it asks first.
+  await page.keyboard.press("Meta+o");
+  await page.getByLabel("Find a file").fill("Kickoff");
+  await page.keyboard.press("Enter");
+  await palette("Run action");
+  await page.getByRole("option", { name: /Summarise with Claude/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Summarise with Claude" });
+  await dialog.getByLabel("What should it focus on?").fill("decisions");
+  await dialog.getByRole("button", { name: "Start" }).click();
+  await expect
+    .poll(flat)
+    .toContain(
+      "fake claude was asked: Summarise [[Projects/Acme/Meetings/2026-11-02 Kickoff.md]] " +
+        "for the Acme project, focusing on decisions.",
+    );
+
+  // New ticket from Jira, from the Tickets panel.
+  await page.getByRole("tab", { name: "Tickets" }).click();
+  await page.getByRole("button", { name: "New ticket from Jira" }).click();
+  const jira = page.getByRole("dialog", { name: "New ticket from Jira" });
+  await jira.getByLabel("Jira key or link").fill("TEAM-42");
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(flat)
+    .toContain(
+      "fake claude was asked: Set up a ticket in the user's Groundwork vault for this Jira issue: TEAM-42",
+    );
+
+  // Triage, from the palette.
+  await palette("Triage todos");
+  await expect.poll(flat).toContain("fake claude was asked: Triage my todos in Groundwork");
+});
