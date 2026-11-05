@@ -13,7 +13,7 @@ export interface KeyCommand {
   /** The palette command it runs, when there is one (see `commands.ts`). */
   id: string;
   label: string;
-  group: "General" | "Notes" | "Views and workspaces";
+  group: "General" | "Notes" | "Editor" | "Quick add" | "Views and workspaces";
   /** The default combination, or null for none. */
   key: string | null;
 }
@@ -24,6 +24,21 @@ const workspaceKeys: KeyCommand[] = Array.from({ length: 9 }, (_, i) => ({
   group: "Views and workspaces",
   key: `Cmd+${i + 1}`,
 }));
+
+/** Act on the note being edited (`editor/commands.ts`). */
+const editorKeys: KeyCommand[] = [
+  { id: "editor-checkbox", label: "Toggle checkbox", group: "Editor", key: "Shift+Cmd+2" },
+  { id: "editor-bullet", label: "Toggle bulleted list", group: "Editor", key: null },
+  { id: "editor-numbered", label: "Toggle numbered list", group: "Editor", key: null },
+  { id: "editor-bold", label: "Bold", group: "Editor", key: "Cmd+B" },
+  { id: "editor-italic", label: "Italic", group: "Editor", key: "Cmd+I" },
+  { id: "editor-strikethrough", label: "Strikethrough", group: "Editor", key: null },
+  { id: "editor-highlight", label: "Highlight", group: "Editor", key: null },
+  { id: "editor-code", label: "Inline code", group: "Editor", key: null },
+  { id: "editor-link", label: "Insert link", group: "Editor", key: "Cmd+K" },
+  { id: "editor-date", label: "Insert today’s date", group: "Editor", key: null },
+  { id: "editor-time", label: "Insert the time", group: "Editor", key: null },
+];
 
 export const KEY_COMMANDS: KeyCommand[] = [
   { id: "palette", label: "Command palette", group: "General", key: "Cmd+P" },
@@ -79,15 +94,27 @@ export const KEY_COMMANDS: KeyCommand[] = [
     key: null,
   },
   ...workspaceKeys,
+  ...editorKeys,
+  { id: "quick-add", label: "Quick add…", group: "Quick add", key: "Shift+Cmd+A" },
 ];
 
-const BY_ID = new Map(KEY_COMMANDS.map((c) => [c.id, c]));
+/** Every command, with those made from settings (each Quick add choice). */
+export function allCommands(extra: KeyCommand[] = useKeys.getState().extra): KeyCommand[] {
+  return [...KEY_COMMANDS, ...extra];
+}
+
+function commandById(id: string): KeyCommand | undefined {
+  return allCommands().find((c) => c.id === id);
+}
 
 interface KeysState {
   /** Changed bindings: a combination, or null for none. */
   overrides: Record<string, string | null>;
   /** The command whose new keys are being recorded (shortcuts are off meanwhile). */
   recording: string | null;
+  /** Commands made from settings, such as Quick add's choices. */
+  extra: KeyCommand[];
+  setExtra(commands: KeyCommand[]): void;
   load(): Promise<void>;
   setRecording(id: string | null): void;
   /**
@@ -110,6 +137,11 @@ async function save(overrides: Record<string, string | null>) {
 export const useKeys = create<KeysState>((set, get) => ({
   overrides: {},
   recording: null,
+  extra: [],
+
+  setExtra(extra) {
+    set({ extra });
+  },
 
   async load() {
     try {
@@ -128,13 +160,13 @@ export const useKeys = create<KeysState>((set, get) => ({
     const overrides = { ...get().overrides };
     let displaced: string | null = null;
     if (combo) {
-      const other = KEY_COMMANDS.find((c) => c.id !== id && bindingOf(c.id, overrides) === combo);
+      const other = allCommands().find((c) => c.id !== id && bindingOf(c.id, overrides) === combo);
       if (other) {
         overrides[other.id] = null;
         displaced = other.label;
       }
     }
-    if (combo === (BY_ID.get(id)?.key ?? null)) delete overrides[id];
+    if (combo === (commandById(id)?.key ?? null)) delete overrides[id];
     else overrides[id] = combo;
     set({ overrides });
     await save(overrides);
@@ -145,8 +177,8 @@ export const useKeys = create<KeysState>((set, get) => ({
     const overrides = { ...get().overrides };
     delete overrides[id];
     // Its default may be another command's now; that one gives it up.
-    const key = BY_ID.get(id)?.key;
-    for (const c of KEY_COMMANDS) {
+    const key = commandById(id)?.key;
+    for (const c of allCommands()) {
       if (c.id !== id && key && bindingOf(c.id, overrides) === key) overrides[c.id] = null;
     }
     set({ overrides });
@@ -164,13 +196,13 @@ export function bindingOf(
   id: string,
   overrides: Record<string, string | null> = useKeys.getState().overrides,
 ): string | null {
-  return id in overrides ? (overrides[id] ?? null) : (BY_ID.get(id)?.key ?? null);
+  return id in overrides ? (overrides[id] ?? null) : (commandById(id)?.key ?? null);
 }
 
 /** The command bound to a combination, if any. */
 export function commandFor(combo: string): string | undefined {
   const { overrides } = useKeys.getState();
-  return KEY_COMMANDS.find((c) => bindingOf(c.id, overrides) === combo)?.id;
+  return allCommands().find((c) => bindingOf(c.id, overrides) === combo)?.id;
 }
 
 /** A command's keys as shown in menus and tooltips (`⌃⌘1`), or undefined. */

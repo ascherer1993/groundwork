@@ -15,6 +15,7 @@ pub mod index;
 pub mod moment;
 pub mod pages;
 pub mod parse;
+pub mod quickadd;
 pub mod recent;
 pub mod repos;
 pub mod search;

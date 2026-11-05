@@ -26,8 +26,8 @@ use groundwork_core::watch::{self, VaultWatcher};
 use groundwork_core::workspaces;
 use groundwork_core::{FileChange, RecentVaults, Session, Vault};
 use groundwork_protocol::{
-    ApiError, AppInfo, CreatedNote, ErrorCode, Event, Host, RenderedTemplate, Request, UiCommand,
-    WriteResult,
+    ApiError, AppInfo, CreatedNote, ErrorCode, Event, Host, QuickAdded, RenderedTemplate, Request,
+    UiCommand, WriteResult,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -253,6 +253,38 @@ impl Backend {
                     None => None,
                 };
                 to_value(CreatedNote { path, cursor })
+            }
+            Request::QuickAddList => to_value(self.session()?.quick_add_choices()?),
+            Request::QuickAddSave { choices } => {
+                self.session()?.save_quick_add_choices(&choices)?;
+                Ok(Value::Null)
+            }
+            Request::QuickAddForm { choice, note } => {
+                to_value(self.session()?.quick_add_form(&choice, note.as_deref())?)
+            }
+            Request::QuickAddRun {
+                choice,
+                answers,
+                date,
+                project,
+            } => {
+                let date = date.as_deref().map(parse_date).transpose()?;
+                let session = self.session()?;
+                let added = session.quick_add(&choice, answers, date, project.as_deref())?;
+                self.emit(added.changes);
+                let cursor = match added.cursor {
+                    Some(byte) => {
+                        let text = std::fs::read_to_string(session.vault().resolve(&added.path)?)
+                            .map_err(groundwork_core::CoreError::from)?;
+                        Some(utf16_offset(&text, byte))
+                    }
+                    None => None,
+                };
+                to_value(QuickAdded {
+                    path: added.path,
+                    cursor,
+                    created: added.created,
+                })
             }
             Request::FileRename { from, to } => {
                 let (outcome, changes) = self.session()?.rename(&from, &to)?;

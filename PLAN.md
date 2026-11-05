@@ -76,6 +76,7 @@ My Vault/
   Templates/                      # respected from Obsidian/Templater settings
   Daily/
   Contacts/                       # convention: one note per person (type: person)
+  Events/                         # convention: one note per event or meeting (type: event)
   Notes/                          # shared ideas and concepts, linked from any project
   Projects/
     Integrations/                 # a project for the shared, repo-wide work
@@ -217,7 +218,16 @@ type: person
 company: ...
 role: ...
 projects: ["[[Lincoln]]"]
+
+# Event (a meeting, call, conference, deadline…); `type: meeting` counts too
+type: event
+date: 2026-11-05
+time: "14:00"                    # optional
+people: ["[[Jane Doe]]"]
+projects: ["[[Lincoln]]"]
 ```
+
+**People and events live in top-level folders** (`Contacts/`, `Events/`), never inside a project, so a note made mid-meeting never needs moving. They belong to projects through `projects:`, which Quick add fills in from what you're working on (§5.13).
 
 **Project membership** of any note (tickets, meetings, people, concepts, todos): the projects linked in its `projects:` frontmatter, plus the project folder it sits in. `projects:` holds ordinary links to the projects' overview notes, so a project's overview shows all its tickets and related notes as backlinks, in Obsidian too.
 
@@ -576,6 +586,12 @@ These all work without the app running:
 
 ---
 
+### 5.13 Quick add, people & events, settings (Phase 7)
+- **Settings** (⌘,) has a section per feature down its side. A feature's section holds its settings; **Keyboard shortcuts** is a section of its own that lists every feature's commands, grouped by feature, with a search. Features add commands to the key registry (`app/src/state/keys.ts`), including ones made from configuration (each Quick add choice).
+- **Editor commands** act on the note being edited and have shortcuts like any command: toggle checkbox (⇧⌘2), bulleted and numbered list, bold (⌘B), italic (⌘I), strikethrough, highlight, inline code, link (⌘K), insert today's date and the time.
+- **Quick add** (⇧⌘A) opens a menu of choices. A *note* choice makes a note from a template in a folder, named by a pattern (`{{date}} {{prompt:Title}}`), asking for the template's prompts, a date when the name or template uses one, and a project when it's set to. A *capture* choice adds a line (`- [ ] {{prompt:Todo}}`) to a note: today's daily note, or a fixed one. The project offered first is the one you're in: the open note's (`projects:` or its folder), else the current workspace's note's. Choices live in `.groundwork/quickadd.yml` (portable; written by Settings), and when there's none the defaults are **Person** (in `Contacts/`), **Event** (in `Events/`, named `{{date}} {{title}}`) and **Todo** (captured to today's note). A choice's template falls back to a built-in one when the vault has no such file. The CLI runs the same choices (`groundwork add <choice>`), so agents can too.
+- **The project view** is a tab per project, opened from the project's overview note, the palette, or the Tickets panel. It lists the project's **events** (newest first; upcoming or past; search; sort by date or title) and **people** (members, whose `projects:` names it, and people mentioned in its notes, with how often; search; filter members or mentioned; sort by name or last seen). Event membership is the usual project membership (§4.6): `projects:` or sitting in the project's folder, so meetings already filed in a project show too.
+
 ## 6. Phases
 
 Each phase ends with a **feedback checkpoint**: a short list of things to try, then adjustments before moving on. Development runs against the fixture vault and a fresh dogfood vault, not your existing one.
@@ -608,7 +624,7 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
 - Built:
   - `crates/cli` is the `groundwork` binary, built next to the app by `make dev`/`make browser`. It works on the files through `Session::open_for_tool`, which logs as `cli` and leaves the change-detection snapshot to the app. `groundwork vault` says which vault it's using and why.
   - The plugin lives in `claude-plugin/`, listed by the repo's `.claude-plugin/marketplace.json`. For now it has only the `groundwork` skill; hooks, `ask` and `notify` come with terminals.
-  - "Set up Claude Code…" (§5.7) installs both and sets the CLI's default vault. It was pulled forward from Phase 7's "CLI install" so the checkpoint doesn't need manual setup.
+  - "Set up Claude Code…" (§5.7) installs both and sets the CLI's default vault. It was pulled forward from Phase 8's "CLI install" so the checkpoint doesn't need manual setup.
 
 ### Phase 3 — HTML pages *(done)*
 - `groundwork://` protocol, page viewer with auto-reload, read-only source view
@@ -659,7 +675,7 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
   - **Restore after a reboot:** tabs save the shell's current folder as it changes, so a replacement shell starts where the old one was.
   - **Choosing where a terminal starts** (added after the second half): "Open terminal here" on folders in the file tree, "New terminal in folder…" in the palette (vault folders, workspaces' folders, or any folder typed in), and "Change folder…" on a workspace's menu (new terminals start there; open ones stay put). Typed folders may start with `~`.
   - **Vault paths in terminal output are links:** vault-relative, absolute, or relative to the shell's folder, with spaces and an optional `:line`. They're found by looking for the vault's actual files in the line, so names with spaces work. The plugin's skill tells Claude to name files by path.
-- Not yet: the packaged `.app` doesn't bundle `groundworkd` (Phase 7 packaging).
+- Not yet: the packaged `.app` doesn't bundle `groundworkd` (Phase 8 packaging).
 
 ### Phase 5 — Projects, tickets, worktrees, actions
 - Repos and components (`.groundwork/repos.yml`), project config (`.groundwork.yml`), trackers, and the machine-local repo mapping with first-run "locate repo"
@@ -711,7 +727,7 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
 - Started 2026-11-04, after the Phase 5 checkpoint was left for the user to run when convenient. Built in three stages:
   1. **Agents report in** *(built)*: the app socket, hooks and agent states, the inbox, notifications and the dock badge.
   2. **Live CLI commands** *(built)*: `open`, `workspace`, `tab`; Fork session; Resume conversation.
-  3. **Agent actions**: New ticket from Jira, the triage skill.
+  3. **Agent actions**: New ticket from Jira, the triage skill. Comes after Phase 7, which was pulled ahead of it (2026-11-05).
 - Built in the first stage:
   - **The app socket** is `groundwork.sock` in the data folder, given to terminals as `GROUNDWORK_SOCKET` (`crates/backend/src/agents.rs`). It takes the same requests as the UI, a JSON line each way. The newest app or dev server to start takes it over.
   - **Hooks:** the plugin runs `hooks/run <event>` for SessionStart, UserPromptSubmit, Notification and Stop, which calls `groundwork hook session-start|prompt|notification|stop` only in a Groundwork terminal. The app keeps each terminal's Claude session id and state (idle, working, waiting, finished), in memory. Badges use the state while Claude is in the foreground: working is Running, Notification is Waiting on you, Stop is Finished until seen. A Notification also posts one attention item for the terminal, cleared by the next prompt or stop, or by looking at the terminal. Claude's reminder after a minute idle at its prompt ("Claude is waiting for your input") posts nothing: Stop already marked it finished.
@@ -723,10 +739,26 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
   - **Fork session and Resume conversation** are on a terminal tab's right-click menu (the tab itself, or its row in the Workspaces sidebar), with Close tab. Each tab keeps the Claude session id its hooks last reported in its saved params, so both work after a restart. Fork opens a tab beside it, in its folder, typing `claude --resume <id> --fork-session` into a new shell; Resume types `claude --resume <id>` into the tab's own shell, and shows only while Claude isn't running there. `groundwork tab fork` does the same for agents (forking themselves by default). Session ids are checked before they're typed into a shell.
   - **e2e terminals** find the fake `claude` (`fixtures/bin/claude`, which echoes `--resume` calls) first on PATH, so tests never start the real one.
 
-### Phase 7 — Smart search, command bar, polish
+### Phase 7 — Quick add, people & events, settings
+Asked for on 2026-11-05, before Phase 6's last stage: the Obsidian habits of a Quick add menu and formatting keys, people and events as first-class notes, and a view of each project's people and events. Design in §5.13.
+- Settings in sections, one per feature, with Keyboard shortcuts as its own section listing every feature's commands
+- Editor commands with shortcuts: checkbox, lists, bold, italic, highlight, link, date…
+- Quick add (⇧⌘A): a menu of choices (new person, new event, capture a todo…), each with its own shortcut; configurable in Settings
+- People and events conventions (§4.6), with built-in templates the vault's own override
+- A project view: its people and events (and tickets), with search, filters and sort
+- **Checkpoint:** capture people and events during a week of meetings with Quick add, and find them from each project's view
+- Built in two stages:
+  1. **Settings, editor commands, Quick add**, with the people and events conventions *(built)*.
+  2. **The project view.**
+- Built in the first stage:
+  - **Settings** has Quick add and Keyboard shortcuts sections down its side (`SettingsDialog.tsx`); the shortcuts have a search. The key registry takes commands made from settings (`useKeys.extra`), which is how each Quick add choice gets a shortcut; renaming a choice keeps it.
+  - **Editor commands** (`app/src/editor/commands.ts`) act on every selection: toggle checkbox (⇧⌘2: text or a list item becomes `- [ ]`, a task is checked with its ✅ date or unchecked), bulleted and numbered lists, bold ⌘B, italic ⌘I, strikethrough, highlight, inline code (each wraps or unwraps), link ⌘K (a selected URL becomes the target), today's date and the time. Their keys only act in an editor, so ⌘K and the rest still reach terminals and fields.
+  - **Quick add** (`crates/core/src/quickadd.rs`, `app/src/state/quickadd.ts`): `quickAdd.list|save|form|run`, and `groundwork add` on the CLI. The form asks the prompts in the name and template (one answer per label), a date when either uses `{{date}}`, and the project (the note you're in, else the current workspace's note). A capture whose line is a task (`- [ ] …`) goes through `todo add`, under `## Todos` with its ➕ stamp. Built-in `Person.md` and `Event.md` stand in for missing templates; Settings marks them "(built in)". Dialogs gained date and menu fields.
+
+### Phase 8 — Smart search, command bar, polish
 - qmd integration (collection registration, auto-update, `search --smart`)
 - Global-hotkey command bar
-- Contacts conventions, and a "who knows about X" skill (backlinks + qmd)
+- A "who knows about X" skill (backlinks + qmd), over Phase 7's people and events
 - Performance pass on a large vault; packaging (signed `.app`). The bundle ships the CLI next to the app binary (Tauri `externalBin`, so the setup link keeps working) and the plugin marketplace in its resources (`Contents/Resources/claude-marketplace`, which `SetupEnv::detect` already looks for).
 - **Checkpoint:** full workflow review
 

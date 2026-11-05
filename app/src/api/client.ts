@@ -4,6 +4,9 @@ import type { CreatedTicket } from "./generated/CreatedTicket";
 import type { GitState } from "./generated/GitState";
 import type { NewTicket } from "./generated/NewTicket";
 import type { ProjectInfo } from "./generated/ProjectInfo";
+import type { QuickAddChoice } from "./generated/QuickAddChoice";
+import type { QuickAdded } from "./generated/QuickAdded";
+import type { QuickAddForm } from "./generated/QuickAddForm";
 import type { AgentInfo } from "./generated/AgentInfo";
 import type { TabInfo } from "./generated/TabInfo";
 import type { InboxItem } from "./generated/InboxItem";
@@ -71,6 +74,10 @@ interface Results {
   "template.list": string[];
   "template.prompts": string[];
   "template.render": RenderedTemplate;
+  "quickAdd.list": QuickAddChoice[];
+  "quickAdd.save": null;
+  "quickAdd.form": QuickAddForm;
+  "quickAdd.run": QuickAdded;
   "daily.open": string;
   "index.tags": TagCount[];
   "setup.status": SetupStatus;
@@ -209,6 +216,14 @@ export const api = {
     call("todo.add", todo),
   search: (query: string, limit?: number) => call("search.query", { query, limit }),
   /** Today's daily note (or `date`'s, `YYYY-MM-DD`), created if missing. */
+  quickAddChoices: () => call("quickAdd.list"),
+  saveQuickAddChoices: (choices: QuickAddChoice[]) => call("quickAdd.save", { choices }),
+  quickAddForm: (choice: string, note?: string) => call("quickAdd.form", { choice, note }),
+  quickAdd: (
+    choice: string,
+    answers: Record<string, string>,
+    opts: { date?: string; project?: string } = {},
+  ) => call("quickAdd.run", { choice, answers, ...opts }),
   openDaily: (date?: string) => call("daily.open", { date }),
 
   reveal: (path: string) => call("os.reveal", { path }),

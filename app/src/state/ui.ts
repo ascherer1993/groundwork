@@ -19,6 +19,10 @@ export interface DialogField {
   label: string;
   value?: string;
   placeholder?: string;
+  /** A date picker (`YYYY-MM-DD`) rather than text. */
+  type?: "date";
+  /** A menu of these rather than text. */
+  options?: { value: string; label: string }[];
 }
 
 interface Dialog {

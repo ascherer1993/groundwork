@@ -242,6 +242,36 @@ fn templates_and_daily_notes() {
 }
 
 #[test]
+fn quick_add_makes_people_and_events() {
+    let v = Vault::new();
+    let list = v.ok(&["add"]);
+    assert!(
+        list.contains("Event\tnote in Events\t--var Title=… [--date] [--project]"),
+        "{list}"
+    );
+    let (ok, _, err) = v.run(&["add", "event"]);
+    assert!(!ok && err.contains("asks for Title"), "{err}");
+    let out = v.ok(&[
+        "add",
+        "event",
+        "--var",
+        "Title=Vendor call",
+        "--date",
+        "2026-11-12",
+        "--project",
+        "Acme",
+    ]);
+    assert_eq!(out, "Created Events/2026-11-12 Vendor call.md\n");
+    let text = v.read("Events/2026-11-12 Vendor call.md");
+    assert!(
+        text.contains("date: 2026-11-12") && text.contains("projects: [\"[[Acme]]\"]"),
+        "{text}"
+    );
+    let out = v.ok(&["add", "todo", "--var", "Todo=Send the notes"]);
+    assert!(out.starts_with("Added to Daily/"), "{out}");
+}
+
+#[test]
 fn todos_round_trip() {
     let v = Vault::new();
     let id = v

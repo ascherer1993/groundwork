@@ -3,13 +3,16 @@ import type { TreeNode } from "../api/generated/TreeNode";
 import { undoLast } from "../components/NoteView";
 import { editorFor } from "../editor/active";
 import { insertRendered } from "../editor/templates";
+import { EDITOR_COMMANDS } from "../editor/commands";
+import { EditorView } from "@codemirror/view";
 import { formDialog, type PaletteItem, promptDialog, useUi } from "../state/ui";
 import { message, newNoteFolder, useVault } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
 import { useInbox } from "../state/inbox";
 import { testNotification } from "../state/inbox";
-import { keyLabel } from "../state/keys";
+import { allCommands, keyLabel } from "../state/keys";
+import { choiceCommand, openQuickAdd, runChoice, useQuickAdd } from "../state/quickadd";
 import {
   closeTicket,
   locateRepo,
@@ -111,6 +114,11 @@ interface Command {
 
 const hasActive = () => !!useWorkspace.getState().activePath;
 
+function activeEditor(): EditorView | null {
+  const path = useWorkspace.getState().activePath;
+  return path ? editorFor(path) : null;
+}
+
 function commands(): Command[] {
   const ws = useWorkspace.getState();
   const ui = useUi.getState();
@@ -122,6 +130,27 @@ function commands(): Command[] {
     },
     { id: "new-note", label: "New note", run: () => ws.newNote() },
     { id: "new-from-template", label: "New note from template…", run: newNoteFromTemplate },
+    { id: "quick-add", label: "Quick add…", run: openQuickAdd },
+    ...useQuickAdd.getState().choices.map((c) => ({
+      id: choiceCommand(c),
+      label: `Quick add: ${c.name}`,
+      run: () => runChoice(c.name),
+    })),
+    // The editor's formatting commands, on the note you're editing.
+    ...allCommands()
+      .filter((c) => c.group === "Editor")
+      .map((c) => ({
+        id: c.id,
+        label: c.label,
+        when: () => !!activeEditor(),
+        run: () => {
+          const view = activeEditor();
+          if (view) {
+            EDITOR_COMMANDS[c.id]?.(view);
+            view.focus();
+          }
+        },
+      })),
     {
       id: "insert-template",
       label: "Insert template…",
@@ -404,6 +433,12 @@ export function runKey(id: string, target: EventTarget | null): boolean {
     if (inEditable(target)) return false;
     void undoLast();
     return true;
+  }
+  // Formatting keys act in the editor that has them, and are left alone elsewhere.
+  if (EDITOR_COMMANDS[id]) {
+    const editor = target instanceof HTMLElement ? target.closest<HTMLElement>(".cm-editor") : null;
+    const view = editor ? EditorView.findFromDOM(editor) : null;
+    return !!view && EDITOR_COMMANDS[id]!(view);
   }
   const n = id.match(/^workspace-(\d)$/);
   if (n) {

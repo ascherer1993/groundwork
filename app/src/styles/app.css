@@ -1729,18 +1729,76 @@ label.check input {
 /* Settings */
 
 .settings-dialog {
-  width: min(520px, calc(100vw - 32px));
-  max-height: 76vh;
+  flex-direction: row;
+  gap: 0;
+  width: min(760px, calc(100vw - 32px));
+  height: min(600px, 80vh);
+  padding: 0;
+  overflow: hidden;
 }
 
-.settings-keys {
+.settings-nav {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  width: 170px;
+  padding: 16px 8px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-sidebar);
+}
+
+.settings-nav button {
+  justify-content: flex-start;
+  padding: 5px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  text-align: left;
+}
+
+.settings-nav button.current {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+.settings-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.settings-head h2 {
+  margin: 0;
+}
+
+.settings-body > p {
+  margin: 0;
+}
+
+.settings-search {
+  width: 100%;
+}
+
+.settings-scroll {
+  flex: 1;
   min-height: 0;
   margin: 0 -16px;
   padding: 0 16px;
   overflow: auto;
 }
 
-.settings-keys h3 {
+.settings-scroll h3 {
   margin: 12px 0 4px;
   color: var(--text-faint);
   font-size: 11px;
@@ -1749,13 +1807,96 @@ label.check input {
   letter-spacing: 0.04em;
 }
 
-.settings-keys section:first-child h3 {
+.settings-scroll section:first-child h3 {
   margin-top: 0;
+}
+
+.settings-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.quickadd-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.quickadd-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+}
+
+.quickadd-choice:first-child,
+.quickadd-editor:first-child {
+  border-top: none;
+}
+
+.quickadd-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+  padding: 4px 6px;
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+
+.quickadd-name {
+  font-weight: 500;
+}
+
+.quickadd-summary {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quickadd-actions {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.quickadd-editor {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.quickadd-editor form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.quickadd-editor p {
+  margin: 0;
 }
 
 .settings-key {
   display: grid;
-  grid-template-columns: 1fr auto 22px;
+  grid-template-columns: 1fr auto;
   align-items: center;
   gap: 8px;
   padding: 3px 0;

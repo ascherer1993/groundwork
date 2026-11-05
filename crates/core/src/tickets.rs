@@ -1518,7 +1518,7 @@ impl Session {
     }
 
     /// A project as a frontmatter link: to its overview note, else its name.
-    fn project_link(&self, project: &Project, source: &str) -> String {
+    pub(crate) fn project_link(&self, project: &Project, source: &str) -> String {
         match &project.overview {
             Some(o) if self.index().get(o).is_some() => {
                 self.index()

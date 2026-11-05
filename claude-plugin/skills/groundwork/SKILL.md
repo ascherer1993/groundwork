@@ -40,6 +40,7 @@ Groundwork is a desktop app. It shows the vault as a file tree, notes in tabs (l
 - **Don't rename or move notes by hand.** Other notes link to them, and a plain `mv` breaks those links. Ask the user to rename in the app, which rewrites links.
 - **Add todos with `groundwork todo add`**, not by writing the line yourself. It adds the `➕ created` stamp, places the todo under the note's `## Todos` heading, and logs it. Change todos with `todo done|cancel|reopen|reschedule|priority <id>`.
 - **Create notes from templates with `groundwork note create --template`** when a template fits (`groundwork template list`). Templates fill in dates, titles and the `created:` property.
+- **Make people and events with `groundwork add person|event`** (see "People and events" below), so they land where the user's Quick add puts them.
 - New notes get a `created: YYYY-MM-DDTHH:mm` property. `note create` adds it; add it yourself if you write a new file directly.
 - Editing the body of an existing note directly is fine. Keep the frontmatter (`---` block) valid YAML.
 
@@ -61,6 +62,11 @@ groundwork search <words...> [--limit N]
 groundwork template list
 groundwork template render <template> [--note <path>] [--var Label=value]...
 groundwork daily [--date today|yesterday|fri|+1d|nov 12|YYYY-MM-DD]   # prints the path, creating it if needed
+
+# Quick add: people, events, and whatever else the user set up
+groundwork add                          # the choices and what each asks for
+groundwork add event --var Title="Vendor call" [--date fri] [--project Acme]
+groundwork add person --var Name="Jane Doe" [--project Acme]
 
 # Todos
 groundwork todo list [--due overdue|today|week|any|none] [--priority p0-p1] [--tag t]... [--path p] [--status open|done|cancelled|all] [--stale 14d] [--text t]
@@ -119,6 +125,28 @@ Statuses: `[ ]` open, `[x]` done, `[-]` cancelled, `[/]` in progress.
 **Dates** accept `today`, `tomorrow`, weekday names (`fri` means the next Friday), `+3d`, `+2w`, `+1m`, `nov 12`, or `YYYY-MM-DD`.
 
 **Priorities** order what to raise with the user: overdue p0/p1 todos matter most. When the user asks what's on their plate, start with `groundwork todo list --due today` and `--due overdue`.
+
+## People and events
+
+People and events are notes in top-level folders, `Contacts/` and `Events/`, never inside a project. They belong to projects through their `projects:` property, so nothing needs moving later.
+
+```yaml
+# Contacts/Jane Doe.md
+type: person
+company: Acme
+role: Staff Engineer
+projects: ["[[Acme]]"]
+
+# Events/2026-11-12 Vendor call.md (a meeting, call, deadline, trip…)
+type: event
+date: 2026-11-12
+people: ["[[Jane Doe]]"]
+projects: ["[[Acme]]"]
+```
+
+- Make them with `groundwork add` (the user's Quick add, ⇧⌘A in the app). It names the note, uses the user's template, and sets `projects:` from `--project`. Pass the project whenever you know it.
+- Older meeting notes may live in a project's folder with `type: meeting`. They count as events of that project; leave them where they are.
+- Link people from events and notes as `[[Jane Doe]]`, and list who attended in the event's `people:`.
 
 ## Daily notes
 

@@ -172,17 +172,31 @@ function DialogForm({
         <h2>{dialog.title}</h2>
         {dialog.message && <p className="muted">{dialog.message}</p>}
         {fields.map((field, i) => {
-          const input = (
+          const set = (value: string) =>
+            setValues((v) => v.map((old, j) => (j === i ? value : old)));
+          const input = field.options ? (
+            <select
+              autoFocus={i === 0}
+              aria-label={field.label}
+              value={values[i]}
+              onChange={(e) => set(e.target.value)}
+            >
+              {field.options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          ) : (
             <input
               autoFocus={i === 0}
               aria-label={field.label}
+              type={field.type ?? "text"}
               placeholder={field.placeholder}
               value={values[i]}
               spellCheck={false}
-              onChange={(e) =>
-                setValues((v) => v.map((old, j) => (j === i ? e.target.value : old)))
-              }
-              onFocus={(e) => e.target.select()}
+              onChange={(e) => set(e.target.value)}
+              onFocus={(e) => field.type !== "date" && e.target.select()}
             />
           );
           // A single prompt is titled by the dialog; several get their own labels.

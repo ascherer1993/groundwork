@@ -307,7 +307,7 @@ impl Session {
         paths
     }
 
-    fn read_template(&self, template: &str) -> Result<String> {
+    pub(crate) fn read_template(&self, template: &str) -> Result<String> {
         let full = self.vault.resolve(template)?;
         if !full.is_file() {
             return Err(CoreError::NotFound(template.to_string()));
@@ -332,7 +332,7 @@ impl Session {
             .unwrap_or_else(|| Local::now().date_naive())
     }
 
-    fn template_context(
+    pub(crate) fn template_context(
         &self,
         path: &str,
         date: Option<NaiveDate>,
@@ -373,8 +373,19 @@ impl Session {
         answers: HashMap<String, String>,
     ) -> Result<(Option<usize>, Vec<FileChange>)> {
         let source = self.read_template(template)?;
+        self.create_from_source(&source, path, date, answers)
+    }
+
+    /// `create_from_template`, with the template's text.
+    pub(crate) fn create_from_source(
+        &self,
+        source: &str,
+        path: &str,
+        date: Option<NaiveDate>,
+        answers: HashMap<String, String>,
+    ) -> Result<(Option<usize>, Vec<FileChange>)> {
         let ctx = self.template_context(path, date, answers);
-        let rendered = template::render(&source, &ctx);
+        let rendered = template::render(source, &ctx);
         let (text, cursor) = with_created(rendered, ctx.now);
         let changes = self.create_file(path, Some(&text))?;
         Ok((cursor, changes))

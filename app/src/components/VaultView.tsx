@@ -24,6 +24,7 @@ import { promptDialog, type SidebarView, useUi } from "../state/ui";
 import { message, useVault } from "../state/vault";
 import { watchTerminals } from "../state/terminals";
 import { watchFollow } from "../state/follow";
+import { useQuickAdd } from "../state/quickadd";
 import { watchInbox } from "../state/inbox";
 import { watchRemote } from "../state/remote";
 import { watchTickets } from "../state/tickets";
@@ -172,6 +173,7 @@ export function VaultView() {
     watchInbox();
     watchRemote();
     void useWorkspaces.getState().load();
+    void useQuickAdd.getState().load();
   }, [vault?.path]);
 
   return (

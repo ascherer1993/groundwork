@@ -171,6 +171,19 @@ pub fn prompts(template: &str) -> Vec<String> {
     labels
 }
 
+/// Whether a template uses the note's date (`{{date…}}`), so it's worth asking for.
+pub fn uses_date(template: &str) -> bool {
+    let mut uses = false;
+    each_tag(template, |_, escaped, inner| {
+        if !escaped
+            && let Some(Field::Date { kind: "date", .. }) = parse_tag(inner, &HashMap::new())
+        {
+            uses = true;
+        }
+    });
+    uses
+}
+
 /// `date` moved by `@anchor` and then by `+1d-2w…`.
 fn shift(date: NaiveDate, anchor: Option<&str>, offsets: &str) -> Option<NaiveDate> {
     let mut date = match anchor {

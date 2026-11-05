@@ -19,6 +19,7 @@ mod live;
 use groundwork_core::activity::{ActivitySource, read_events};
 use groundwork_core::dates::parse_natural;
 use groundwork_core::pages;
+use groundwork_core::quickadd::ChoiceKind;
 use groundwork_core::session::with_created_property;
 use groundwork_core::setup::default_vault;
 use groundwork_core::tickets::{Context, CreatedTicket, NewTicket, Ticket, TicketFilter};
@@ -86,6 +87,22 @@ enum Command {
         /// `today` (default), `yesterday`, `fri`, `+1d`, `nov 12`, `YYYY-MM-DD`…
         #[arg(long, default_value = "today")]
         date: String,
+    },
+    /// Quick add, as ⇧⌘A in the app: makes a person, an event… in its
+    /// folder from its template, or adds a line (a todo) to a note. With no
+    /// choice, lists them and what each asks for.
+    Add {
+        /// The choice, by name: `person`, `event`, `todo`…
+        choice: Option<String>,
+        /// Answers to what it asks: `--var Title="Design review"`.
+        #[arg(long = "var", value_parser = parse_var)]
+        vars: Vec<(String, String)>,
+        /// The date it's for (`{{date}}`): `today` (default), `fri`, `YYYY-MM-DD`…
+        #[arg(long)]
+        date: Option<String>,
+        /// The project it's for (sets `projects:`), by id or name.
+        #[arg(long)]
+        project: Option<String>,
     },
     /// List, add and update todos.
     #[command(subcommand)]
@@ -569,6 +586,69 @@ fn resolve_page(session: &Session, page: &str) -> Fallible<String> {
     }
 }
 
+fn quick_add(
+    session: &Session,
+    choice: Option<String>,
+    vars: Vec<(String, String)>,
+    date: Option<String>,
+    project: Option<String>,
+    json: bool,
+) -> Fallible<()> {
+    let Some(choice) = choice else {
+        let choices = session.quick_add_choices().map_err(err)?;
+        if json {
+            return print_json(&choices);
+        }
+        for c in choices {
+            let form = session.quick_add_form(&c.name, None).map_err(err)?;
+            let mut asks: Vec<String> = form
+                .prompts
+                .iter()
+                .map(|p| format!("--var {p}=…"))
+                .collect();
+            if form.date {
+                asks.push("[--date]".into());
+            }
+            if form.project {
+                asks.push("[--project]".into());
+            }
+            let what = match c.kind {
+                ChoiceKind::Note => format!("note in {}", c.folder.as_deref().unwrap_or("/")),
+                ChoiceKind::Capture => format!("line in {}", c.to.as_deref().unwrap_or("today")),
+            };
+            println!("{}\t{what}\t{}", c.name, asks.join(" "));
+        }
+        return Ok(());
+    };
+    let form = session.quick_add_form(&choice, None).map_err(err)?;
+    let answers: HashMap<_, _> = vars.into_iter().collect();
+    let missing: Vec<_> = form
+        .prompts
+        .iter()
+        .filter(|p| !answers.contains_key(*p))
+        .cloned()
+        .collect();
+    if !missing.is_empty() {
+        return Err(format!(
+            "{choice} asks for {}; pass --var Label=value for each",
+            missing.join(", ")
+        ));
+    }
+    let date = date.as_deref().map(date_arg).transpose()?;
+    let added = session
+        .quick_add(&choice, answers, date, project.as_deref())
+        .map_err(err)?;
+    if json {
+        return print_json(&serde_json::json!({ "path": added.path, "created": added.created }));
+    }
+    if added.created {
+        println!("Created {}", added.path);
+    } else {
+        println!("Added to {}", added.path);
+    }
+    Ok(())
+}
+
 fn print_json(value: &impl Serialize) -> Fallible<()> {
     println!(
         "{}",
@@ -813,6 +893,12 @@ fn run(cli: Cli) -> Fallible<()> {
             println!("{path}");
             Ok(())
         }
+        Command::Add {
+            choice,
+            vars,
+            date,
+            project,
+        } => quick_add(&session, choice, vars, date, project, json),
         Command::Todo(cmd) => todo(&session, cmd, json),
         Command::Context { note, cwd } => {
             let note = note.map(|n| resolve_note(&session, &n)).transpose()?;

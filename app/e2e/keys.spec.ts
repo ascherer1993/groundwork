@@ -22,6 +22,7 @@ test("shortcuts can be changed in settings, and stay changed", async ({ page }) 
 
   await page.getByRole("button", { name: "Settings" }).click();
   const dialog = page.getByRole("dialog", { name: "Settings" });
+  await dialog.getByRole("button", { name: "Keyboard shortcuts" }).click();
   const shortcut = (label: string) =>
     dialog.getByRole("button", { name: `Shortcut for ${label}`, exact: true });
   await expect(shortcut("Show terminals only")).toHaveText("⌃⌘3");
@@ -64,6 +65,7 @@ test("shortcuts can be changed in settings, and stay changed", async ({ page }) 
 
   // One resets; then all do.
   await page.keyboard.press("Meta+,");
+  await dialog.getByRole("button", { name: "Keyboard shortcuts" }).click();
   await dialog.getByRole("button", { name: "Reset Show terminals only" }).click();
   await expect(shortcut("Show terminals only")).toHaveText("⌃⌘3");
   await dialog.getByRole("button", { name: "Reset all" }).click();

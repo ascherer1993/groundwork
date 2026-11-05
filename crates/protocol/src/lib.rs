@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 
 use groundwork_core::inbox::InboxItem;
+use groundwork_core::quickadd::QuickAddChoice;
 use groundwork_core::settings::AppSettings;
 use groundwork_core::tickets::{NewTicket, TicketFilter};
 use groundwork_core::todos::{TaskChange, TodoFilter};
@@ -196,6 +197,34 @@ pub enum Request {
         path: String,
         #[serde(default)]
         answers: HashMap<String, String>,
+    },
+
+    /// → `QuickAddChoice[]`: the vault's Quick add choices (the defaults
+    /// when it has none).
+    #[serde(rename = "quickAdd.list")]
+    QuickAddList,
+    /// → `null`: saves them in `.groundwork/quickadd.yml`.
+    #[serde(rename = "quickAdd.save")]
+    QuickAddSave { choices: Vec<QuickAddChoice> },
+    /// → `QuickAddForm`: what a choice (by name) asks. `note` is the note
+    /// you're in, for the project offered first.
+    #[serde(rename = "quickAdd.form")]
+    QuickAddForm {
+        choice: String,
+        #[ts(optional)]
+        note: Option<String>,
+    },
+    /// → `QuickAdded`: runs a choice with its form's answers. `date` is
+    /// `YYYY-MM-DD`; `project` an id or name.
+    #[serde(rename = "quickAdd.run")]
+    QuickAddRun {
+        choice: String,
+        #[serde(default)]
+        answers: HashMap<String, String>,
+        #[ts(optional)]
+        date: Option<String>,
+        #[ts(optional)]
+        project: Option<String>,
     },
 
     /// → `string`: the daily note for `date` (`YYYY-MM-DD`, default today),
@@ -686,6 +715,20 @@ pub struct TerminalSnapshot {
 #[ts(export)]
 pub struct WriteResult {
     pub hash: String,
+}
+
+/// What a Quick add choice made, or added a line to.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct QuickAdded {
+    pub path: String,
+    /// Where `{{cursor}}` was in a new note, in UTF-16 code units.
+    #[ts(optional)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<u32>,
+    /// Whether it made the note, rather than adding to it.
+    pub created: bool,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
