@@ -1,0 +1,50 @@
+#!/bin/sh
+# Cargo's runner for `make dev`: starts the desktop app from inside a small
+# "Groundwork Dev.app" bundle beside it, so macOS knows it as an app of its
+# own. Its notifications then show (under Groundwork Dev, with a permission
+# prompt the first time) instead of being sent in another app's name, which
+# macOS refuses for apps that use the newer notification API. Anything else
+# cargo runs (tests, other binaries) runs as usual.
+set -e
+bin="$1"
+shift
+[ "$(basename "$bin")" = groundwork-app ] || exec "$bin" "$@"
+
+dir=$(cd "$(dirname "$bin")" && pwd)
+root=$(cd "$(dirname "$0")/.." && pwd)
+app="$dir/Groundwork Dev.app/Contents"
+id=dev.groundwork.app.dev
+mkdir -p "$app/MacOS" "$app/Resources"
+cp "$root/app/src-tauri/icons/icon.icns" "$app/Resources/icon.icns"
+
+plist=$(cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>$id</string>
+  <key>CFBundleName</key><string>Groundwork Dev</string>
+  <key>CFBundleDisplayName</key><string>Groundwork Dev</string>
+  <key>CFBundleExecutable</key><string>groundwork-app</string>
+  <key>CFBundleIconFile</key><string>icon</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.0.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+EOF
+)
+if [ "$(cat "$app/Info.plist" 2>/dev/null)" != "$plist" ]; then
+  printf '%s\n' "$plist" >"$app/Info.plist"
+  # Tell LaunchServices about it, or macOS can't tie notifications to it.
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$dir/Groundwork Dev.app"
+fi
+# A hard link: the bundle's executable must live inside it, and cargo
+# replaces the binary on each build.
+ln -f "$bin" "$app/MacOS/groundwork-app"
+
+# The CLI and the daemon stay beside the real binary.
+export GROUNDWORK_CLI="${GROUNDWORK_CLI:-$dir/groundwork}"
+export GROUNDWORKD="${GROUNDWORKD:-$dir/groundworkd}"
+export GROUNDWORK_NOTIFY_AS="$id"
+exec "$app/MacOS/groundwork-app" "$@"

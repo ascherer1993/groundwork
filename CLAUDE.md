@@ -26,7 +26,7 @@ A macOS notes app (Tauri v2 + React) over an Obsidian-compatible vault, adding H
 
 ## Commands
 
-- `make dev`: run the desktop app.
+- `make dev`: run the desktop app. It runs inside a `Groundwork Dev.app` bundle in `target/debug` (`scripts/dev-app`) so macOS shows its notifications.
 - `make browser`: run the same UI in a browser at http://localhost:1420.
 - `make test`, `make e2e`, `make lint`, `make fmt`.
 

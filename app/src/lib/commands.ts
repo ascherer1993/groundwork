@@ -183,7 +183,7 @@ function commands(): Command[] {
           failed
             ? `The notification failed: ${failed}`
             : import.meta.env.DEV
-              ? "Sent. Not shown? Development builds notify as Terminal: allow Terminal in System Settings → Notifications."
+              ? "Sent. Not shown? Allow Groundwork Dev in System Settings → Notifications (run with `make dev`)."
               : "Sent. Not shown? Allow Groundwork in System Settings → Notifications.",
         );
       },
