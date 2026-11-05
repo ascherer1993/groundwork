@@ -9,6 +9,7 @@ mod agents;
 pub mod dev_server;
 mod page_server;
 mod terminals;
+mod window;
 
 pub use page_server::PageFile;
 
@@ -25,10 +26,23 @@ use groundwork_core::watch::{self, VaultWatcher};
 use groundwork_core::workspaces;
 use groundwork_core::{FileChange, RecentVaults, Session, Vault};
 use groundwork_protocol::{
-    ApiError, AppInfo, CreatedNote, ErrorCode, Event, Host, RenderedTemplate, Request, WriteResult,
+    ApiError, AppInfo, CreatedNote, ErrorCode, Event, Host, RenderedTemplate, Request, UiCommand,
+    WriteResult,
 };
 use serde::Serialize;
 use serde_json::Value;
+
+/// An existing absolute folder (or `~/…`), as a string.
+fn absolute_folder(cwd: &str) -> Result<String, ApiError> {
+    let path = workspaces::expand_home(cwd.trim());
+    if !path.is_absolute() || !path.is_dir() {
+        return Err(ApiError::new(
+            ErrorCode::BadRequest,
+            format!("not an absolute folder: {cwd}"),
+        ));
+    }
+    Ok(path.display().to_string())
+}
 
 /// Receives events for the UI. Hosts forward them over their transport.
 pub type EventSink = Arc<dyn Fn(Event) + Send + Sync>;
@@ -49,6 +63,7 @@ pub struct Backend {
     page_token: String,
     terminals: terminals::Terminals,
     agents: agents::Agents,
+    window: window::Window,
 }
 
 impl Backend {
@@ -59,6 +74,7 @@ impl Backend {
             settings: Settings::new(&data_dir),
             terminals: terminals::Terminals::new(&data_dir, events.clone()),
             agents: agents::Agents::new(&data_dir, events.clone()),
+            window: window::Window::new(events.clone()),
             data_dir,
             open: Mutex::new(None),
             events,
@@ -382,22 +398,68 @@ impl Backend {
                 self.terminals.kill(id)?;
                 Ok(Value::Null)
             }
+            Request::TerminalRead { id, lines } => to_value(self.terminals.read(id, lines)?),
+
+            Request::AppOpen { target, line } => {
+                let path = self.find_file(&target)?;
+                self.window.call(UiCommand::Open {
+                    path: path.clone(),
+                    line,
+                })?;
+                to_value(path)
+            }
+            Request::AppShowWorkspace { workspace } => {
+                let workspace = self.find_workspace(&workspace)?;
+                self.window.call(UiCommand::ShowWorkspace {
+                    id: workspace.id.clone(),
+                })?;
+                to_value(workspace)
+            }
+            Request::AppNewTab {
+                workspace,
+                beside,
+                cwd,
+                run,
+                background,
+            } => {
+                let workspace = match workspace {
+                    Some(w) => Some(self.find_workspace(&w)?.id),
+                    None => None,
+                };
+                let cwd = cwd.map(|cwd| absolute_folder(&cwd)).transpose()?;
+                self.window.call(UiCommand::NewTab {
+                    workspace,
+                    beside,
+                    cwd,
+                    run,
+                    background,
+                })
+            }
+            Request::AppTabs => self.window.call(UiCommand::Tabs),
+            Request::UiReply { id, result, error } => {
+                self.window
+                    .reply(id, error.map_or(Ok(result.unwrap_or(Value::Null)), Err));
+                Ok(Value::Null)
+            }
 
             Request::WorkspaceList => to_value(self.session()?.workspaces().list()),
             Request::WorkspaceCreate { name, cwd } => {
                 let session = self.session()?;
                 let root = session.vault().root().display().to_string();
-                to_value(
-                    session
-                        .workspaces()
-                        .create(&name, cwd.as_deref().unwrap_or(&root))?,
-                )
-            }
-            Request::WorkspaceUpdate { id, name, cwd } => to_value(
-                self.session()?
+                let workspace = session
                     .workspaces()
-                    .update(&id, name.as_deref(), cwd.as_deref())?,
-            ),
+                    .create(&name, cwd.as_deref().unwrap_or(&root))?;
+                (self.events)(Event::WorkspacesChanged);
+                to_value(workspace)
+            }
+            Request::WorkspaceUpdate { id, name, cwd } => {
+                let workspace =
+                    self.session()?
+                        .workspaces()
+                        .update(&id, name.as_deref(), cwd.as_deref())?;
+                (self.events)(Event::WorkspacesChanged);
+                to_value(workspace)
+            }
             Request::WorkspaceSaveLayout { id, layout } => {
                 self.session()?.workspaces().save_layout(&id, layout)?;
                 Ok(Value::Null)
@@ -405,6 +467,7 @@ impl Backend {
             Request::WorkspaceDelete { id } => {
                 let changes = self.session()?.delete_workspace(&id)?;
                 self.emit(changes);
+                (self.events)(Event::WorkspacesChanged);
                 Ok(Value::Null)
             }
             Request::WorkspaceForNote { path } => {
@@ -469,6 +532,38 @@ impl Backend {
                 Ok(Value::Null)
             }
             Request::AgentList => to_value(self.agents.list()),
+            Request::AgentFork { tab, background } => {
+                let session = self
+                    .agents
+                    .list()
+                    .into_iter()
+                    .find(|a| a.tab == tab)
+                    .and_then(|a| a.session)
+                    .ok_or_else(|| {
+                        ApiError::new(
+                            ErrorCode::NotFound,
+                            "no Claude Code session is known in that terminal",
+                        )
+                    })?;
+                // It came from a hook; it's typed into a shell.
+                if !session
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                {
+                    return Err(ApiError::new(
+                        ErrorCode::BadRequest,
+                        format!("not a session id: {session}"),
+                    ));
+                }
+                let cwd = self.terminals.cwd_of(&tab);
+                self.window.call(UiCommand::NewTab {
+                    workspace: None,
+                    beside: Some(tab),
+                    cwd,
+                    run: Some(format!("claude --resume {session} --fork-session")),
+                    background,
+                })
+            }
             Request::ProjectList => to_value(self.session()?.project_list()?),
             Request::ProjectCreate { folder } => {
                 let (project, changes) = self.session()?.create_project(&folder)?;
@@ -629,6 +724,49 @@ impl Backend {
         let vault = self.session().ok();
         self.setup_env()
             .status(vault.as_ref().map(|s| s.vault().root()))
+    }
+
+    /// A vault file named the way a link or the CLI names it: a vault path,
+    /// an absolute path inside the vault, or a link target (`[[Note]]`).
+    fn find_file(&self, target: &str) -> Result<String, ApiError> {
+        let session = self.session()?;
+        let root = session.vault().root();
+        let target = target.trim();
+        let name = target
+            .strip_prefix("[[")
+            .and_then(|t| t.strip_suffix("]]"))
+            .unwrap_or(target);
+        // `[[Note|alias]]` and `[[Note#heading]]` name the note.
+        let name = name.split(['|', '#']).next().unwrap_or(name);
+        let relative = Path::new(name)
+            .strip_prefix(root)
+            .ok()
+            .and_then(|p| p.to_str())
+            .unwrap_or(name);
+        if let Some(found) = session.index().resolve(relative, "") {
+            return Ok(found);
+        }
+        let full = session.vault().resolve(relative)?;
+        if full.is_file() {
+            return Ok(relative.to_string());
+        }
+        Err(ApiError::new(
+            ErrorCode::NotFound,
+            format!("no note or file called {target} in the vault"),
+        ))
+    }
+
+    /// A workspace of the open vault, by id or (any case) name.
+    fn find_workspace(&self, name: &str) -> Result<workspaces::Workspace, ApiError> {
+        let list = self.session()?.workspaces().list();
+        list.iter()
+            .find(|w| w.id == name)
+            .or_else(|| {
+                list.iter()
+                    .find(|w| w.name.eq_ignore_ascii_case(name.trim()))
+            })
+            .cloned()
+            .ok_or_else(|| ApiError::new(ErrorCode::NotFound, format!("no workspace {name}")))
     }
 
     /// The open vault's folder, if one is open.
@@ -837,6 +975,118 @@ mod tests {
         fn call(&self, request: Value) -> Value {
             self.backend.handle_value(request).unwrap()
         }
+    }
+
+    #[test]
+    fn the_window_does_what_the_cli_asks() {
+        let h = harness();
+        let backend = Arc::new(h.backend);
+        // A stand-in for the window: does nothing, answers as the UI would.
+        let (seen_tx, seen) = mpsc::channel();
+        let window = {
+            let backend = backend.clone();
+            let events = h.events;
+            std::thread::spawn(move || {
+                for event in events {
+                    if matches!(event, Event::WorkspacesChanged) {
+                        let _ = seen_tx.send(json!("workspaces changed"));
+                    }
+                    let Event::UiCommand { id, command } = event else {
+                        continue;
+                    };
+                    let command = serde_json::to_value(&command).unwrap();
+                    let (result, error) = match command["kind"].as_str().unwrap() {
+                        "newTab" => (
+                            Some(json!({ "terminal": "t9", "workspace": command["workspace"],
+                                "title": "zsh", "shown": true })),
+                            None,
+                        ),
+                        "tabs" => (None, Some("no tabs today")),
+                        _ => (None, None),
+                    };
+                    let _ = seen_tx.send(command);
+                    backend
+                        .handle(Request::UiReply {
+                            id,
+                            result,
+                            error: error.map(String::from),
+                        })
+                        .unwrap();
+                }
+            })
+        };
+        let call = |request: Value| backend.handle_value(request);
+
+        // Open: by name, link or path; a missing one never reaches the window.
+        let opened = call(json!({ "method": "app.open", "params": { "target": "[[Welcome]]" } }));
+        assert_eq!(opened.unwrap(), json!("Welcome.md"));
+        assert_eq!(
+            seen.recv().unwrap(),
+            json!({ "kind": "open", "path": "Welcome.md" })
+        );
+        let root = h.vault.path().canonicalize().unwrap();
+        let absolute = root.join("Welcome.md").display().to_string();
+        let opened = call(json!({ "method": "app.open",
+            "params": { "target": absolute, "line": 3 } }));
+        assert_eq!(opened.unwrap(), json!("Welcome.md"));
+        assert_eq!(seen.recv().unwrap()["line"], 3);
+        let missing = call(json!({ "method": "app.open", "params": { "target": "Nope" } }));
+        assert_eq!(missing.unwrap_err().code, ErrorCode::NotFound);
+
+        // Workspaces: made (the window hears), then shown by name.
+        let made =
+            call(json!({ "method": "workspace.create", "params": { "name": "Docs" } })).unwrap();
+        assert_eq!(seen.recv().unwrap(), json!("workspaces changed"));
+        let shown = call(json!({ "method": "app.showWorkspace",
+            "params": { "workspace": "docs" } }))
+        .unwrap();
+        assert_eq!(shown["id"], made["id"]);
+        assert_eq!(seen.recv().unwrap()["id"], made["id"]);
+
+        // A new tab, in a workspace named or by id.
+        let tab = call(json!({ "method": "app.newTab", "params": {
+            "workspace": "Docs", "cwd": "~", "run": "ls" } }))
+        .unwrap();
+        assert_eq!(tab["terminal"], "t9");
+        let sent = seen.recv().unwrap();
+        assert_eq!(sent["workspace"], made["id"]);
+        assert_eq!(sent["run"], "ls");
+        assert_eq!(sent["background"], false);
+        let relative = call(json!({ "method": "app.newTab", "params": { "cwd": "src" } }));
+        assert_eq!(relative.unwrap_err().code, ErrorCode::BadRequest);
+
+        // The window's errors come back as they are.
+        let err = call(json!({ "method": "app.tabs" })).unwrap_err();
+        assert_eq!(err.message, "no tabs today");
+        seen.recv().unwrap();
+
+        // Forking needs the session the hooks reported.
+        let fork = call(json!({ "method": "agent.fork", "params": { "tab": "t1" } }));
+        assert_eq!(fork.unwrap_err().code, ErrorCode::NotFound);
+        call(json!({ "method": "agent.hook", "params": {
+            "tab": "t1", "event": "prompt", "session": "0b9e-41" } }))
+        .unwrap();
+        call(json!({ "method": "agent.fork", "params": { "tab": "t1", "background": true } }))
+            .unwrap();
+        let sent = loop {
+            let c = seen.recv().unwrap();
+            if c["kind"] == "newTab" {
+                break c;
+            }
+        };
+        assert_eq!(sent["beside"], "t1");
+        assert_eq!(sent["run"], "claude --resume 0b9e-41 --fork-session");
+        assert_eq!(sent["background"], true);
+        call(json!({ "method": "agent.hook", "params": {
+            "tab": "t2", "event": "prompt", "session": "x; rm -rf ~" } }))
+        .unwrap();
+        let fork = call(json!({ "method": "agent.fork", "params": { "tab": "t2" } }));
+        assert_eq!(fork.unwrap_err().code, ErrorCode::BadRequest);
+
+        // A reply nobody waits for is dropped.
+        call(json!({ "method": "ui.reply", "params": { "id": 999 } })).unwrap();
+        drop(backend);
+        drop(window);
     }
 
     #[test]

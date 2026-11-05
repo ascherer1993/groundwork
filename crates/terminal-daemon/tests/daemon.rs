@@ -140,6 +140,20 @@ fn sessions_run_programs_and_take_input() {
         .unwrap();
     read_until(&events, &session.id, |t| t.contains("got typed"));
 
+    // What it shows, as text: all of it, or the last lines.
+    let read = |lines| {
+        client
+            .call::<String>(Request::Read {
+                id: session.id.clone(),
+                lines,
+            })
+            .unwrap()
+    };
+    let all = read(None);
+    assert!(all.starts_with("hello from env in"), "{all:?}");
+    assert!(all.ends_with("got typed"), "{all:?}");
+    assert_eq!(read(Some(1)), "got typed");
+
     let listed: Vec<SessionInfo> = client.call(Request::List).unwrap();
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, session.id);

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { TerminalInfo } from "../api/generated/TerminalInfo";
 import type { Workspace } from "../api/generated/Workspace";
+import { showTerminalMenu } from "../state/claude";
 import { showSplit, useTickets } from "../state/tickets";
 import {
   mostUrgent,
@@ -130,6 +131,7 @@ function AreaRow({ area, name, folder }: { area: string; name: string; folder?: 
                 className={`area-tab${t.terminal === shown ? " current" : ""}`}
                 aria-current={t.terminal === shown || undefined}
                 onClick={() => useWorkspace.getState().showTerminal(t.terminal)}
+                onContextMenu={(e) => showTerminalMenu(e, t.terminal)}
               >
                 <SquareTerminal size={12} />
                 <span className="area-tab-title">{t.panel.title}</span>

@@ -1,7 +1,8 @@
 //! `groundwork`: the vault from the terminal, for you and for agents.
 //!
-//! Every command works on the vault's files directly, so the app doesn't
-//! need to be running. Changes are logged to the activity log as `cli`.
+//! Most commands work on the vault's files directly, so the app doesn't
+//! need to be running; `open`, `workspace` and `tab` act on the app's window
+//! (`live.rs`). Changes are logged to the activity log as `cli`.
 //! `--json` gives machine-readable output.
 
 use std::collections::HashMap;
@@ -13,6 +14,7 @@ use chrono::{DateTime, Duration, Local, NaiveDate};
 use clap::{Args, Parser, Subcommand};
 mod app;
 mod inbox;
+mod live;
 
 use groundwork_core::activity::{ActivitySource, read_events};
 use groundwork_core::dates::parse_natural;
@@ -152,6 +154,21 @@ enum Command {
         #[arg(long)]
         link: Option<String>,
     },
+    /// Opens a note, page or file in Groundwork's window. Needs the app.
+    Open {
+        /// A note's name (`Welcome`, `[[Welcome]]`), a vault path, or a path
+        /// to the file from here.
+        target: String,
+        /// The line to show.
+        #[arg(long)]
+        line: Option<u32>,
+    },
+    /// Groundwork's workspaces: named sets of terminal tabs. Needs the app.
+    #[command(subcommand)]
+    Workspace(WorkspaceCommand),
+    /// Terminal tabs in Groundwork's window. Needs the app.
+    #[command(subcommand)]
+    Tab(TabCommand),
     /// For Claude Code's hooks (the groundwork plugin calls it): reports a
     /// terminal's agent state to the app. `session-start` also prints where
     /// the terminal is, for Claude's context.
@@ -159,6 +176,74 @@ enum Command {
     Hook {
         #[arg(value_parser = ["session-start", "prompt", "notification", "stop"])]
         event: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum WorkspaceCommand {
+    /// Every workspace of the vault the app has open.
+    List,
+    /// A new workspace; its terminals start in `--cwd` (default: the vault).
+    Create {
+        name: String,
+        #[arg(long)]
+        cwd: Option<String>,
+        /// Bring it on screen.
+        #[arg(long)]
+        open: bool,
+    },
+    /// Brings a workspace (an id or name) on screen.
+    Open { workspace: String },
+}
+
+#[derive(Subcommand)]
+enum TabCommand {
+    /// Every terminal tab, with its workspace. Ids are `GROUNDWORK_TAB_ID`s.
+    List,
+    /// A new terminal tab; prints its id.
+    New {
+        /// A workspace id or name. Default: the one this runs in, else the
+        /// one on screen.
+        #[arg(long)]
+        workspace: Option<String>,
+        /// Where its shell starts. Default: the workspace's folder.
+        #[arg(long)]
+        cwd: Option<String>,
+        /// A command line to run in it.
+        #[arg(long)]
+        cmd: Option<String>,
+        /// Leave what's on screen as it is.
+        #[arg(long)]
+        background: bool,
+    },
+    /// Types text into a tab, then presses Enter.
+    Send {
+        text: String,
+        /// The tab's id. Default: this tab.
+        #[arg(long)]
+        tab: Option<String>,
+        /// Don't press Enter.
+        #[arg(long)]
+        no_enter: bool,
+    },
+    /// What a tab shows, as text: its scrollback, then its screen.
+    Read {
+        /// The tab's id. Default: this tab.
+        #[arg(long)]
+        tab: Option<String>,
+        /// Only the last this many lines.
+        #[arg(long)]
+        lines: Option<u32>,
+    },
+    /// A new tab beside a Claude Code tab, carrying on its conversation as a
+    /// separate session (`claude --resume <id> --fork-session`). Prints its id.
+    Fork {
+        /// The tab's id. Default: this tab.
+        #[arg(long)]
+        tab: Option<String>,
+        /// Leave what's on screen as it is.
+        #[arg(long)]
+        background: bool,
     },
 }
 
@@ -517,6 +602,34 @@ fn run(cli: Cli) -> Fallible<()> {
             timeout,
         } => return inbox::ask(question, choices, link, timeout, cli.json),
         Command::Notify { text, link } => return inbox::notify(text, link, cli.json),
+        Command::Open { target, line } => return live::open(target, line, cli.json),
+        Command::Workspace(command) => {
+            return match command {
+                WorkspaceCommand::List => live::workspace_list(cli.json),
+                WorkspaceCommand::Create { name, cwd, open } => {
+                    live::workspace_create(name, cwd, open, cli.json)
+                }
+                WorkspaceCommand::Open { workspace } => live::workspace_open(workspace, cli.json),
+            };
+        }
+        Command::Tab(command) => {
+            return match command {
+                TabCommand::List => live::tab_list(cli.json),
+                TabCommand::New {
+                    workspace,
+                    cwd,
+                    cmd,
+                    background,
+                } => live::tab_new(workspace, cwd, cmd, background, cli.json),
+                TabCommand::Send {
+                    text,
+                    tab,
+                    no_enter,
+                } => live::tab_send(text, tab, !no_enter),
+                TabCommand::Read { tab, lines } => live::tab_read(tab, lines, cli.json),
+                TabCommand::Fork { tab, background } => live::tab_fork(tab, background, cli.json),
+            };
+        }
         Command::Hook { event } => {
             inbox::hook(&event, || {
                 let (vault, _) = find_vault(cli.vault).ok()?;
@@ -739,7 +852,13 @@ fn run(cli: Cli) -> Fallible<()> {
             }
             Ok(())
         }
-        Command::Vault | Command::Ask { .. } | Command::Notify { .. } | Command::Hook { .. } => {
+        Command::Vault
+        | Command::Ask { .. }
+        | Command::Notify { .. }
+        | Command::Hook { .. }
+        | Command::Open { .. }
+        | Command::Workspace(_)
+        | Command::Tab(_) => {
             unreachable!("handled before opening the vault")
         }
         Command::Activity { since, path, limit } => {

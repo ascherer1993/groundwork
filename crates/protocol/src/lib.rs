@@ -282,6 +282,59 @@ pub enum Request {
     /// window does.
     #[serde(rename = "terminal.kill")]
     TerminalKill { id: String },
+    /// → `string`: what the terminal shows, as plain text (its scrollback,
+    /// then its screen); the last `lines` lines if given.
+    #[serde(rename = "terminal.read")]
+    TerminalRead {
+        id: String,
+        #[ts(optional)]
+        lines: Option<u32>,
+    },
+
+    /// → `string`: opens a note, page or file (a vault path, or a name as in
+    /// a link) in the app's window. Returns its path. Like the requests
+    /// below, it needs the window, which does it and answers.
+    #[serde(rename = "app.open")]
+    AppOpen {
+        target: String,
+        #[ts(optional)]
+        line: Option<u32>,
+    },
+    /// → `Workspace`: brings a workspace (an id or name) on screen.
+    #[serde(rename = "app.showWorkspace")]
+    AppShowWorkspace { workspace: String },
+    /// → `TabInfo`: a new terminal tab.
+    #[serde(rename = "app.newTab")]
+    AppNewTab {
+        /// An id or name. Default: beside `beside`, else the current one.
+        #[ts(optional)]
+        workspace: Option<String>,
+        /// A terminal whose workspace (and group) the tab joins.
+        #[ts(optional)]
+        beside: Option<String>,
+        /// An absolute folder or `~/…`. Default: the workspace's folder.
+        #[ts(optional)]
+        cwd: Option<String>,
+        /// A command line typed into the new shell.
+        #[ts(optional)]
+        run: Option<String>,
+        /// Leave what's on screen as it is.
+        #[serde(default)]
+        background: bool,
+    },
+    /// → `TabInfo[]`: every terminal tab in the window.
+    #[serde(rename = "app.tabs")]
+    AppTabs,
+    /// → `null`: the window's answer to a `ui.command` event.
+    #[serde(rename = "ui.reply")]
+    UiReply {
+        #[ts(type = "number")]
+        id: u64,
+        #[ts(optional, type = "unknown")]
+        result: Option<serde_json::Value>,
+        #[ts(optional)]
+        error: Option<String>,
+    },
 
     /// → `Workspace[]`: the open vault's workspaces.
     #[serde(rename = "workspace.list")]
@@ -388,6 +441,14 @@ pub enum Request {
     /// → `AgentInfo[]`: what the hooks have said about each terminal.
     #[serde(rename = "agent.list")]
     AgentList,
+    /// → `TabInfo`: a new tab beside terminal `tab`, in its folder, running
+    /// `claude --resume <its session> --fork-session`.
+    #[serde(rename = "agent.fork")]
+    AgentFork {
+        tab: String,
+        #[serde(default)]
+        background: bool,
+    },
 
     /// → `ProjectInfo[]`
     #[serde(rename = "project.list")]
@@ -498,6 +559,66 @@ pub enum Event {
     /// An agent in a terminal changed state.
     #[serde(rename = "agent.changed")]
     AgentChanged { agent: AgentInfo },
+    /// Workspaces were made, changed or removed (say, by the CLI).
+    #[serde(rename = "workspaces.changed")]
+    WorkspacesChanged,
+    /// Something for the window to do (from the CLI, through the socket).
+    /// It answers with `ui.reply` and this `id`.
+    #[serde(rename = "ui.command")]
+    UiCommand {
+        #[ts(type = "number")]
+        id: u64,
+        command: UiCommand,
+    },
+}
+
+/// What the backend asks the window to do; see `Event::UiCommand`.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[ts(export)]
+pub enum UiCommand {
+    /// → `null`: open a vault path in the notes.
+    Open {
+        path: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        line: Option<u32>,
+    },
+    /// → `null`: make a workspace current, its terminals on screen.
+    ShowWorkspace { id: String },
+    /// → `TabInfo`: see `Request::AppNewTab`. `workspace` is an id.
+    #[serde(rename_all = "camelCase")]
+    NewTab {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        workspace: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        beside: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        cwd: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        run: Option<String>,
+        background: bool,
+    },
+    /// → `TabInfo[]`
+    Tabs,
+}
+
+/// A terminal tab in the window.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TabInfo {
+    /// The terminal (`GROUNDWORK_TAB_ID`).
+    pub terminal: String,
+    /// The workspace it's in.
+    pub workspace: String,
+    pub title: String,
+    /// Whether it's the one on screen in the current workspace.
+    pub shown: bool,
 }
 
 /// What Claude Code in a terminal is doing, from its hooks.
@@ -618,6 +739,8 @@ pub enum ErrorCode {
     Forbidden,
     Conflict,
     TooLarge,
+    /// The app's window didn't answer (it's needed for this).
+    Unavailable,
     Internal,
 }
 

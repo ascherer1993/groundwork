@@ -5,6 +5,7 @@ import type { GitState } from "./generated/GitState";
 import type { NewTicket } from "./generated/NewTicket";
 import type { ProjectInfo } from "./generated/ProjectInfo";
 import type { AgentInfo } from "./generated/AgentInfo";
+import type { TabInfo } from "./generated/TabInfo";
 import type { InboxItem } from "./generated/InboxItem";
 import type { RepoInfo } from "./generated/RepoInfo";
 import type { RepoLocation } from "./generated/RepoLocation";
@@ -95,6 +96,12 @@ interface Results {
   "terminal.input": null;
   "terminal.resize": null;
   "terminal.kill": null;
+  "terminal.read": string;
+  "app.open": string;
+  "app.showWorkspace": Workspace;
+  "app.newTab": TabInfo;
+  "app.tabs": TabInfo[];
+  "ui.reply": null;
   "workspace.list": Workspace[];
   "workspace.create": Workspace;
   "workspace.update": Workspace;
@@ -112,6 +119,7 @@ interface Results {
   "inbox.answer": null;
   "agent.hook": null;
   "agent.list": AgentInfo[];
+  "agent.fork": TabInfo;
   "project.create": ProjectInfo;
   "ticket.list": Ticket[];
   "ticket.git": GitState;
@@ -216,6 +224,10 @@ export const api = {
   resizeTerminal: (id: string, cols: number, rows: number) =>
     call("terminal.resize", { id, cols, rows }),
   killTerminal: (id: string) => call("terminal.kill", { id }),
+  readTerminal: (id: string, lines?: number) => call("terminal.read", { id, lines }),
+  /** The window's answer to a `ui.command` event. */
+  uiReply: (id: number, outcome: { result?: unknown; error?: string }) =>
+    call("ui.reply", { id, ...outcome }),
 
   workspaces: () => call("workspace.list"),
   /** `cwd` is absolute; the vault root by default. */

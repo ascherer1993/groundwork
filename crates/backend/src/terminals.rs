@@ -73,12 +73,38 @@ impl Terminals {
         self.call(Request::Input { id, data })
     }
 
+    pub fn read(&self, id: String, lines: Option<u32>) -> Result<String, ApiError> {
+        if self.protocol.load(Ordering::SeqCst) < 3 {
+            return Err(ApiError::new(
+                ErrorCode::Unavailable,
+                "the terminal daemon running now is too old to read terminals; \
+                 it's replaced once no terminals are running",
+            ));
+        }
+        self.call(Request::Read {
+            id,
+            lines: lines.map(|n| n as usize),
+        })
+    }
+
     pub fn resize(&self, id: String, cols: u16, rows: u16) -> Result<(), ApiError> {
         self.call(Request::Resize { id, cols, rows })
     }
 
     pub fn kill(&self, id: String) -> Result<(), ApiError> {
         self.call(Request::Kill { id })
+    }
+
+    /// A terminal's current folder, if the daemon is running and has it.
+    pub fn cwd_of(&self, id: &str) -> Option<String> {
+        if !self.socket.exists() {
+            return None;
+        }
+        self.list()
+            .ok()?
+            .into_iter()
+            .find(|t| t.id == id)
+            .map(|t| t.cwd)
     }
 
     /// Ends every terminal whose shell is in `dir` or below it, if the

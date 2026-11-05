@@ -2,6 +2,7 @@
 import type { AgentInfo } from "./AgentInfo";
 import type { FileChange } from "./FileChange";
 import type { InboxItem } from "./InboxItem";
+import type { UiCommand } from "./UiCommand";
 
 /**
  * Pushed from the backend to the UI, serialized as `{ "event": "...", "payload": {...} }`.
@@ -10,4 +11,4 @@ export type Event = { "event": "vault.changed", "payload": { changes: Array<File
 /**
  * The item added, if one was.
  */
-added?: InboxItem, } } | { "event": "agent.changed", "payload": { agent: AgentInfo, } };
+added?: InboxItem, } } | { "event": "agent.changed", "payload": { agent: AgentInfo, } } | { "event": "workspaces.changed" } | { "event": "ui.command", "payload": { id: number, command: UiCommand, } };

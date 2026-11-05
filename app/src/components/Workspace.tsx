@@ -1,7 +1,9 @@
 import {
   type DockviewApi,
+  DockviewDefaultTab,
   type DockviewReadyEvent,
   DockviewReact,
+  type IDockviewPanelHeaderProps,
   type IDockviewPanelProps,
   themeLight,
 } from "dockview-react";
@@ -9,6 +11,7 @@ import "dockview-react/dist/styles/dockview.css";
 import { ChevronDown, FilePlus, Pin, PinOff, Plus, Search, SquareTerminal } from "lucide-react";
 import { createContext, useEffect, useRef, useState } from "react";
 import { switchWorkspace } from "../lib/commands";
+import { showTerminalMenu } from "../state/claude";
 import { NOTES, useWorkspace } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
 import { useKeyLabel } from "../state/keys";
@@ -23,6 +26,21 @@ const components = {
   file: FilePanel as (props: IDockviewPanelProps) => React.ReactNode,
   terminal: TerminalPanel as (props: IDockviewPanelProps) => React.ReactNode,
 };
+
+/** A terminal's tab, with its menu (Fork session, Resume conversation…). */
+function TerminalTab(props: IDockviewPanelHeaderProps) {
+  return (
+    <DockviewDefaultTab
+      {...props}
+      onContextMenu={(e) => {
+        // Read when clicked: a replacement shell changes it.
+        const params = props.containerApi.getPanel(props.api.id)?.params;
+        const terminal = (params as { terminal?: string } | undefined)?.terminal;
+        if (terminal) showTerminalMenu(e, terminal);
+      }}
+    />
+  );
+}
 
 /** A shortcut, as it's currently bound. */
 function Key({ id }: { id: string }) {
@@ -70,6 +88,7 @@ function Area({ area, layout, shown }: { area: string; layout?: unknown; shown: 
           className="workspace"
           theme={{ ...themeLight, name: "groundwork", className: "dockview-theme-groundwork" }}
           components={components}
+          defaultTabComponent={area === NOTES ? undefined : TerminalTab}
           watermarkComponent={area === NOTES ? NotesWatermark : TerminalsWatermark}
           onReady={(e: DockviewReadyEvent) => setDock(e.api)}
         />

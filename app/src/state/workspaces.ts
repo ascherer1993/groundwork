@@ -184,6 +184,14 @@ const baseName = (path: string) => path.replace(/\/+$/, "").split("/").pop() || 
 
 setWorkspaceHooks({
   folder: (id) => useWorkspaces.getState().list.find((w) => w.id === id)?.cwd,
+  // One made elsewhere (the CLI) may not be listed yet.
+  async ready(id) {
+    if (!useWorkspaces.getState().list.some((w) => w.id === id)) {
+      await useWorkspaces.getState().refresh();
+    }
+    if (!useWorkspaces.getState().list.some((w) => w.id === id)) return false;
+    return useWorkspaces.getState().ready(id);
+  },
   // A terminal with no workspace to go in gets one named after its folder.
   async make(cwd) {
     const folder = cwd ?? useVault.getState().vault?.path;

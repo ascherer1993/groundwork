@@ -218,6 +218,7 @@ impl Daemon {
                 self.session(&id)?.input(data.as_bytes())?;
                 Ok(Value::Null)
             }
+            Request::Read { id, lines } => json(self.session(&id)?.read(lines)),
             Request::Resize { id, cols, rows } => {
                 self.session(&id)?.resize(cols, rows)?;
                 Ok(Value::Null)
@@ -557,6 +558,11 @@ impl Session {
             .map_err(failed)
     }
 
+    fn read(&self, lines: Option<usize>) -> String {
+        let screen = self.screen.lock().unwrap();
+        text(screen.parser.screen(), lines)
+    }
+
     /// Hangs up, like closing a terminal window; anything still running
     /// after [`KILL_GRACE`] is killed.
     fn kill(self: &Arc<Self>) {
@@ -601,6 +607,25 @@ fn snapshot(screen: &vt100::Screen) -> String {
     out.push_str(&screen.contents_formatted());
     out.push_str(&screen.input_mode_formatted());
     out
+}
+
+/// The scrollback and screen as plain text, without trailing blank lines
+/// (or spaces); the last `lines` of it if given.
+fn text(screen: &vt100::Screen, lines: Option<usize>) -> String {
+    let mut formatted = String::new();
+    let _ = screen.write_contents_formatted_basic(
+        &mut formatted,
+        BasicFormattedCaptureRange::Full(&mut Default::default()),
+    );
+    let plain: String = vt100::capture::basic_formatted_to_plain(&formatted).collect();
+    let mut rows: Vec<&str> = plain.lines().map(str::trim_end).collect();
+    while rows.last().is_some_and(|r| r.is_empty()) {
+        rows.pop();
+    }
+    if let Some(n) = lines {
+        rows.drain(..rows.len().saturating_sub(n));
+    }
+    rows.join("\n")
 }
 
 fn nz(n: u16) -> std::num::NonZeroU16 {

@@ -16,6 +16,7 @@ import { api, transport } from "../api/client";
 import type { AgentState } from "../api/generated/AgentState";
 import type { TerminalInfo } from "../api/generated/TerminalInfo";
 import { isTauri } from "../api/transport";
+import { rememberSession } from "./claude";
 import { seenTerminal } from "./inbox";
 import { useUi } from "./ui";
 import { isTerminal, type TerminalParams, useWorkspace } from "./workspace";
@@ -36,6 +37,8 @@ export interface TerminalStatus {
   finished: boolean;
   /** What Claude Code's hooks last said. */
   agent?: AgentState;
+  /** Claude Code's session in it, from the hooks. */
+  session?: string;
 }
 
 /** Claude Code output this recent counts as running. */
@@ -133,13 +136,22 @@ export function watchTerminals() {
   watching = true;
   void api
     .agents()
-    .then((agents) => agents.forEach((a) => patch(a.tab, { agent: a.state })))
+    .then((agents) =>
+      agents.forEach((a) => {
+        patch(a.tab, { agent: a.state, session: a.session });
+        if (a.session) rememberSession(a.tab, a.session);
+      }),
+    )
     .catch(() => {});
   transport.listen((event) => {
     switch (event.event) {
       case "agent.changed": {
-        const { tab: id, state, message } = event.payload.agent;
+        const { tab: id, state, message, session } = event.payload.agent;
         const looking = isSeen(id);
+        if (session) {
+          patch(id, { session });
+          rememberSession(id, session);
+        }
         if (state === "waiting") {
           patch(id, { agent: state, attention: looking ? undefined : (message ?? "") });
           if (looking) seenTerminal(id);

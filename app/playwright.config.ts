@@ -52,8 +52,10 @@ export default defineConfig({
         GROUNDWORK_DATA_DIR: dataDir,
         GROUNDWORK_CLAUDE: join(setupDir, "claude-bin/claude"),
         GROUNDWORK_BIN_DIR: join(setupDir, "bin"),
-        // Terminals run a plain shell, not the user's configured one.
+        // Terminals run a plain shell, not the user's configured one…
         SHELL: "/bin/sh",
+        // …which finds the fake `claude` before any real one.
+        PATH: `${join(setupDir, "claude-bin")}:${process.env.PATH}`,
       },
       // The first run compiles the backend.
       timeout: 300_000,

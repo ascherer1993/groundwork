@@ -9,6 +9,7 @@ import type { DockviewApi, IDockviewPanel } from "dockview-react";
 import { create } from "zustand";
 import { api } from "../api/client";
 import type { FileChange } from "../api/generated/FileChange";
+import type { TabInfo } from "../api/generated/TabInfo";
 import type { TerminalInfo } from "../api/generated/TerminalInfo";
 import { displayName, isPagePath } from "../lib/paths";
 import { splitTarget } from "../markdown/syntax";
@@ -45,6 +46,8 @@ export interface TerminalParams {
   terminal: string;
   /** Where it started, for a replacement shell if the session is gone. */
   cwd: string;
+  /** The Claude Code session last seen in it, to resume or fork after a restart. */
+  session?: string;
 }
 
 export function isTerminal(panel: IDockviewPanel): boolean {
@@ -61,6 +64,12 @@ export interface TerminalOptions {
   split?: "right" | "below";
   /** A command line to type into the new shell. */
   run?: string;
+  /** The workspace it goes in. By default `beside`'s, else the current one (made if there's none). */
+  workspace?: string;
+  /** A terminal whose group the new tab joins. */
+  beside?: string;
+  /** Leave what's on screen as it is. */
+  background?: boolean;
 }
 
 export interface OpenOptions {
@@ -129,14 +138,18 @@ interface WorkspaceState {
    * folder. `run` is typed into it.
    */
   openTerminal(cwd?: string, opts?: TerminalOptions): Promise<void>;
-  /** Shows a running terminal in a new tab of the current workspace. */
-  addTerminal(info: TerminalInfo, opts?: TerminalOptions): Promise<void>;
+  /** `openTerminal` for callers that want the tab, or the error. */
+  newTerminal(cwd?: string, opts?: TerminalOptions): Promise<TabInfo>;
+  /** Shows a running terminal in a new tab of the current workspace (or `opts.workspace`). */
+  addTerminal(info: TerminalInfo, opts?: TerminalOptions): Promise<TabInfo | null>;
   /** The notes dock's tab showing `path`, if one does. */
   fileTab(path: string): IDockviewPanel | undefined;
   /** Shows a running terminal (by session id) in a tab, if one has it. */
   showTerminal(id: string): boolean;
   /** Every terminal in a tab, with the workspace it's in. */
   terminalTabs(): { area: string; panel: IDockviewPanel; terminal: string }[];
+  /** The same, as the CLI sees them (`groundwork tab list`). */
+  tabInfos(): TabInfo[];
 }
 
 let panelCounter = 0;
@@ -196,8 +209,14 @@ interface WorkspaceHooks {
   folder(id: string): string | undefined;
   /** A new workspace for terminals in `cwd`, mounted and ready. */
   make(cwd?: string): Promise<string | null>;
+  /** Resolves once a workspace's dock is mounted. */
+  ready(id: string): Promise<boolean>;
 }
-let hooks: WorkspaceHooks = { folder: () => undefined, make: async () => null };
+let hooks: WorkspaceHooks = {
+  folder: () => undefined,
+  make: async () => null,
+  ready: async () => false,
+};
 export function setWorkspaceHooks(h: WorkspaceHooks) {
   hooks = h;
 }
@@ -216,9 +235,13 @@ export function paramsOf(panel: IDockviewPanel): PanelParams {
 }
 
 /** The current workspace, or a new one for terminals in `cwd` if there's none. */
-async function terminalWorkspace(cwd?: string): Promise<string | null> {
-  const { workspace, docks } = useWorkspace.getState();
-  return workspace && docks[workspace] ? workspace : hooks.make(cwd);
+async function terminalWorkspace(cwd?: string, opts: TerminalOptions = {}): Promise<string | null> {
+  const { workspace, docks, terminalTabs } = useWorkspace.getState();
+  const area =
+    opts.workspace ?? terminalTabs().find((t) => t.terminal === opts.beside)?.area ?? workspace;
+  if (area && (docks[area] || (await hooks.ready(area)))) return area;
+  if (opts.workspace) throw new Error(`no workspace ${opts.workspace}`);
+  return hooks.make(cwd);
 }
 
 /** The notes dock's active tab. */
@@ -499,33 +522,48 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   async openTerminal(cwd, opts = {}) {
     try {
-      const id = await terminalWorkspace(cwd);
-      if (!id) return;
-      // The view resizes it to fit once it's on screen.
-      const info = await api.createTerminal({ cols: 100, rows: 30 }, cwd ?? hooks.folder(id), id);
-      await get().addTerminal(info, opts);
-      // The shell reads it once it starts.
-      if (opts.run) await api.terminalInput(info.id, `${opts.run}\r`);
+      await get().newTerminal(cwd, opts);
     } catch (err) {
       useUi.getState().notify(message(err));
     }
   },
 
+  async newTerminal(cwd, opts = {}) {
+    const id = await terminalWorkspace(cwd, opts);
+    if (!id) throw new Error("there's no workspace for the terminal");
+    // The view resizes it to fit once it's on screen.
+    const info = await api.createTerminal({ cols: 100, rows: 30 }, cwd ?? hooks.folder(id), id);
+    const tab = await get().addTerminal(info, { ...opts, workspace: id });
+    // The shell reads it once it starts.
+    if (opts.run) await api.terminalInput(info.id, `${opts.run}\r`);
+    if (!tab) throw new Error("the terminal's workspace went away");
+    return tab;
+  },
+
   async addTerminal(info, opts = {}) {
-    const id = await terminalWorkspace(info.cwd);
+    const id = await terminalWorkspace(info.cwd, opts);
     const dock = id ? get().docks[id] : undefined;
-    if (!id || !dock) return;
-    get().showWorkspace(id);
-    get().setFocused("terminals");
+    if (!id || !dock) return null;
+    if (!opts.background) {
+      get().showWorkspace(id);
+      get().setFocused("terminals");
+    }
     const params: TerminalParams = { terminal: info.id, cwd: info.cwd };
-    const active = dock.activePanel;
+    const near =
+      get()
+        .terminalTabs()
+        .find((t) => t.terminal === opts.beside && t.area === id)?.panel ?? dock.activePanel;
     dock.addPanel({
       id: `tab-${++panelCounter}`,
       component: "terminal",
       title: terminalTitle(info.title, info.cwd),
       params: params as unknown as Record<string, unknown>,
-      position: active ? { referencePanel: active, direction: opts.split ?? "within" } : undefined,
+      position: near ? { referencePanel: near, direction: opts.split ?? "within" } : undefined,
+      inactive: opts.background && !!dock.activePanel,
     });
+    return get()
+      .tabInfos()
+      .find((t) => t.terminal === info.id)!;
   },
 
   fileTab(path) {
@@ -550,6 +588,18 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         terminal: (panel.params as unknown as TerminalParams).terminal,
       })),
     );
+  },
+
+  tabInfos() {
+    const shown = shownTerminal(get());
+    return get()
+      .terminalTabs()
+      .map((t) => ({
+        terminal: t.terminal,
+        workspace: t.area,
+        title: t.panel.title ?? "",
+        shown: t.terminal === shown,
+      }));
   },
 
   async newNote(folder, opts = {}) {

@@ -762,3 +762,145 @@ fn tickets_from_create_to_close() {
     v.ok(&["ticket", "restore", "TEAM-7 Fix signup", "--no-setup"]);
     assert!(wt.is_dir());
 }
+
+#[test]
+fn live_commands_go_to_the_app() {
+    use std::io::{BufRead, BufReader};
+    use std::os::unix::net::UnixListener;
+
+    let data = tempfile::tempdir().unwrap();
+    let here = tempfile::tempdir().unwrap();
+    fs::create_dir(here.path().join("src")).unwrap();
+    fs::write(here.path().join("Plan.md"), "# Plan\n").unwrap();
+    let here = here.path().canonicalize().unwrap();
+    let socket = data.path().join("app.sock");
+    // A stand-in for the app: records each request and answers as it would.
+    let listener = UnixListener::bind(&socket).unwrap();
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<serde_json::Value>::new()));
+    {
+        let seen = seen.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                let mut line = String::new();
+                BufReader::new(stream.try_clone().unwrap())
+                    .read_line(&mut line)
+                    .unwrap();
+                let request: serde_json::Value = serde_json::from_str(&line).unwrap();
+                let workspace = serde_json::json!({ "id": "w1", "name": "Docs",
+                    "cwd": "/tmp", "layout": null });
+                let tab = serde_json::json!({ "terminal": "t2", "workspace": "w1",
+                    "title": "zsh", "shown": true });
+                let ok = match request["method"].as_str().unwrap() {
+                    "app.open" => serde_json::json!("Notes/Plan.md"),
+                    "terminal.read" => serde_json::json!("$ ls\nREADME.md"),
+                    "workspace.create" | "app.showWorkspace" => workspace.clone(),
+                    "workspace.list" => serde_json::json!([workspace]),
+                    "app.newTab" | "agent.fork" => tab.clone(),
+                    "app.tabs" => serde_json::json!([tab]),
+                    _ => serde_json::Value::Null,
+                };
+                seen.lock().unwrap().push(request);
+                writeln!(stream, "{}", serde_json::json!({ "ok": ok })).unwrap();
+            }
+        });
+    }
+    let run = |args: &[&str], tab: Option<&str>| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_groundwork"));
+        cmd.args(args)
+            .current_dir(&here)
+            .env("GROUNDWORK_DATA_DIR", data.path())
+            .env("GROUNDWORK_SOCKET", &socket)
+            .env_remove("GROUNDWORK_TAB_ID")
+            .env_remove("GROUNDWORK_WORKSPACE_ID");
+        if let Some(tab) = tab {
+            cmd.env("GROUNDWORK_TAB_ID", tab)
+                .env("GROUNDWORK_WORKSPACE_ID", "w1");
+        }
+        let out = cmd.output().unwrap();
+        (
+            out.status.success(),
+            String::from_utf8(out.stdout).unwrap(),
+            String::from_utf8(out.stderr).unwrap(),
+        )
+    };
+    let last = || seen.lock().unwrap().last().cloned().unwrap();
+
+    // A file named from here goes as its full path; a name as it is.
+    assert_eq!(run(&["open", "Plan.md"], None).1, "Opened Notes/Plan.md\n");
+    assert_eq!(
+        last()["params"]["target"],
+        here.join("Plan.md").display().to_string()
+    );
+    run(&["open", "[[Welcome]]", "--line", "4"], None);
+    assert_eq!(
+        last()["params"],
+        serde_json::json!({ "target": "[[Welcome]]", "line": 4 })
+    );
+
+    // Workspaces: folders from here are made absolute.
+    let (ok, out, _) = run(
+        &["workspace", "create", "Docs", "--cwd", "src", "--open"],
+        None,
+    );
+    assert!(ok);
+    assert_eq!(out, "w1\n");
+    assert_eq!(last()["method"], "app.showWorkspace");
+    let created = seen.lock().unwrap().iter().rev().nth(1).cloned().unwrap();
+    assert_eq!(
+        created["params"]["cwd"],
+        here.join("src").display().to_string()
+    );
+    assert_eq!(run(&["workspace", "list"], None).1, "w1 · Docs · /tmp\n");
+
+    // Tabs: a new one joins the workspace this runs in.
+    assert_eq!(
+        run(&["tab", "new", "--cmd", "make dev"], Some("t1")).1,
+        "t2\n"
+    );
+    assert_eq!(last()["params"]["workspace"], "w1");
+    assert_eq!(last()["params"]["run"], "make dev");
+    assert_eq!(
+        run(&["tab", "list"], Some("t1")).1,
+        "t2 · Docs · zsh (on screen)\n"
+    );
+
+    // send types, then presses Enter on its own; read and fork default to this tab.
+    let before = seen.lock().unwrap().len();
+    assert!(run(&["tab", "send", "hello", "--tab", "t2"], None).0);
+    let sent: Vec<_> = seen.lock().unwrap()[before..].to_vec();
+    assert_eq!(sent.len(), 2);
+    assert_eq!(
+        sent[0]["params"],
+        serde_json::json!({ "id": "t2", "data": "hello" })
+    );
+    assert_eq!(sent[1]["params"]["data"], "\r");
+    assert_eq!(
+        run(&["tab", "read", "--lines", "2"], Some("t1")).1,
+        "$ ls\nREADME.md\n"
+    );
+    assert_eq!(
+        last()["params"],
+        serde_json::json!({ "id": "t1", "lines": 2 })
+    );
+    assert_eq!(run(&["tab", "fork"], Some("t1")).1, "t2\n");
+    assert_eq!(last()["params"]["tab"], "t1");
+
+    // Outside a Groundwork terminal, a tab must be named.
+    let (ok, _, err) = run(&["tab", "read"], None);
+    assert!(!ok);
+    assert!(err.contains("--tab"), "{err}");
+}
+
+#[test]
+fn live_commands_need_the_app() {
+    let data = tempfile::tempdir().unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_groundwork"))
+        .args(["tab", "list"])
+        .env("GROUNDWORK_DATA_DIR", data.path())
+        .env("GROUNDWORK_SOCKET", data.path().join("none.sock"))
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("Groundwork isn't running"));
+}

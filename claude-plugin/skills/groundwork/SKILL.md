@@ -196,3 +196,24 @@ groundwork notify "Reorganised Meetings/ into one folder per month" [--link "[[M
 - `ask` shows the question in the app's inbox (with a macOS notification when the app is in the background), waits, and prints the answer. Choices are suggestions; the user can type something else. It fails if the user dismisses the question or `--timeout` passes, so decide what to do then.
 - `notify` posts something to know and returns at once. Use it when you finish something the user should look at, not for every step.
 - Both work while the app is closed: the item waits in the inbox until it opens. `--link` points at the note it's about.
+
+## The app's window: opening notes, workspaces and terminal tabs
+
+These act on the running app (they fail if it isn't open) and the vault it has open:
+
+```sh
+groundwork open <note|path> [--line N]  # show a note, page or file in the window
+groundwork workspace list               # id · name · folder · note
+groundwork workspace create <name> [--cwd <folder>] [--open]
+groundwork workspace open <id|name>
+groundwork tab list                     # id · workspace · title; marks this tab
+groundwork tab new [--workspace <id|name>] [--cwd <folder>] [--cmd "<command line>"] [--background]   # prints its id
+groundwork tab send "<text>" [--tab <id>] [--no-enter]   # types it, then presses Enter
+groundwork tab read [--tab <id>] [--lines N]             # what the tab shows, as text
+groundwork tab fork [--tab <id>] [--background]          # fork a Claude Code tab's conversation into a new tab
+```
+
+- Tab ids are terminal ids: `GROUNDWORK_TAB_ID` is yours, and `--tab` defaults to it. `tab new` joins your workspace unless told otherwise.
+- After writing or changing a note the user should look at, `groundwork open` it rather than describing where it is.
+- To run something long next to you (a dev server, tests), `tab new --cmd "..." --background`, then `tab read --tab <id> --lines 40` to see how it's going. Don't `tab send` into a tab the user is working in without being asked.
+- `tab fork` with no `--tab` forks your own session: the new tab carries on this conversation separately.

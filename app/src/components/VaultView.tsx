@@ -25,6 +25,7 @@ import { message, useVault } from "../state/vault";
 import { watchTerminals } from "../state/terminals";
 import { watchFollow } from "../state/follow";
 import { watchInbox } from "../state/inbox";
+import { watchRemote } from "../state/remote";
 import { watchTickets } from "../state/tickets";
 import { useWorkspace, type View } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
@@ -169,6 +170,7 @@ export function VaultView() {
     watchTickets();
     watchFollow();
     watchInbox();
+    watchRemote();
     void useWorkspaces.getState().load();
   }, [vault?.path]);
 

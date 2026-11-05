@@ -12,10 +12,10 @@ use serde_json::Value;
 /// Bumped whenever this format changes. The app replaces a running daemon
 /// that speaks a different one once it has no sessions; until then it keeps
 /// using one that speaks [`OLDEST_COMPATIBLE`] or later.
-pub const PROTOCOL: u32 = 2;
+pub const PROTOCOL: u32 = 3;
 /// The oldest protocol this one can still talk to: changes since only added
-/// events, which an older daemon just never sends, and 0×0 attaches, which
-/// the app doesn't send to one.
+/// events, which an older daemon just never sends, 0×0 attaches, which the
+/// app doesn't send to one, and `Read` (protocol 3), which it refuses.
 pub const OLDEST_COMPATIBLE: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +33,14 @@ pub enum Request {
     Attach { id: String, cols: u16, rows: u16 },
     /// Writes to the session's input. → null
     Input { id: String, data: String },
+    /// What the session shows, as plain text: its scrollback then its
+    /// screen, without trailing blank lines; the last `lines` of it if
+    /// given. From protocol 3. → `String`
+    Read {
+        id: String,
+        #[serde(default)]
+        lines: Option<usize>,
+    },
     /// → null
     Resize { id: String, cols: u16, rows: u16 },
     /// Hangs up the session's processes. → null
