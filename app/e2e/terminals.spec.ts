@@ -130,8 +130,8 @@ test("closing a terminal tab ends its shell; app shortcuts work from it", async 
   await expect(page.getByRole("dialog", { name: "Quick switcher" })).toBeVisible();
   await page.keyboard.press("Escape");
 
-  await page.locator(VIEW).click();
-  await page.keyboard.press("Meta+w");
+  // A middle click on its tab closes it, as ⌘W does.
+  await page.locator(`${TERMINALS} .dv-tab`).click({ button: "middle" });
   await expect(page.locator(`${TERMINALS} .terminal-view`)).toHaveCount(0);
 
   await page.keyboard.press("Meta+t");

@@ -88,7 +88,8 @@ function Area({ area, layout, shown }: { area: string; layout?: unknown; shown: 
           className="workspace"
           theme={{ ...themeLight, name: "groundwork", className: "dockview-theme-groundwork" }}
           components={components}
-          defaultTabComponent={area === NOTES ? undefined : TerminalTab}
+          // dockview's React tab, which also closes on a middle click.
+          defaultTabComponent={area === NOTES ? DockviewDefaultTab : TerminalTab}
           watermarkComponent={area === NOTES ? NotesWatermark : TerminalsWatermark}
           onReady={(e: DockviewReadyEvent) => setDock(e.api)}
         />

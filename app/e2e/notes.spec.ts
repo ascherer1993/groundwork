@@ -294,6 +294,18 @@ test("tabs and splits persist across reloads", async ({ page }) => {
   await expect(page.getByRole("tab", { name: "Welcome" })).toBeVisible();
 });
 
+test("a middle click closes a tab", async ({ page }) => {
+  await quickOpen(page, "Welcome");
+  await page.keyboard.press("Meta+o");
+  await page.getByLabel("Find a file").fill("Acme");
+  await page.keyboard.press("Meta+Enter");
+  const tabs = page.locator(".notes-side .dv-tab");
+  await expect(tabs).toHaveCount(2);
+  await tabs.filter({ hasText: "Welcome" }).click({ button: "middle" });
+  await expect(tabs).toHaveCount(1);
+  await expect(tabs).toHaveText("Acme");
+});
+
 test("clicks land on the clicked line, even below late-rendering blocks", async ({ page }) => {
   // Properties, callouts and Mermaid render after the editor first measures
   // them; if it doesn't re-measure, clicks hit the line below. It shows when
