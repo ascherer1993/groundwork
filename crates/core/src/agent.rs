@@ -167,7 +167,8 @@ impl Session {
              \n\
              When you've finished, your last step is `groundwork done \"<what you did, in a line \
              or two>\"` (add `--link <note>` for the note it's about). It records the request in \
-             the command log, which the user reviews, and tells them in their inbox, so don't \
+             the command log, which the user reviews, and puts your summary in their inbox's \
+             history (only a request that needs them or failed waits for them there), so don't \
              also `notify`. For a one-off request it then closes this tab once your turn ends, so \
              finished sessions don't pile up. Keep the tab open instead, with `--keep-open`, \
              whenever the user asked you to keep going, stay around or wait for something, or the \

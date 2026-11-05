@@ -562,15 +562,22 @@ impl Backend {
                     link,
                     tab,
                     vault: self.vault_root(),
+                    ..Default::default()
                 },
             )?),
-            Request::InboxNotify { text, link, tab } => to_value(self.agents.add(
+            Request::InboxNotify {
+                text,
+                link,
+                tab,
+                done,
+            } => to_value(self.agents.add(
                 InboxKind::Notify,
                 NewItem {
                     text,
                     link,
                     tab,
                     vault: self.vault_root(),
+                    done,
                     ..Default::default()
                 },
             )?),

@@ -51,8 +51,9 @@ impl Agents {
 
     pub fn add(&self, kind: InboxKind, item: NewItem) -> Result<InboxItem, ApiError> {
         let item = self.inbox.add(kind, item)?;
+        // Something already done is only for the history: nothing to announce.
         (self.events)(Event::InboxChanged {
-            added: Some(item.clone()),
+            added: (!item.done).then(|| item.clone()),
         });
         Ok(item)
     }

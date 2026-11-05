@@ -476,6 +476,10 @@ pub enum Request {
         link: Option<String>,
         #[ts(optional)]
         tab: Option<String>,
+        /// Nothing to do about it: straight to the history (Earlier), with
+        /// no notification. `groundwork done`'s summary.
+        #[serde(default)]
+        done: bool,
     },
     /// → `InboxItem`: once it's answered or dismissed, or as it is after
     /// `timeoutMs` (at most a minute).

@@ -1121,6 +1121,8 @@ fn command_bar_sessions_finish_with_done() {
     assert_eq!(calls[0]["params"]["text"], "Made the worktree");
     assert_eq!(calls[0]["params"]["link"], "[[TEAM-9]]");
     assert_eq!(calls[0]["params"]["tab"], serde_json::Value::Null);
+    // Nothing to do about it: straight to the inbox's history.
+    assert_eq!(calls[0]["params"]["done"], true);
     assert_eq!(
         calls[1],
         serde_json::json!({ "method": "app.closeTab", "params": { "tab": "t1" } })
@@ -1141,15 +1143,22 @@ fn command_bar_sessions_finish_with_done() {
     let calls = since(before);
     assert_eq!(calls.len(), 1, "{calls:?}");
     assert_eq!(calls[0]["params"]["tab"], "t1");
+    assert_eq!(calls[0]["params"]["done"], false, "it waits for them");
     let entry = log.get(&background).unwrap();
     assert_eq!(entry.outcome, Some(Outcome::NeedsYou));
     assert!(!entry.closed);
 
-    // They're watching a shown session: nothing goes to the inbox.
+    // They're watching a shown session: even a failure only goes in the history.
     let before = seen.lock().unwrap().len();
+    let (ok, _, _) = run(
+        &["done", "Couldn't", "--outcome", "failed"],
+        Some(&shown),
+        "",
+    );
+    assert!(ok);
+    assert_eq!(since(before)[0]["params"]["done"], true);
     let (ok, _, _) = run(&["done", "Summarised it", "--keep-open"], Some(&shown), "");
     assert!(ok);
-    assert!(since(before).is_empty());
     assert!(!log.get(&shown).unwrap().closed);
 
     // Only for command bar sessions, and it needs a summary.

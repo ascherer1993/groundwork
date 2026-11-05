@@ -45,6 +45,7 @@ fn post(kind: InboxKind, item: NewItem) -> Fallible<InboxItem> {
             "choices": item.choices,
             "link": item.link,
             "tab": item.tab,
+            "done": item.done,
         });
         match app.call(method, params) {
             Ok(value) => return item_of(value),
@@ -59,7 +60,7 @@ fn post(kind: InboxKind, item: NewItem) -> Fallible<InboxItem> {
 }
 
 pub fn notify(text: String, link: Option<String>, json: bool) -> Fallible<()> {
-    let item = post_notify(text, link, tab())?;
+    let item = post_notify(text, link, tab(), false)?;
     if json {
         return print_json(&item);
     }
@@ -68,7 +69,13 @@ pub fn notify(text: String, link: Option<String>, json: bool) -> Fallible<()> {
 }
 
 /// Tells the user something, from `tab` (it's where they're taken).
-pub fn post_notify(text: String, link: Option<String>, tab: Option<String>) -> Fallible<InboxItem> {
+/// `done`: nothing to do about it, so it goes straight to the history.
+pub fn post_notify(
+    text: String,
+    link: Option<String>,
+    tab: Option<String>,
+    done: bool,
+) -> Fallible<InboxItem> {
     post(
         InboxKind::Notify,
         NewItem {
@@ -76,6 +83,7 @@ pub fn post_notify(text: String, link: Option<String>, tab: Option<String>) -> F
             link,
             tab,
             vault: vault(),
+            done,
             ..Default::default()
         },
     )
@@ -97,6 +105,7 @@ pub fn ask(
             link,
             tab: tab(),
             vault: vault(),
+            ..Default::default()
         },
     )?;
     if no_wait {

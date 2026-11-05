@@ -120,8 +120,10 @@ function InboxPanel() {
 }
 
 /** What became of a done item. */
-function outcome(item: InboxItem): string {
+function outcome(item: InboxItem): string | null {
   if (item.answer !== undefined) return `Answered: ${item.answer}`;
+  // Done as it arrived (`groundwork done`'s summary): nothing became of it.
+  if (item.doneAt === item.created) return null;
   switch (item.kind) {
     case "ask":
       return "Dismissed without an answer";
@@ -148,7 +150,7 @@ function EarlierRow({ item }: { item: InboxItem }) {
         </span>
       </div>
       <p className="inbox-text">{item.text}</p>
-      <p className="inbox-outcome">{outcome(item)}</p>
+      {outcome(item) && <p className="inbox-outcome">{outcome(item)}</p>}
       {link && (
         <button
           className="link-button"

@@ -33,8 +33,9 @@ fn outcome_name(outcome: Option<Outcome>) -> &'static str {
     }
 }
 
-/// Records how the request went, tells the user (unless they're watching)
-/// and, for a finished one-off, closes this tab once Claude's turn ends.
+/// Records how the request went, tells the user (in the inbox's history,
+/// unless there's something for them to do) and, for a finished one-off,
+/// closes this tab once Claude's turn ends.
 pub fn done(
     vault: &Path,
     summary: String,
@@ -57,12 +58,14 @@ pub fn done(
     let keep_open = keep_open || outcome != Outcome::Done;
     let tab = live::this_tab();
 
-    if !entry.shown {
-        // A closing tab can't be gone back to.
-        let from = if keep_open { tab.clone() } else { None };
-        if let Err(e) = inbox::post_notify(summary.clone(), link, from) {
-            eprintln!("groundwork: couldn't tell the user ({e}); it's in the command log");
-        }
+    // Only something for them to do waits in the inbox (and notifies):
+    // a request that needs them or failed, while they weren't watching. The
+    // rest goes straight to its history, Earlier. A closing tab can't be
+    // gone back to.
+    let waits = outcome != Outcome::Done && !entry.shown;
+    let from = if keep_open { tab.clone() } else { None };
+    if let Err(e) = inbox::post_notify(summary.clone(), link, from, !waits) {
+        eprintln!("groundwork: couldn't tell the user ({e}); it's in the command log");
     }
     let closing = !keep_open
         && tab.as_ref().is_some_and(|tab| match live::close_tab(tab) {

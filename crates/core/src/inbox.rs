@@ -80,6 +80,9 @@ pub struct NewItem {
     pub link: Option<String>,
     pub tab: Option<String>,
     pub vault: Option<String>,
+    /// Nothing to do about it: it goes straight to the history, done when
+    /// it's made (`done_at == created`), with no notification.
+    pub done: bool,
 }
 
 pub struct Inbox {
@@ -135,8 +138,8 @@ impl Inbox {
             vault: item.vault,
             created: now,
             answer: None,
-            done: false,
-            done_at: None,
+            done: item.done,
+            done_at: item.done.then_some(now),
         };
         self.change(|items| {
             items.push(item.clone());
@@ -251,6 +254,24 @@ mod tests {
             text: t.into(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn some_things_are_done_as_they_arrive() {
+        let dir = tempfile::tempdir().unwrap();
+        let inbox = Inbox::new(dir.path());
+        let item = inbox
+            .add(
+                InboxKind::Notify,
+                NewItem {
+                    done: true,
+                    ..text("Made the note")
+                },
+            )
+            .unwrap();
+        assert!(item.done && item.done_at == Some(item.created));
+        assert!(inbox.open().is_empty());
+        assert_eq!(inbox.history(10), [item]);
     }
 
     #[test]

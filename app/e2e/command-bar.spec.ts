@@ -51,9 +51,16 @@ test("the command bar starts Claude on the whole vault, and logs how it went", a
   expect(call).toContain("your last step is `groundwork done");
   expect(call).not.toContain("They pointed you at");
 
-  // It told the inbox, in the background.
+  // What it did goes in the inbox's history: nothing waits on you.
   const inboxButton = page.getByRole("button", { name: /^Inbox/ });
-  await expect(inboxButton).toHaveAccessibleName("Inbox, 1 waiting");
+  const inbox = page.getByRole("dialog", { name: "Inbox" });
+  await inboxButton.click();
+  await inbox.getByRole("tab", { name: "Earlier" }).click();
+  const told = inbox.getByRole("listitem", { name: /Did: Open a worktree for TEAM-9/ });
+  await expect(told).toBeVisible();
+  await expect(told).not.toContainText("Dismissed");
+  await expect(inboxButton).toHaveAccessibleName("Inbox");
+  await page.keyboard.press("Escape");
 
   // ⌘↩ shows it; the palette opens the bar too. Agents isn't offered as a chip.
   const again = calls().length;
@@ -104,16 +111,6 @@ test("the command bar starts Claude on the whole vault, and logs how it went", a
   await first.getByRole("button", { name: "Resume the session" }).click();
   await expect(log).toBeHidden();
   await expect.poll(() => calls(resumed)).toContain("--resume fake-session");
-
-  // The inbox as the other specs expect it: empty.
-  await inboxButton.click();
-  const inbox = page.getByRole("dialog", { name: "Inbox" });
-  await inbox
-    .getByRole("listitem", { name: /Did: Open a worktree/ })
-    .getByRole("button", { name: "Dismiss" })
-    .click();
-  await expect(inboxButton).toHaveAccessibleName("Inbox");
-  await page.keyboard.press("Escape");
 
   // The other specs share the vault: Agents goes, with its two sessions (the
   // one kept open, and the one resumed).
