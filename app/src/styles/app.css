@@ -1214,6 +1214,62 @@ button.terminals-name:hover {
   text-align: left;
 }
 
+.area-head {
+  position: relative;
+}
+
+.area-row {
+  padding-left: 24px;
+}
+
+.area-toggle {
+  position: absolute;
+  top: 50%;
+  left: 6px;
+  display: flex;
+  padding: 2px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-faint);
+  transform: translateY(-50%);
+}
+
+.area-toggle:hover {
+  color: var(--text);
+}
+
+.area-toggle svg {
+  transition: transform 0.12s ease;
+}
+
+.area-toggle.open svg {
+  transform: rotate(90deg);
+}
+
+.area-key {
+  flex: none;
+  padding: 0;
+  border: none;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+  opacity: 0.7;
+}
+
+.area-row:hover .area-key,
+.area-row.current .area-key {
+  opacity: 1;
+}
+
+.area-row .area-key {
+  margin-left: auto;
+}
+
+.area-row .badge + .area-key {
+  margin-left: 0;
+}
+
 .area-row.current,
 .area-tab.current,
 .session.current {
@@ -1244,7 +1300,7 @@ button.terminals-name:hover {
 }
 
 .area-tab {
-  padding-left: 22px;
+  padding-left: 30px;
   font-size: 12px;
   color: var(--text-muted);
 }

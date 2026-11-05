@@ -92,6 +92,7 @@ test("the CLI opens notes, workspaces and tabs in the window", async ({ page }) 
   await expect.poll(() => screen(page)).toMatch(/^fake claude: --resume abc-123$/m);
 
   // The workspace's own tabs' rows have the menu too.
+  await homeRow.getByRole("button", { name: /^Show .*terminals$/ }).click();
   await homeRow.locator(".area-tab").first().click({ button: "right" });
   await expect(page.getByRole("menuitem", { name: "Fork session" })).toBeVisible();
   await page.keyboard.press("Escape");

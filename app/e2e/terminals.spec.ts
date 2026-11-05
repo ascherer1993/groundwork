@@ -220,6 +220,7 @@ test("workspaces keep their own terminals, with badges and a session manager", a
   await expect(acmeRow).not.toHaveClass(/current/);
   await page.keyboard.press("Meta+2");
   await expect(tab(page, /^Acme$/)).toBeVisible();
+  await expect(acmeRow.locator(".area-key")).toHaveText("⌘2");
   await page.reload();
   await expect(tab(page, /^Acme$/)).toBeVisible();
   await expect.poll(() => screen(page)).toContain("at Acme in ws");
@@ -236,11 +237,14 @@ test("workspaces keep their own terminals, with badges and a session manager", a
     { timeout: 10_000 },
   );
   await expect(page.getByText("Acme: Tests passed")).toBeVisible();
-  await page.getByRole("button", { name: "Show" }).click();
+  await page.getByRole("button", { name: "Show", exact: true }).click();
   await expect(tab(page, /^Acme$/)).toBeVisible();
   await expect(acme.locator(".area-row").getByRole("status")).toHaveAttribute("aria-label", "Idle");
 
-  // A command that ends while you're elsewhere is finished.
+  // A command that ends while you're elsewhere is finished. A workspace's
+  // terminals are folded until you show them.
+  await expect(acme.locator(".area-tab")).toHaveCount(0);
+  await acme.getByRole("button", { name: "Show Acme API’s terminals" }).click();
   await page.locator(VIEW).click();
   await run(page, "sleep 3");
   await expect(acme.locator(".area-tab").getByRole("status")).toHaveAttribute(

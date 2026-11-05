@@ -698,7 +698,7 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
   - **The Tickets view** groups by project (the home project), repo or status, filters by text, hides closed tickets unless asked, and flags uncommitted changes, unpushed commits and commits behind. Rows open the note; their menu opens the workspace, the Jira ticket, or closes or restores.
   - **The `tickets` block** lists tickets live in any note. Lines: `project: this` (the note's project) or a project, `repo:`, `component:`, `status: active|closed|all`, `group: project|repo|status|none`.
   - **Any note can have a workspace** ("Open this note’s workspace", or "Open workspace" on a note in the file tree). It starts in the note's project folder, or the note's own folder.
-  - **The Workspaces view** groups workspaces by their note's project (or repo). A ticket's workspace menu has "New terminal in <component>" for each component it touches, and "New terminal in…" lists them first; that stands in for a new-tab menu.
+  - **The Workspaces view** groups workspaces by their note's project (or repo). Each row shows its ⌘1–9 shortcut, faintly, and its terminal tabs are folded under a chevron until you open them (remembered per machine), so the row's badge stands for them; decided 2026-11-05. A ticket's workspace menu has "New terminal in <component>" for each component it touches, and "New terminal in…" lists them first; that stands in for a new-tab menu.
 
 ### Phase 6 — Claude integration
 - Socket API plus the live CLI commands (open, workspace, tab, ask, notify)

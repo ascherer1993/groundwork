@@ -1,9 +1,10 @@
-import { Plus, SquareTerminal, X } from "lucide-react";
+import { ChevronRight, Plus, SquareTerminal, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { TerminalInfo } from "../api/generated/TerminalInfo";
 import type { Workspace } from "../api/generated/Workspace";
 import { showTerminalMenu } from "../state/claude";
+import { useKeyLabel } from "../state/keys";
 import { showSplit, useTickets } from "../state/tickets";
 import {
   mostUrgent,
@@ -66,9 +67,43 @@ function isClaude(process: string | null | undefined, title?: string): boolean {
   return process === "claude" || /\bclaude\b/i.test(title ?? "");
 }
 
-/** One workspace (or the notes area): its terminal tabs and their states. */
-function AreaRow({ area, name, folder }: { area: string; name: string; folder?: string }) {
+const EXPANDED_KEY = "groundwork.workspacesExpanded";
+
+/** The workspaces whose terminals you've listed; the rest are folded. */
+function expandedAreas(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(EXPANDED_KEY) ?? "[]") as string[]);
+  } catch {
+    return new Set();
+  }
+}
+
+function setExpanded(area: string, open: boolean) {
+  const areas = expandedAreas();
+  if (open) areas.add(area);
+  else areas.delete(area);
+  try {
+    localStorage.setItem(EXPANDED_KEY, JSON.stringify([...areas]));
+  } catch {
+    // Not remembered.
+  }
+}
+
+/** One workspace: its shortcut, its terminal tabs (folded unless you open them) and their states. */
+function AreaRow({
+  area,
+  name,
+  folder,
+  index,
+}: {
+  area: string;
+  name: string;
+  folder?: string;
+  index: number;
+}) {
   useWorkspace((s) => s.tabsVersion);
+  const [open, setOpen] = useState(() => expandedAreas().has(area));
+  const shortcut = useKeyLabel(`workspace-${index + 1}`);
   const current = useWorkspace((s) => s.workspace === area && s.view !== "note");
   const shown = useWorkspace(shownTerminal);
   const byId = useTerminals((s) => s.byId);
@@ -110,20 +145,47 @@ function AreaRow({ area, name, folder }: { area: string; name: string; folder?: 
     ]);
   };
 
+  const toggle = () => {
+    setExpanded(area, !open);
+    setOpen(!open);
+  };
+
   return (
     <li className="area-item">
-      <button
-        className={`area-row${current ? " current" : ""}`}
-        aria-current={current || undefined}
-        title={folder}
-        onClick={() => useWorkspaces.getState().pick(area)}
-        onContextMenu={(e) => void menu(e)}
-      >
-        <span className="area-name">{name}</span>
-        {folder && <span className="area-folder">{shortPath(folder, root)}</span>}
-        {tabs.length > 0 && <Badge state={mostUrgent(states)} />}
-      </button>
-      {tabs.length > 0 && (
+      <div className="area-head">
+        <button
+          className={`area-row${current ? " current" : ""}`}
+          aria-current={current || undefined}
+          title={folder}
+          onClick={() => useWorkspaces.getState().pick(area)}
+          onContextMenu={(e) => void menu(e)}
+        >
+          <span className="area-name">{name}</span>
+          {folder && <span className="area-folder">{shortPath(folder, root)}</span>}
+          {tabs.length > 0 && <Badge state={mostUrgent(states)} />}
+          {shortcut && (
+            <kbd className="area-key" title={`Switch to ${name} (${shortcut})`}>
+              {shortcut}
+            </kbd>
+          )}
+        </button>
+        {tabs.length > 0 && (
+          <button
+            className={`area-toggle${open ? " open" : ""}`}
+            aria-expanded={open}
+            aria-label={open ? `Hide ${name}’s terminals` : `Show ${name}’s terminals`}
+            title={
+              open
+                ? "Hide terminals"
+                : `Show ${tabs.length === 1 ? "1 terminal" : `${tabs.length} terminals`}`
+            }
+            onClick={toggle}
+          >
+            <ChevronRight size={12} />
+          </button>
+        )}
+      </div>
+      {open && tabs.length > 0 && (
         <ul className="area-tabs" aria-label={`${name} terminals`}>
           {tabs.map((t, i) => (
             <li key={t.panel.id}>
@@ -363,7 +425,13 @@ export function WorkspacesPanel() {
             {grouped && name && <div className="area-group-name">{name}</div>}
             <ul className="area-list">
               {groups.get(name)!.map((w) => (
-                <AreaRow key={w.id} area={w.id} name={w.name} folder={w.cwd} />
+                <AreaRow
+                  key={w.id}
+                  area={w.id}
+                  name={w.name}
+                  folder={w.cwd}
+                  index={workspaces.indexOf(w)}
+                />
               ))}
             </ul>
           </li>
