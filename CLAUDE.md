@@ -13,7 +13,7 @@ A macOS notes app (Tauri v2 + React) over an Obsidian-compatible vault, adding H
 - "Set up Claude Code…" (`crates/core/src/setup.rs`) links the CLI onto PATH, installs the plugin from this checkout, and sets the CLI's default vault. Claude Code reads the plugin live from this folder, so skill edits reach new sessions without reinstalling. Tests and e2e use the fake `fixtures/bin/claude`, never the real one.
 - HTML pages run in sandboxed iframes with no origin of their own; they reach the app only through the bridge (`crates/backend/src/bridge.js` ↔ `app/src/lib/pages.ts`). Never add `allow-same-origin` to page frames: our `groundwork://` scheme counts as a trusted origin for Tauri commands.
 - `app/src-tauri`: the desktop shell. Its Tauri command `api` forwards to `Backend`. It also sends the inbox's macOS notifications (`notifications.rs`), which can answer questions, plus `test_notification` for the palette's test.
-- `app/src`: the React UI. Call the backend only through `api/client.ts`.
+- `app/src`: the React UI. Call the backend only through `api/client.ts`. The command bar (`state/commandBar.ts`) also has a window of its own in the desktop app, a second Vite page (`command-bar.html` → `src/commandBar.tsx`), which imports only `lib/commandBar.ts` and talks to the main window through Tauri events.
 - `app/e2e`: Playwright tests that run against browser mode.
 - `fixtures/vault`: the test vault. Extend it whenever you add parsing or linking behaviour.
 

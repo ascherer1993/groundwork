@@ -11,6 +11,11 @@
     "opener:default",
     "core:window:allow-start-dragging",
     "core:window:allow-set-badge-count",
-    "core:window:allow-request-user-attention"
+    "core:window:allow-request-user-attention",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-center"
   ]
 }

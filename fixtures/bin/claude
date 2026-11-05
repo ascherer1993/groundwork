@@ -2,8 +2,9 @@
 # A stand-in for Claude Code's `claude plugin` commands, for tests. It keeps
 # its marketplace and plugin state in files next to itself and logs each call.
 # e2e terminals find it first on PATH, so `claude --resume …` (Fork session,
-# Resume conversation) and `claude "<prompt>"` (agents) just say what they
-# were asked.
+# Resume conversation), `claude "<prompt>"` (agents) and `claude
+# --append-system-prompt "<context>" "<prompt>"` (the command bar) just say
+# what they were asked.
 here=$(dirname "$0")
 echo "$*" >>"$here/calls"
 mkt=$(cat "$here/marketplace" 2>/dev/null)
@@ -42,6 +43,10 @@ case "$*" in
   else
     echo '[]'
   fi
+  ;;
+"--append-system-prompt "*)
+  # A command bar session: the context, then the prompt.
+  echo "fake claude was asked: $3"
   ;;
 "--resume "*)
   echo "fake claude: $*"

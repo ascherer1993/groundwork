@@ -8,7 +8,8 @@ const SOURCE = fileURLToPath(new URL("../../fixtures/vault", import.meta.url));
 
 /**
  * A fresh copy of the repo's fixture vault (tests edit files), named `vault`
- * like the original. One copy per test file.
+ * like the original. One copy per run: the spec files share it (they run in
+ * one worker), with its workspaces and settings, so leave those as you found them.
  */
 const dir = mkdtempSync(join(tmpdir(), "groundwork-vault-"));
 export const FIXTURE_VAULT = join(dir, "vault");

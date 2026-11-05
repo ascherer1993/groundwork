@@ -78,3 +78,25 @@ export function displayCombo(combo: string): string {
     .map((part) => SYMBOLS[part] ?? part)
     .join("");
 }
+
+const ACCELERATOR_MODIFIERS: Record<string, string> = {
+  Ctrl: "Control",
+  Alt: "Alt",
+  Shift: "Shift",
+  Cmd: "Command",
+};
+
+/**
+ * `Ctrl+Alt+Space` → `Control+Alt+Space`: a combination as the global
+ * shortcut plugin reads it (keys by their `KeyboardEvent.code` names).
+ */
+export function toAccelerator(combo: string): string {
+  const parts = combo.split("+");
+  const key = parts.pop()!;
+  const code = /^[A-Z]$/.test(key)
+    ? `Key${key}`
+    : /^\d$/.test(key)
+      ? `Digit${key}`
+      : (Object.entries(CODES).find(([, name]) => name === key)?.[0] ?? key);
+  return [...parts.map((m) => ACCELERATOR_MODIFIERS[m] ?? m), code].join("+");
+}

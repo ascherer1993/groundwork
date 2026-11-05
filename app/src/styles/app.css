@@ -2338,3 +2338,111 @@ button.link-button:hover:not(:disabled) {
   display: flex;
   gap: 6px;
 }
+
+/* The command bar (PLAN §5.10): over the app, or as its own window. */
+.command-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(640px, calc(100vw - 32px));
+  padding: 12px 14px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+}
+
+.command-bar-input {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--accent);
+}
+
+.command-bar-input svg {
+  flex: none;
+  margin-top: 4px;
+}
+
+.command-bar-input textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: 17px/1.45 var(--font-ui);
+  resize: none;
+}
+
+.command-bar-input textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.command-bar-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.command-bar-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.command-bar-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 220px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-decoration: line-through;
+}
+
+.command-bar-chip[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--link);
+  text-decoration: none;
+}
+
+.command-bar-chip:hover {
+  border-color: var(--accent);
+}
+
+.command-bar-hint {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.command-bar-hint kbd {
+  margin-left: 6px;
+}
+
+/* Its own window: the bar fills it. */
+.command-bar-body {
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.command-bar-window .command-bar {
+  width: 100%;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}

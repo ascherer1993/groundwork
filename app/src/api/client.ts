@@ -4,6 +4,7 @@ import type { CreatedTicket } from "./generated/CreatedTicket";
 import type { GitState } from "./generated/GitState";
 import type { NewTicket } from "./generated/NewTicket";
 import type { ProjectInfo } from "./generated/ProjectInfo";
+import type { AgentContext } from "./generated/AgentContext";
 import type { ProjectView } from "./generated/ProjectView";
 import type { QmdStatus } from "./generated/QmdStatus";
 import type { SmartResult } from "./generated/SmartResult";
@@ -303,8 +304,11 @@ export const api = {
    * The command line starting Claude Code with a prompt: `prompt` itself, or
    * the one called `name`. `vars` fill its `{{tags}}`.
    */
-  agentCommand: (which: { prompt: string } | { name: string }, vars: Record<string, string> = {}) =>
-    call("agent.command", { ...which, vars }),
+  agentCommand: (
+    which: { prompt: string } | { name: string },
+    vars: Record<string, string> = {},
+    context?: AgentContext,
+  ) => call("agent.command", { ...which, vars, context }),
 };
 
 export { ApiCallError } from "./transport";

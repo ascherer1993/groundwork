@@ -25,6 +25,21 @@
           "x": 14,
           "y": 13
         }
+      },
+      {
+        "label": "command-bar",
+        "url": "command-bar.html",
+        "title": "Ask Claude",
+        "width": 640,
+        "height": 96,
+        "visible": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "center": true,
+        "visibleOnAllWorkspaces": true,
+        "dragDropEnabled": false
       }
     ],
     "security": {

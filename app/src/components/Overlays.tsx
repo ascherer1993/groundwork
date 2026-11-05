@@ -5,7 +5,9 @@ import { closePreview, enterPreview, leavePreview } from "../lib/linkPreview";
 import { attachContentHandlers, hydrate } from "../markdown/hydrate";
 import { renderMarkdown } from "../markdown/render";
 import { escapeHtml, extractSubpath, splitFrontmatter } from "../markdown/syntax";
+import { startFromBar, useCommandBar } from "../state/commandBar";
 import { useUi } from "../state/ui";
+import { CommandBar } from "./CommandBar";
 import { Palette } from "./Palette";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { SettingsDialog } from "./SettingsDialog";
@@ -25,6 +27,7 @@ export function Overlays() {
       <HoverPreview />
       {switcherOpen && <QuickSwitcher />}
       <Palette />
+      <CommandBarOverlay />
       <SetupDialog />
     </>
   );
@@ -303,6 +306,28 @@ function HoverPreview() {
       onMouseLeave={leavePreview}
     >
       <div ref={body} className="markdown-rendered" dangerouslySetInnerHTML={{ __html: html }} />
+    </div>
+  );
+}
+
+/** The bar over the app: in the browser, or when it has no window of its own. */
+function CommandBarOverlay() {
+  const open = useCommandBar((s) => s.open);
+  const chips = useCommandBar((s) => s.chips);
+  const close = useCommandBar((s) => s.close);
+  if (!open) return null;
+  return (
+    <div className="overlay" onMouseDown={close}>
+      <div onMouseDown={(e) => e.stopPropagation()}>
+        <CommandBar
+          chips={chips}
+          onClose={close}
+          onStart={async (request) => {
+            close();
+            await startFromBar(request);
+          }}
+        />
+      </div>
     </div>
   );
 }

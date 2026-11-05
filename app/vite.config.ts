@@ -16,6 +16,10 @@ export default defineConfig({
     hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
     watch: { ignored: ["**/src-tauri/**"] },
   },
+  build: {
+    // The main window, and the command bar's window (PLAN §5.10).
+    rollupOptions: { input: { main: "index.html", commandBar: "command-bar.html" } },
+  },
   test: {
     include: ["src/**/*.test.ts"],
   },

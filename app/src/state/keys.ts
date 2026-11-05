@@ -42,6 +42,12 @@ const editorKeys: KeyCommand[] = [
 
 export const KEY_COMMANDS: KeyCommand[] = [
   { id: "palette", label: "Command palette", group: "General", key: "Cmd+P" },
+  {
+    id: "command-bar",
+    label: "Ask Claude (the command bar, from any app)",
+    group: "General",
+    key: "Ctrl+Alt+Space",
+  },
   { id: "switcher", label: "Open quick switcher", group: "General", key: "Cmd+O" },
   { id: "search", label: "Search in all notes", group: "General", key: "Shift+Cmd+F" },
   { id: "settings", label: "Settings", group: "General", key: "Cmd+," },

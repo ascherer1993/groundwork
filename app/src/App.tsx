@@ -3,6 +3,7 @@ import { Overlays } from "./components/Overlays";
 import { VaultView } from "./components/VaultView";
 import { Welcome } from "./components/Welcome";
 import { installShortcuts } from "./lib/shortcuts";
+import { installCommandBar } from "./state/commandBar";
 import { useVault } from "./state/vault";
 
 export default function App() {
@@ -14,6 +15,7 @@ export default function App() {
   }, [init]);
 
   useEffect(installShortcuts, []);
+  useEffect(installCommandBar, []);
 
   if (status === "loading") return <div className="loading" aria-busy="true" />;
   return (

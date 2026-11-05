@@ -5,7 +5,7 @@ use groundwork_backend::Backend;
 use groundwork_protocol::{ApiError, ErrorCode, Host};
 use serde_json::Value;
 use tauri::http::{Response, StatusCode, header};
-use tauri::{Emitter, Manager, RunEvent};
+use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 
 #[cfg(target_os = "macos")]
 mod notifications;
@@ -119,6 +119,7 @@ pub fn run() {
         .menu(menu)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             #[cfg(target_os = "macos")]
             notifications::setup(&app.config().identifier);
@@ -147,9 +148,15 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building Groundwork");
 
-    app.run(|app, event| {
-        if let RunEvent::Exit = event {
-            app.state::<Arc<Backend>>().shutdown();
-        }
+    app.run(|app, event| match event {
+        // The command bar's window stays (hidden), so closing the main one
+        // quits, as it did when it was the only one.
+        RunEvent::WindowEvent {
+            label,
+            event: WindowEvent::Destroyed,
+            ..
+        } if label == "main" => app.exit(0),
+        RunEvent::Exit => app.state::<Arc<Backend>>().shutdown(),
+        _ => {}
     });
 }

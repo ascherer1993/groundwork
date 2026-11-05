@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { comboOf, displayCombo, usable } from "./keyCombo";
+import { comboOf, displayCombo, toAccelerator, usable } from "./keyCombo";
 
 const key = (code: string, key: string, mods: Partial<Record<string, boolean>> = {}) => ({
   code,
@@ -35,5 +35,16 @@ describe("key combinations", () => {
     expect(usable("F5")).toBe(true);
     expect(usable("Shift+A")).toBe(false);
     expect(usable("A")).toBe(false);
+  });
+});
+
+describe("toAccelerator", () => {
+  it("names keys as the global shortcut plugin does", () => {
+    expect(toAccelerator("Ctrl+Alt+Space")).toBe("Control+Alt+Space");
+    expect(toAccelerator("Shift+Cmd+K")).toBe("Shift+Command+KeyK");
+    expect(toAccelerator("Alt+Cmd+1")).toBe("Alt+Command+Digit1");
+    expect(toAccelerator("Cmd+\\")).toBe("Command+Backslash");
+    expect(toAccelerator("Ctrl+Up")).toBe("Control+ArrowUp");
+    expect(toAccelerator("F5")).toBe("F5");
   });
 });

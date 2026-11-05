@@ -660,7 +660,12 @@ impl Backend {
                 self.session()?
                     .context(note.as_deref(), cwd.as_deref().map(Path::new))?,
             ),
-            Request::AgentCommand { prompt, name, vars } => {
+            Request::AgentCommand {
+                prompt,
+                name,
+                vars,
+                context,
+            } => {
                 let session = self.session()?;
                 let prompt = match (prompt, name) {
                     (Some(p), _) => p,
@@ -672,7 +677,7 @@ impl Backend {
                         ));
                     }
                 };
-                to_value(session.agent_command(&prompt, &vars)?)
+                to_value(session.agent_command(&prompt, &vars, context.as_ref())?)
             }
             Request::ActionRun { id, note, cwd } => {
                 let context = self

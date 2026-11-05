@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 
+use groundwork_core::agent::AgentContext;
 use groundwork_core::inbox::InboxItem;
 use groundwork_core::quickadd::QuickAddChoice;
 use groundwork_core::settings::AppSettings;
@@ -566,6 +567,9 @@ pub enum Request {
         name: Option<String>,
         #[serde(default)]
         vars: HashMap<String, String>,
+        /// From the command bar: what the user had open, for Claude's system prompt.
+        #[ts(optional)]
+        context: Option<AgentContext>,
     },
     /// → `null`: runs a `shell` action from the note's (or folder's) context,
     /// in the background. Terminal and URL actions are run by the app.

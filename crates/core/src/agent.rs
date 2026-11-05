@@ -1,11 +1,16 @@
 //! Agent actions (PLAN §4.7): a visible Claude Code session in a terminal,
 //! started with a prompt. The vault can override a built-in prompt with
 //! `.groundwork/prompts/<name>.md`, and its own `kind: agent` actions give
-//! theirs inline (`prompt:`) or in a file (`prompt_file:`).
+//! theirs inline (`prompt:`) or in a file (`prompt_file:`). The command bar
+//! (PLAN §5.10) starts sessions too, telling Claude what the user had open.
 
 use std::collections::HashMap;
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
+
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::tickets::shell_quote;
 use crate::{CoreError, Result, Session};
@@ -28,6 +33,23 @@ const TRIAGE: &str = r#"Triage my todos in Groundwork: the overdue ones and the 
 
 /// The built-in prompts, by name.
 const BUILT_IN: &[(&str, &str)] = &[("new-ticket", NEW_TICKET), ("triage", TRIAGE)];
+
+/// What the user had open when they used the command bar, as far as they
+/// kept it (each is a chip they can turn off).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", default)]
+#[ts(export)]
+pub struct AgentContext {
+    /// The note they were looking at (a vault path).
+    #[ts(optional)]
+    pub note: Option<String>,
+    /// Their current workspace's name.
+    #[ts(optional)]
+    pub workspace: Option<String>,
+    /// The project (id, name or folder).
+    #[ts(optional)]
+    pub project: Option<String>,
+}
 
 /// Fills in `{{name}}` for each of `vars`; other tags are left as they are.
 pub fn fill(prompt: &str, vars: &HashMap<String, String>) -> String {
@@ -61,32 +83,96 @@ impl Session {
     }
 
     /// The command line that starts Claude Code with `prompt` (its `{{tags}}`
-    /// filled from `vars`). The prompt goes in a file, so it reaches Claude
-    /// whole, however long and whatever it contains.
-    pub fn agent_command(&self, prompt: &str, vars: &HashMap<String, String>) -> Result<String> {
+    /// filled from `vars`), and with `context`, from the command bar, added
+    /// to its system prompt. They go in files, so they reach Claude whole,
+    /// however long and whatever they contain.
+    pub fn agent_command(
+        &self,
+        prompt: &str,
+        vars: &HashMap<String, String>,
+        context: Option<&AgentContext>,
+    ) -> Result<String> {
         let prompt = fill(prompt, vars);
         if prompt.trim().is_empty() {
-            return Err(CoreError::Config("the action's prompt is empty".into()));
+            return Err(CoreError::Config("the prompt is empty".into()));
         }
         let dir = self.state_dir().join("prompts");
         fs::create_dir_all(&dir)?;
         clear_old(&dir);
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default();
-        let mut path = dir.join(format!("{}.md", now.as_millis()));
-        for n in 1.. {
-            if !path.exists() {
-                break;
+        let cat = |path: &Path| format!("\"$(cat {})\"", shell_quote(&path.display().to_string()));
+        let prompt_file = write_new(&dir, &prompt)?;
+        match context {
+            Some(context) => {
+                let system = write_new(&dir, &self.command_bar_context(context)?)?;
+                Ok(format!(
+                    "claude --append-system-prompt {} {}",
+                    cat(&system),
+                    cat(&prompt_file)
+                ))
             }
-            path = dir.join(format!("{}-{n}.md", now.as_millis()));
+            None => Ok(format!("claude {}", cat(&prompt_file))),
         }
-        fs::write(&path, prompt)?;
-        Ok(format!(
-            "claude \"$(cat {})\"",
-            shell_quote(&path.display().to_string())
-        ))
     }
+
+    /// What Claude is told about a command bar session.
+    pub fn command_bar_context(&self, context: &AgentContext) -> Result<String> {
+        let mut text = String::from(
+            "The user started this session from Groundwork's command bar: a quick request, \
+             typed or dictated, from wherever they were. The working directory is their \
+             Groundwork notes vault; use the groundwork skill and CLI to work in it. When you \
+             need to ask them something, use `groundwork ask`, so it reaches their inbox: they \
+             may not be watching this terminal.\n",
+        );
+        let mut open = Vec::new();
+        if let Some(note) = context.note.as_deref().filter(|n| !n.is_empty()) {
+            self.vault().resolve(note)?;
+            open.push(format!(
+                "- The note they had open: {note} (`groundwork note read {}`)",
+                shell_quote(note)
+            ));
+        }
+        if let Some(project) = context.project.as_deref().filter(|p| !p.is_empty()) {
+            let config = self.config()?;
+            let p = config
+                .project(project)
+                .ok_or_else(|| CoreError::NotFound(format!("project {project}")))?;
+            open.push(format!(
+                "- Their project: {} (`groundwork project show {}`), in {}/",
+                p.name, p.id, p.folder
+            ));
+        }
+        if let Some(workspace) = context.workspace.as_deref().filter(|w| !w.is_empty()) {
+            open.push(format!(
+                "- Their workspace in Groundwork: {workspace} (`groundwork workspace list`)"
+            ));
+        }
+        if !open.is_empty() {
+            text.push_str(
+                "\nWhat they were working on, which their request may be about (\"this\", \
+                 \"here\"…):\n",
+            );
+            text.push_str(&open.join("\n"));
+            text.push('\n');
+        }
+        Ok(text)
+    }
+}
+
+/// Writes `text` to a new file in `dir`, named for the time.
+fn write_new(dir: &Path, text: &str) -> Result<PathBuf> {
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let mut path = dir.join(format!("{now}.md"));
+    for n in 1.. {
+        if !path.exists() {
+            break;
+        }
+        path = dir.join(format!("{now}-{n}.md"));
+    }
+    fs::write(&path, text)?;
+    Ok(path)
 }
 
 fn clear_old(dir: &std::path::Path) {
@@ -167,7 +253,7 @@ mod tests {
         let (_dir, s) = session();
         let vars = HashMap::from([("input.ticket".to_string(), "TEAM-9".to_string())]);
         let command = s
-            .agent_command("Set up {{input.ticket}}.\nIt's {{other}}.", &vars)
+            .agent_command("Set up {{input.ticket}}.\nIt's {{other}}.", &vars, None)
             .unwrap();
         let path = command
             .strip_prefix("claude \"$(cat ")
@@ -179,8 +265,50 @@ mod tests {
             "Set up TEAM-9.\nIt's {{other}}."
         );
         assert!(matches!(
-            s.agent_command("  ", &vars),
+            s.agent_command("  ", &vars, None),
             Err(CoreError::Config(_))
         ));
+    }
+
+    #[test]
+    fn the_command_bar_says_what_was_open() {
+        let (_dir, s) = session();
+        let context = AgentContext {
+            note: Some("Projects/Acme/Meetings/2026-11-02 Kickoff.md".into()),
+            workspace: Some("TEAM-12".into()),
+            project: Some("acme".into()),
+        };
+        let command = s
+            .agent_command("Summarise this", &HashMap::new(), Some(&context))
+            .unwrap();
+        let files: Vec<&str> = command
+            .strip_prefix("claude --append-system-prompt ")
+            .unwrap_or_else(|| panic!("{command}"))
+            .split("\"$(cat ")
+            .filter_map(|part| Some(part.split_once(")\"")?.0.trim_matches('\'')))
+            .collect();
+        assert_eq!(files.len(), 2, "{command}");
+        let system = fs::read_to_string(files[0]).unwrap();
+        assert!(system.contains("Groundwork's command bar"));
+        assert!(system.contains(
+            "- The note they had open: Projects/Acme/Meetings/2026-11-02 Kickoff.md \
+             (`groundwork note read 'Projects/Acme/Meetings/2026-11-02 Kickoff.md'`)"
+        ));
+        assert!(
+            system.contains(
+                "- Their project: Acme (`groundwork project show acme`), in Projects/Acme/"
+            )
+        );
+        assert!(system.contains("- Their workspace in Groundwork: TEAM-12"));
+        assert_eq!(fs::read_to_string(files[1]).unwrap(), "Summarise this");
+
+        // With every chip off, only what the session is.
+        let bare = s.command_bar_context(&AgentContext::default()).unwrap();
+        assert!(bare.contains("groundwork ask") && !bare.contains("What they were working on"));
+        let outside = AgentContext {
+            note: Some("../secrets.md".into()),
+            ..Default::default()
+        };
+        assert!(s.command_bar_context(&outside).is_err());
     }
 }

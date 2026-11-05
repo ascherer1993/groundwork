@@ -550,6 +550,13 @@ Every command supports `--json` output, so agents can parse it reliably.
 - Context chips are on by default and can be toggled off: the current note, workspace and project.
 - Pressing Enter starts a **fresh** Claude session in a new tab in an "Agents" workspace group, running in the vault root. The context is passed with `--append-system-prompt`.
 - The session's questions show up in the inbox, and the tab gets a status badge.
+- *As built (Phase 8, stage 2):*
+  - The shortcut is **⌃⌥Space** by default ("Ask Claude" in Settings › Keyboard shortcuts). The desktop app registers it globally with Tauri's global-shortcut plugin, kept in step with Settings; if another app has it, a toast says so and it still works inside Groundwork. The palette's "Ask Claude…" opens the bar too.
+  - In the desktop app the bar is a window of its own (`command-bar.html`, `app/src/commandBar.tsx`): borderless, always on top, on every Space, hidden until the shortcut shows it centred. It loads none of the app's state: the main window sends it the chips when it opens (`command-bar://open`), and it hands the request back (`command-bar://start`) for the main window to start. Clicking elsewhere or Esc hides it; if you came from another app, Groundwork hides too, so you're back where you were. Closing the main window quits the app, as before. In the browser (and e2e) the same bar opens over the app.
+  - Chips: the note on screen, its project (from `context.get`, so a note's `projects:` count, or the project view's), and the current workspace (not "Agents" itself). Click one to leave it out.
+  - ↩ starts the session in the background (a toast says so) and leaves the screen as it was; ⌘↩ starts it and shows it (and brings the app forward); ⇧↩ adds a line. The text box grows to six lines, for dictation.
+  - Sessions run in the vault root in the "Agents" workspace (made the first time). `agent.command` takes the chips as `context`; core writes the prompt and the context to files and runs `claude --append-system-prompt "$(cat …)" "$(cat …)"`. The context says it came from the command bar, that the vault is the working directory, to use the groundwork skill, to ask through `groundwork ask` (they may not be watching), and lists the chips with the CLI command for each.
+  - A floating panel that doesn't bring the app forward at all (an `NSPanel`) is left for later: showing the bar's window activates Groundwork, so its main window can come forward behind the bar.
 
 ### 5.11 Todos & daily notes
 
@@ -779,14 +786,16 @@ Asked for on 2026-11-05, before Phase 6's last stage: the Obsidian habits of a Q
 - Performance pass on a large vault; packaging (signed `.app`). The bundle ships the CLI next to the app binary (Tauri `externalBin`, so the setup link keeps working) and the plugin marketplace in its resources (`Contents/Resources/claude-marketplace`, which `SetupEnv::detect` already looks for).
 - **Checkpoint:** full workflow review
 - Started 2026-11-05. Built in three stages:
-  1. **Smart search** *(built)*: qmd (set up from Settings or the CLI, kept up to date as files change), `search --smart` and a Smart toggle in the search panel, and "who knows about X" (`groundwork who`). See §5.9. The skill says when to use each, and to ask before setting qmd up. Not yet tried with the real qmd (it isn't installed on the dev machine as of 2026-11-05); see Deferred checks.
-  2. **Command bar**: the global hotkey and its floating panel.
+  1. **Smart search** *(built)*: qmd (set up from Settings or the CLI, kept up to date as files change), `search --smart` and a Smart toggle in the search panel, and "who knows about X" (`groundwork who`). See §5.9. The skill says when to use each, and to ask before setting qmd up. Its output format was checked against qmd 2.8.3 (installed 2026-11-05); trying it on the real vault is in Deferred checks.
+  2. **Command bar** *(built)*: the global hotkey and its floating panel. See §5.10. The global shortcut and the bar's window only exist in the desktop app; e2e tests the same bar in the browser, so the window itself (showing over other apps, focus, going back to the app you were in, resizing as you type) is for the checkpoint.
   3. **Polish**: the performance pass and the signed `.app`.
 
 ### Deferred checks
 Things built but not yet tried for real, to come back to:
 - **New ticket from Jira with real Jira access** (Phase 6, stage 3). As of 2026-11-05 there's no Jira access to try it with. Once Claude Code can read Jira (an Atlassian MCP server): run it on a real issue and check that Claude reads the issue, routes it to the right projects (asking in the inbox when unsure), creates the ticket with sensible code, slug and title, and fills in the Summary. Adjust the built-in prompt (`crates/core/src/agent.rs`) from what it gets wrong.
 - **Smart search with the real qmd** (Phase 8, stage 1). qmd 2.8.3 was installed on 2026-11-05, and its JSON (from `search` and `vsearch` on a throwaway index of the fixture vault) is what `crates/core/src/qmd.rs` reads. Still to do: set it up from Settings › Search on the real vault, check the models download and the status settles, try `qmd query` results (it also reranks) and `groundwork who` on a few topics, and time an update on the real vault.
+
+- **The command bar's window** (Phase 8, stage 2): from another app, ⌃⌥Space shows it on the current Space with the keyboard in it; Handy dictates into it; Esc or a click elsewhere goes back to that app; ↩ leaves you there and a session starts in Agents; ⌘↩ brings Groundwork forward on it. Check whether the main window coming forward behind the bar is bothersome enough to want an `NSPanel`.
 
 ### Backlog (later, to discuss)
 - Menu bar presence (quick capture, inbox count, active agents)
