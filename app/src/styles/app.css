@@ -857,6 +857,45 @@ button.danger-button {
   width: 100%;
 }
 
+.search-bar {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.search-bar .search-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.smart-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.smart-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.smart-toggle.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--link);
+}
+
+.smart-snippet {
+  white-space: pre-line;
+}
+
 .search-help,
 .search-summary {
   margin: 2px 6px;
@@ -2266,4 +2305,36 @@ button.link-button:hover:not(:disabled) {
   .project-section[aria-label="Events"] .project-detail {
     grid-column: auto;
   }
+}
+
+/* Settings › Search */
+.smart-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.smart-status p {
+  margin: 0;
+}
+
+.smart-link {
+  color: var(--link);
+}
+
+.smart-command {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  background: var(--code-bg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  user-select: text;
+}
+
+.smart-buttons {
+  display: flex;
+  gap: 6px;
 }

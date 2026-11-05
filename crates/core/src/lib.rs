@@ -17,6 +17,7 @@ pub mod moment;
 pub mod pages;
 pub mod parse;
 pub mod project_view;
+pub mod qmd;
 pub mod quickadd;
 pub mod recent;
 pub mod repos;
@@ -32,6 +33,7 @@ pub mod todos;
 mod tree;
 mod vault;
 pub mod watch;
+pub mod who;
 pub mod workspaces;
 
 pub use error::{CoreError, Result};

@@ -5,6 +5,9 @@ import type { GitState } from "./generated/GitState";
 import type { NewTicket } from "./generated/NewTicket";
 import type { ProjectInfo } from "./generated/ProjectInfo";
 import type { ProjectView } from "./generated/ProjectView";
+import type { QmdStatus } from "./generated/QmdStatus";
+import type { SmartResult } from "./generated/SmartResult";
+import type { WhoKnows } from "./generated/WhoKnows";
 import type { QuickAddChoice } from "./generated/QuickAddChoice";
 import type { QuickAdded } from "./generated/QuickAdded";
 import type { QuickAddForm } from "./generated/QuickAddForm";
@@ -120,6 +123,13 @@ interface Results {
   "repo.locate": RepoLocation;
   "project.list": ProjectInfo[];
   "project.view": ProjectView;
+  "search.smart": SmartResult[];
+  "qmd.status": QmdStatus;
+  "qmd.setup": QmdStatus;
+  "qmd.update": QmdStatus;
+  "qmd.remove": QmdStatus;
+  "qmd.setAutoUpdate": QmdStatus;
+  "who.knows": WhoKnows;
   "inbox.list": InboxItem[];
   "inbox.history": InboxItem[];
   "inbox.ask": InboxItem;
@@ -262,6 +272,16 @@ export const api = {
   locateRepo: (id: string, path: string, worktrees?: string) =>
     call("repo.locate", { id, path, worktrees }),
   projects: () => call("project.list"),
+  /** Notes found by meaning (qmd); fails unless smart search is set up. */
+  smartSearch: (query: string, limit?: number) => call("search.smart", { query, limit }),
+  qmdStatus: () => call("qmd.status"),
+  /** Makes the vault a qmd collection and starts indexing it. */
+  qmdSetup: () => call("qmd.setup"),
+  qmdUpdate: () => call("qmd.update"),
+  qmdRemove: () => call("qmd.remove"),
+  qmdSetAutoUpdate: (on: boolean) => call("qmd.setAutoUpdate", { on }),
+  /** The people around the notes about a topic. */
+  whoKnows: (topic: string, limit?: number) => call("who.knows", { topic, limit }),
   /** A project's events and people. */
   projectView: (project: string) => call("project.view", { project }),
   inbox: () => call("inbox.list"),

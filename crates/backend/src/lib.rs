@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex};
 use chrono::NaiveDate;
 use groundwork_core::inbox::{InboxKind, NewItem};
 use groundwork_core::pages;
+use groundwork_core::qmd;
 use groundwork_core::search;
 use groundwork_core::settings::Settings;
 use groundwork_core::setup::{self, SetupEnv, SetupStatus};
@@ -49,6 +50,8 @@ pub type EventSink = Arc<dyn Fn(Event) + Send + Sync>;
 
 struct OpenVault {
     session: Arc<Session>,
+    /// Keeps smart search's index up to date.
+    qmd: Arc<qmd::Updater>,
     _watcher: Option<VaultWatcher>,
 }
 
@@ -155,6 +158,30 @@ impl Backend {
                 &query,
                 limit.unwrap_or(100),
             )),
+            Request::SearchSmart { query, limit } => {
+                to_value(self.session()?.smart_search(&query, limit.unwrap_or(30))?)
+            }
+            Request::QmdStatus => to_value(self.qmd_status()?),
+            Request::QmdSetup => {
+                self.session()?.qmd().setup()?;
+                self.qmd_updater()?.refresh();
+                to_value(self.qmd_status()?)
+            }
+            Request::QmdUpdate => {
+                self.qmd_updater()?.refresh();
+                to_value(self.qmd_status()?)
+            }
+            Request::QmdRemove => {
+                self.session()?.qmd().remove()?;
+                to_value(self.qmd_status()?)
+            }
+            Request::QmdSetAutoUpdate { on } => {
+                self.session()?.qmd().set_auto_update(on)?;
+                to_value(self.qmd_status()?)
+            }
+            Request::WhoKnows { topic, limit } => {
+                to_value(self.session()?.who_knows(&topic, limit.unwrap_or(10))?)
+            }
 
             Request::LinksResolve { source, targets } => {
                 let session = self.session()?;
@@ -734,7 +761,14 @@ impl Backend {
 
         let weak = Arc::downgrade(&session);
         let events = self.events.clone();
+        let qmd = Arc::new(qmd::Updater::start(session.qmd()));
+        let updater = Arc::downgrade(&qmd);
         let watcher = watch::watch(session.vault().root(), move |paths| {
+            if paths.iter().any(|p| p.ends_with(".md"))
+                && let Some(updater) = updater.upgrade()
+            {
+                updater.changed();
+            }
             if let Some(session) = weak.upgrade() {
                 let changes = session.apply_external(&paths);
                 if !changes.is_empty() {
@@ -751,6 +785,7 @@ impl Backend {
         self.recent.touch(&info)?;
         *self.open.lock().unwrap() = Some(OpenVault {
             session,
+            qmd,
             _watcher: watcher,
         });
         Ok(info)
@@ -831,6 +866,20 @@ impl Backend {
             .as_ref()
             .map(|o| o.session.clone())
             .ok_or_else(|| ApiError::new(ErrorCode::NoVault, "no vault is open"))
+    }
+
+    fn qmd_updater(&self) -> Result<Arc<qmd::Updater>, ApiError> {
+        self.open
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|o| o.qmd.clone())
+            .ok_or_else(|| ApiError::new(ErrorCode::NoVault, "no vault is open"))
+    }
+
+    fn qmd_status(&self) -> Result<qmd::QmdStatus, ApiError> {
+        let busy = self.qmd_updater()?.busy();
+        Ok(self.session()?.qmd().status(busy))
     }
 
     fn emit(&self, changes: Vec<FileChange>) {

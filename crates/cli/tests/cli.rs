@@ -35,10 +35,16 @@ impl Vault {
         let _ = fs::remove_dir_all(dir.path().join(".groundwork/activity"));
         let _ = fs::remove_dir_all(dir.path().join(".groundwork/page-state"));
         let _ = fs::remove_file(dir.path().join(PAGE_STATE));
-        Self {
-            dir,
-            data: tempfile::tempdir().unwrap(),
-        }
+        let data = tempfile::tempdir().unwrap();
+        // Never the real qmd: the fake, which keeps its state next to itself.
+        let qmd = data.path().join("qmd-bin/qmd");
+        fs::create_dir_all(qmd.parent().unwrap()).unwrap();
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/bin/qmd"),
+            &qmd,
+        )
+        .unwrap();
+        Self { dir, data }
     }
 
     fn root(&self) -> PathBuf {
@@ -52,6 +58,7 @@ impl Vault {
             .arg("--vault")
             .arg(self.dir.path())
             .env("GROUNDWORK_DATA_DIR", self.data.path())
+            .env("GROUNDWORK_QMD", self.data.path().join("qmd-bin/qmd"))
             .env_remove("GROUNDWORK_VAULT")
             .output()
             .unwrap();
@@ -269,6 +276,37 @@ fn quick_add_makes_people_and_events() {
     );
     let out = v.ok(&["add", "todo", "--var", "Todo=Send the notes"]);
     assert!(out.starts_with("Added to Daily/"), "{out}");
+}
+
+#[test]
+fn smart_search_and_who_knows() {
+    let v = Vault::new();
+    let (ok, _, err) = v.run(&["search", "--smart", "contract"]);
+    assert!(!ok && err.contains("groundwork qmd setup"), "{err}");
+    assert!(v.ok(&["qmd", "status"]).contains("the vault isn't set up"));
+    // Without qmd, people are found by the notes' words.
+    let who = v.ok(&["who", "contract"]);
+    assert!(
+        who.starts_with("Sam Lee · Account manager · Contoso · Contacts/Sam Lee.md\n"),
+        "{who}"
+    );
+
+    let setup = v.ok(&["qmd", "setup"]);
+    assert!(
+        setup.contains("Smart search is set up: qmd collection groundwork-"),
+        "{setup}"
+    );
+    let found = v.ok(&["search", "--smart", "contract", "terms"]);
+    assert!(
+        found.starts_with("Events/2026-11-04 Vendor call.md (")
+            && found.contains("  Sam walked through the contract terms."),
+        "{found}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&v.ok(&["--json", "who", "contract terms"])).unwrap();
+    assert_eq!(json["smart"], true);
+    assert_eq!(json["people"][0]["name"], "Sam Lee");
+    assert!(v.ok(&["qmd", "remove"]).contains("isn't set up"));
 }
 
 #[test]

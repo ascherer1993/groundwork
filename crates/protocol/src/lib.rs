@@ -92,6 +92,37 @@ pub enum Request {
         limit: Option<usize>,
     },
 
+    /// → `SmartResult[]`: notes found by meaning, through qmd. Fails unless
+    /// smart search is set up (`qmd.setup`).
+    #[serde(rename = "search.smart")]
+    SearchSmart {
+        query: String,
+        #[ts(optional)]
+        limit: Option<usize>,
+    },
+    /// → `QmdStatus`: whether smart search is installed, set up and updating.
+    #[serde(rename = "qmd.status")]
+    QmdStatus,
+    /// → `QmdStatus`: makes the vault a qmd collection and starts indexing it.
+    #[serde(rename = "qmd.setup")]
+    QmdSetup,
+    /// → `QmdStatus`: brings the index up to date now, in the background.
+    #[serde(rename = "qmd.update")]
+    QmdUpdate,
+    /// → `QmdStatus`: takes the vault out of qmd.
+    #[serde(rename = "qmd.remove")]
+    QmdRemove,
+    /// → `QmdStatus`: whether to update the index as files change.
+    #[serde(rename = "qmd.setAutoUpdate")]
+    QmdSetAutoUpdate { on: bool },
+    /// → `WhoKnows`: the people around the notes about a topic.
+    #[serde(rename = "who.knows")]
+    WhoKnows {
+        topic: String,
+        #[ts(optional)]
+        limit: Option<usize>,
+    },
+
     /// → `(string | null)[]`: the vault path each link target resolves to.
     #[serde(rename = "links.resolve")]
     LinksResolve {
@@ -834,7 +865,9 @@ impl From<CoreError> for ApiError {
             CoreError::OutsideVault(_) => ErrorCode::Forbidden,
             CoreError::AlreadyExists(_) | CoreError::Conflict(_) => ErrorCode::Conflict,
             CoreError::InvalidPath(_) | CoreError::Config(_) => ErrorCode::BadRequest,
-            CoreError::RepoNotLocated(_) | CoreError::Git(_) => ErrorCode::Conflict,
+            CoreError::RepoNotLocated(_) | CoreError::Git(_) | CoreError::Qmd(_) => {
+                ErrorCode::Conflict
+            }
             CoreError::TooLarge { .. } => ErrorCode::TooLarge,
             CoreError::Io(_) | CoreError::Json(_) | CoreError::Setup(_) => ErrorCode::Internal,
         };

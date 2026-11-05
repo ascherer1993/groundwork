@@ -39,3 +39,35 @@ test("tags list nested tags and search by tag", async ({ page }) => {
   await page.getByRole("tab", { name: "Files" }).click();
   await expect(page.getByRole("tree", { name: "Files" })).toBeVisible();
 });
+
+test("smart search is set up in Settings and finds notes by meaning", async ({ page }) => {
+  await page.keyboard.press("Meta+Shift+f");
+  const toggle = page.getByRole("button", { name: "Smart" });
+  // Not set up yet: the toggle leads to Settings › Search.
+  await toggle.click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  const section = settings.getByRole("region", { name: "Smart search" });
+  await section.getByRole("button", { name: "Set up smart search" }).click();
+  await expect(section).toContainText("The vault is qmd collection groundwork-vault");
+  await expect(section.getByRole("status")).toHaveText(/^Last updated /);
+  await settings.getByRole("button", { name: "Done" }).click();
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  const box = page.getByRole("searchbox", { name: "Search notes" });
+  await expect(box).toBeFocused();
+  await box.fill("contract terms");
+  await expect(page.getByText("Press Enter to search.")).toBeVisible();
+  await box.press("Enter");
+  const results = page.getByRole("list", { name: "Search results" });
+  await expect(results.locator(".search-title").first()).toHaveText("2026-11-04 Vendor callEvents");
+  await expect(results.locator(".smart-snippet").first()).toContainText("contract terms");
+  await results.locator(".search-title").first().click();
+  await expect(page.getByLabel("Note title")).toHaveValue("2026-11-04 Vendor call");
+
+  // Off again, for the other tests.
+  await page.keyboard.press("Meta+,");
+  await settings.getByRole("button", { name: "Search", exact: true }).click();
+  await section.getByRole("button", { name: "Turn off" }).click();
+  await expect(section.getByRole("button", { name: "Set up smart search" })).toBeVisible();
+});

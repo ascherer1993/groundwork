@@ -74,7 +74,7 @@ fn is_event(path: &str, fm: Option<&Value>) -> bool {
         || folder.eq_ignore_ascii_case("meetings")
 }
 
-fn is_person(path: &str, fm: Option<&Value>) -> bool {
+pub(crate) fn is_person(path: &str, fm: Option<&Value>) -> bool {
     matches!(note_type(fm).as_str(), "person" | "contact") || path.starts_with("Contacts/")
 }
 

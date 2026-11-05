@@ -6,16 +6,23 @@ import { comboOf, displayCombo, usable } from "../lib/keyCombo";
 import { allCommands, bindingOf, type KeyCommand, useKeys } from "../state/keys";
 import { choiceCommand, useQuickAdd } from "../state/quickadd";
 import { useUi } from "../state/ui";
+import { SearchSettings } from "./SearchSettings";
 
 /**
  * Settings has a section per feature, down its side. A feature's section
  * holds its settings; Keyboard shortcuts lists every feature's commands.
  */
-const SECTIONS = ["Quick add", "Keyboard shortcuts"] as const;
-type Section = (typeof SECTIONS)[number];
+const SECTIONS = ["Quick add", "Search", "Keyboard shortcuts"] as const;
+export type Section = (typeof SECTIONS)[number];
 
 /** The section last shown, while the app runs. */
 let lastSection: Section = SECTIONS[0];
+
+/** Opens Settings at a section. */
+export function showSettings(section: Section) {
+  lastSection = section;
+  useUi.getState().setSettingsOpen(true);
+}
 
 export function SettingsDialog() {
   const open = useUi((s) => s.settingsOpen);
@@ -63,7 +70,13 @@ function SettingsDialogBody() {
           ))}
         </nav>
         <div className="settings-body">
-          {section === "Quick add" ? <QuickAddSettings /> : <ShortcutSettings />}
+          {section === "Quick add" ? (
+            <QuickAddSettings />
+          ) : section === "Search" ? (
+            <SearchSettings />
+          ) : (
+            <ShortcutSettings />
+          )}
           <div className="dialog-buttons">
             <button type="button" className="primary" onClick={close}>
               Done

@@ -71,11 +71,25 @@ enum Command {
     /// Notes and pages linking to a note or page, with the linking lines.
     Backlinks { note: String },
     /// Full-text search. Words must all appear; supports "phrases",
-    /// -exclude, path:folder and #tag.
+    /// -exclude, path:folder and #tag. With --smart, by meaning (qmd).
     Search {
         #[arg(required = true)]
         query: Vec<String>,
-        #[arg(long, default_value_t = 50)]
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Search by meaning through qmd (see `groundwork qmd`), for when
+        /// the notes may not use the query's words.
+        #[arg(long)]
+        smart: bool,
+    },
+    /// Smart search's qmd collection for this vault.
+    #[command(subcommand)]
+    Qmd(QmdCommand),
+    /// The people most connected to the notes about a topic: who to ask.
+    Who {
+        #[arg(required = true)]
+        topic: Vec<String>,
+        #[arg(long, default_value_t = 10)]
         limit: usize,
     },
     /// List and render templates.
@@ -205,6 +219,19 @@ enum Command {
         #[arg(value_parser = ["session-start", "prompt", "notification", "stop"])]
         event: String,
     },
+}
+
+#[derive(Subcommand)]
+enum QmdCommand {
+    /// Whether qmd is installed and the vault is set up in it.
+    Status,
+    /// Makes the vault a qmd collection and indexes it (the first time,
+    /// qmd downloads its models, which takes a while).
+    Setup,
+    /// Brings the index up to date. The app does this as files change.
+    Update,
+    /// Takes the vault out of qmd.
+    Remove,
 }
 
 #[derive(Subcommand)]
@@ -833,8 +860,94 @@ fn run(cli: Cli) -> Fallible<()> {
             }
             Ok(())
         }
-        Command::Search { query, limit } => {
-            let results = search::search(&session.index(), &query.join(" "), limit);
+        Command::Search {
+            query,
+            limit,
+            smart: true,
+        } => {
+            let results = session
+                .smart_search(&query.join(" "), limit.unwrap_or(10))
+                .map_err(err)?;
+            if json {
+                return print_json(&results);
+            }
+            for r in results {
+                println!("{} ({:.0}%)", r.path, r.score * 100.0);
+                if let Some(snippet) = &r.snippet {
+                    for line in snippet.lines().filter(|l| !l.trim().is_empty()).take(3) {
+                        println!("  {}", line.trim());
+                    }
+                }
+            }
+            Ok(())
+        }
+        Command::Qmd(command) => {
+            let qmd = session.qmd();
+            match command {
+                QmdCommand::Status => {}
+                QmdCommand::Setup => {
+                    let name = qmd.setup().map_err(err)?;
+                    eprintln!("Indexing the vault as qmd collection {name}…");
+                    qmd.refresh().map_err(err)?;
+                }
+                QmdCommand::Update => qmd.refresh().map_err(err)?,
+                QmdCommand::Remove => qmd.remove().map_err(err)?,
+            }
+            let status = qmd.status(false);
+            if json {
+                return print_json(&status);
+            }
+            match (&status.collection, status.installed) {
+                (_, false) => println!("qmd isn't installed (npm install -g @tobilu/qmd)"),
+                (None, true) => {
+                    println!("qmd is installed; the vault isn't set up (groundwork qmd setup)")
+                }
+                (Some(name), true) => {
+                    println!("Smart search is set up: qmd collection {name}");
+                    if let Some(at) = &status.last_update {
+                        println!("  last updated {at}");
+                    }
+                    if let Some(e) = &status.last_error {
+                        println!("  last update failed: {e}");
+                    }
+                }
+            }
+            Ok(())
+        }
+        Command::Who { topic, limit } => {
+            let who = session.who_knows(&topic.join(" "), limit).map_err(err)?;
+            if json {
+                return print_json(&who);
+            }
+            if who.people.is_empty() {
+                println!("No one in the notes about that.");
+            }
+            for p in &who.people {
+                let about: Vec<&str> = [&p.role, &p.company]
+                    .into_iter()
+                    .flatten()
+                    .map(String::as_str)
+                    .collect();
+                if about.is_empty() {
+                    println!("{} · {}", p.name, p.path);
+                } else {
+                    println!("{} · {} · {}", p.name, about.join(" · "), p.path);
+                }
+                for n in &p.notes {
+                    println!("  {n}");
+                }
+            }
+            if !who.smart {
+                eprintln!("(found by words; `groundwork qmd setup` finds notes by meaning)");
+            }
+            Ok(())
+        }
+        Command::Search {
+            query,
+            limit,
+            smart: false,
+        } => {
+            let results = search::search(&session.index(), &query.join(" "), limit.unwrap_or(50));
             if json {
                 return print_json(&results);
             }

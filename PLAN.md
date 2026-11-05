@@ -536,6 +536,12 @@ Every command supports `--json` output, so agents can parse it reliably.
 - **In the app:** full-text search in the left sidebar (Cmd+Shift+F), plus a tags view. The query syntax: all words must appear; `"phrase"`, `-exclude`, `path:` and `tag:`/`#tag` (which also matches nested tags). Results show matching lines with hits highlighted; title matches rank first.
   - *For now* each query reads the notes from disk, as unlinked mentions do. That's fast for personal vaults. A SQLite FTS5 index (with HTML text) can replace it later without changing the API.
 - **qmd for smart search:** Groundwork registers the vault as a qmd collection and runs `qmd update` when files change. Agents can use qmd directly, or call `groundwork search --smart`.
+  - qmd is the user's own install (`npm install -g @tobilu/qmd`), with its index in `~/.cache/qmd`. Groundwork never installs it. It runs through the login shell, since an app opened from the Finder has a bare PATH and qmd needs Node. `GROUNDWORK_QMD` names a qmd to run directly (tests use the fake `fixtures/bin/qmd`).
+  - Turned on from Settings › Search or `groundwork qmd setup`. The collection is `groundwork-<vault folder>`, of `**/*.md`, with a context line saying what the vault is. What Groundwork remembers (the collection, auto-update, the last update and its error) is machine-local, in the vault's data folder (`qmd.json`).
+  - Kept up to date by the app: 20 seconds after notes stop changing it runs `qmd update` then `qmd embed`, in the background. The first time, qmd downloads its models (about 2 GB). Settings shows the state, with Update now and Turn off.
+  - Smart search uses `qmd query` (keywords, vectors and reranking). qmd's paths are matched back to the vault's notes, allowing for its changes to case and punctuation.
+  - In the app, the search panel's **Smart** toggle (which leads to Settings until it's set up) searches by meaning on Enter, not as you type, since a query takes a moment. Results show a score and the matching passage.
+- **Who knows about X** (`groundwork who <topic>`, API `who.knows`): a search finds the notes about the topic (by meaning when qmd is set up, else by words, falling back to any of them), and each person those notes link to gains the note's weight (earlier results weigh more; a person's own note counts twice). It lists people with their role, company and up to four notes connecting them.
 
 ### 5.10 Command bar (global hotkey)
 
@@ -771,6 +777,15 @@ Asked for on 2026-11-05, before Phase 6's last stage: the Obsidian habits of a Q
 - A "who knows about X" skill (backlinks + qmd), over Phase 7's people and events
 - Performance pass on a large vault; packaging (signed `.app`). The bundle ships the CLI next to the app binary (Tauri `externalBin`, so the setup link keeps working) and the plugin marketplace in its resources (`Contents/Resources/claude-marketplace`, which `SetupEnv::detect` already looks for).
 - **Checkpoint:** full workflow review
+- Started 2026-11-05. Built in three stages:
+  1. **Smart search** *(built)*: qmd (set up from Settings or the CLI, kept up to date as files change), `search --smart` and a Smart toggle in the search panel, and "who knows about X" (`groundwork who`). See §5.9. The skill says when to use each, and to ask before setting qmd up. Not yet tried with the real qmd (it isn't installed on the dev machine as of 2026-11-05); see Deferred checks.
+  2. **Command bar**: the global hotkey and its floating panel.
+  3. **Polish**: the performance pass and the signed `.app`.
+
+### Deferred checks
+Things built but not yet tried for real, to come back to:
+- **New ticket from Jira with real Jira access** (Phase 6, stage 3). As of 2026-11-05 there's no Jira access to try it with. Once Claude Code can read Jira (an Atlassian MCP server): run it on a real issue and check that Claude reads the issue, routes it to the right projects (asking in the inbox when unsure), creates the ticket with sensible code, slug and title, and fills in the Summary. Adjust the built-in prompt (`crates/core/src/agent.rs`) from what it gets wrong.
+- **Smart search with the real qmd** (Phase 8, stage 1). Built and tested against a fake qmd. Once qmd is installed: set it up from Settings › Search, check that the models download and the status settles, that `qmd query --json`'s fields (`file`, `score`, `snippet`) are what `crates/core/src/qmd.rs` reads, that paths map back to notes, and that results are good on the real vault. Try `groundwork who` on a few topics.
 
 ### Backlog (later, to discuss)
 - Menu bar presence (quick capture, inbox count, active agents)

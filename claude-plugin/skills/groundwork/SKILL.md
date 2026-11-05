@@ -1,6 +1,6 @@
 ---
 name: groundwork
-description: Use when working in the user's Groundwork notes vault (an Obsidian-compatible folder of Markdown notes) — reading or writing notes, daily notes, todos (including triaging them), templates, interactive HTML pages, or searching what they've written. Covers the vault's conventions and the `groundwork` CLI.
+description: Use when working in the user's Groundwork notes vault (an Obsidian-compatible folder of Markdown notes) — reading or writing notes, daily notes, todos (including triaging them), templates, interactive HTML pages, or searching what they've written (by words or by meaning) and finding who knows about a topic. Covers the vault's conventions and the `groundwork` CLI.
 ---
 
 # Working in a Groundwork vault
@@ -57,6 +57,8 @@ groundwork backlinks <note>             # path:line: context for every link to i
 groundwork files [--path <folder>]      # every note, page and file, as the file tree shows them
 groundwork links --all                  # every link in the vault: source -> target
 groundwork search <words...> [--limit N]
+groundwork search --smart <question...> [--limit N]   # by meaning (qmd), when it's set up
+groundwork who <topic...>               # the people the notes about a topic point to
 
 # Templates and daily notes
 groundwork template list
@@ -84,6 +86,10 @@ groundwork activity [--since 7d|24h|YYYY-MM-DD] [--path <prefix>] [--json]
 ```
 
 **Search syntax:** all words must appear. `"exact phrase"`, `-exclude`, `path:Projects/Acme`, `#tag` (also matches nested tags like `#tag/sub`).
+
+**Finding things:** start with `groundwork search` when you know words the note would use. When you don't (a question, a paraphrase, "what did we decide about auth"), use `groundwork search --smart`: it finds notes by meaning through qmd, with a score and the passage that matched. Read the notes it finds before answering from them. Smart search is the user's choice to set up (`groundwork qmd status` says whether it is; `groundwork qmd setup` downloads about 2 GB of models, so ask before running it). If it isn't set up, `--smart` fails with that advice: fall back to plain search with a few likely words.
+
+**Who knows about X:** `groundwork who <topic>` lists the people linked from the notes about a topic (by meaning when smart search is set up, else by words), with their role and the notes that connect them. Use it for "who should I ask about SSO" or "who's been involved in the vendor contract"; check the notes it lists before naming someone.
 
 **Writing a note's text:** for anything longer than a line, pipe it in with `--text -`:
 

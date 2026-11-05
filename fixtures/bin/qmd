@@ -1,0 +1,69 @@
+#!/bin/sh
+# A stand-in for qmd (smart search), for tests. Collections are files next to
+# itself naming their folder; `query` ranks notes by how many of the query's
+# words they contain, and answers like `qmd query --json`.
+here=$(dirname "$0")
+mkdir -p "$here/collections"
+echo "$*" >>"$here/calls"
+tab=$(printf '\t')
+
+case "$1 $2" in
+"collection show")
+  [ -f "$here/collections/$3" ] || { echo "Collection not found: $3" >&2; exit 1; }
+  cat "$here/collections/$3"
+  exit 0
+  ;;
+"collection add")
+  root=$3
+  shift 3
+  while [ $# -gt 0 ]; do
+    case "$1" in --name) name=$2; shift 2 ;; *) shift ;; esac
+  done
+  echo "$root" >"$here/collections/$name"
+  exit 0
+  ;;
+"collection remove")
+  rm -f "$here/collections/$3"
+  exit 0
+  ;;
+esac
+
+case "$1" in
+context | update | embed)
+  exit 0
+  ;;
+query)
+  shift
+  n=5
+  while [ $# -gt 1 ]; do
+    case "$1" in
+    -n) n=$2; shift 2 ;;
+    -c) name=$2; shift 2 ;;
+    *) shift ;;
+    esac
+  done
+  root=$(cat "$here/collections/$name") || exit 1
+  words=$(echo "$1" | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '\n' | grep -v '^$')
+  cd "$root" || exit 1
+  echo "["
+  find . -name '*.md' -not -path '*/.*' | sed 's|^\./||' | while IFS= read -r f; do
+    c=0
+    for w in $words; do grep -qi -- "$w" "$f" && c=$((c + 1)); done
+    [ "$c" -gt 0 ] && printf '%s\t%s\n' "$c" "$f"
+  done | sort -t "$tab" -k1,1nr -k2,2 | head -n "$n" | {
+    sep=""
+    while IFS="$tab" read -r c f; do
+      first=$(echo "$words" | head -n 1)
+      snippet=$(grep -i -m 1 -- "$(echo "$words" | tail -n 1)" "$f" | sed 's/\\/\\\\/g; s/"/\\"/g')
+      printf '%s{"docid":"#%06d","score":0.%d,"file":"qmd://%s/%s","title":"%s","snippet":"%s"}\n' \
+        "$sep" "$c" "$((c > 9 ? 9 : c))" "$name" "$f" "$first" "$snippet"
+      sep=","
+    done
+  }
+  echo "]"
+  ;;
+*)
+  echo "fake qmd: unsupported: $*" >&2
+  exit 1
+  ;;
+esac

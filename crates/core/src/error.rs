@@ -27,6 +27,9 @@ pub enum CoreError {
     /// A git command failed; the message is git's.
     #[error("{0}")]
     Git(String),
+    /// qmd (smart search) isn't installed or set up, or it failed.
+    #[error("{0}")]
+    Qmd(String),
     /// Setting up the CLI or the Claude Code plugin failed.
     #[error("{0}")]
     Setup(String),

@@ -19,6 +19,10 @@ const setupDir = process.env.GROUNDWORK_E2E_SETUP;
 mkdirSync(join(setupDir, "claude-bin"), { recursive: true });
 copyFileSync("../fixtures/bin/claude", join(setupDir, "claude-bin/claude"));
 chmodSync(join(setupDir, "claude-bin/claude"), 0o755);
+// Smart search runs the fake `qmd`, which keeps its collections next to itself.
+mkdirSync(join(setupDir, "qmd-bin"), { recursive: true });
+copyFileSync("../fixtures/bin/qmd", join(setupDir, "qmd-bin/qmd"));
+chmodSync(join(setupDir, "qmd-bin/qmd"), 0o755);
 
 export default defineConfig({
   testDir: "e2e",
@@ -52,6 +56,7 @@ export default defineConfig({
         GROUNDWORK_DATA_DIR: dataDir,
         GROUNDWORK_CLAUDE: join(setupDir, "claude-bin/claude"),
         GROUNDWORK_BIN_DIR: join(setupDir, "bin"),
+        GROUNDWORK_QMD: join(setupDir, "qmd-bin/qmd"),
         // Terminals run a plain shell, not the user's configured one…
         SHELL: "/bin/sh",
         // …which finds the fake `claude` before any real one.
