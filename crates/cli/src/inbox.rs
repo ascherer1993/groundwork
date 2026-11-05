@@ -59,21 +59,26 @@ fn post(kind: InboxKind, item: NewItem) -> Fallible<InboxItem> {
 }
 
 pub fn notify(text: String, link: Option<String>, json: bool) -> Fallible<()> {
-    let item = post(
-        InboxKind::Notify,
-        NewItem {
-            text,
-            link,
-            tab: tab(),
-            vault: vault(),
-            ..Default::default()
-        },
-    )?;
+    let item = post_notify(text, link, tab())?;
     if json {
         return print_json(&item);
     }
     println!("{}", item.id);
     Ok(())
+}
+
+/// Tells the user something, from `tab` (it's where they're taken).
+pub fn post_notify(text: String, link: Option<String>, tab: Option<String>) -> Fallible<InboxItem> {
+    post(
+        InboxKind::Notify,
+        NewItem {
+            text,
+            link,
+            tab,
+            vault: vault(),
+            ..Default::default()
+        },
+    )
 }
 
 pub fn ask(
@@ -172,7 +177,13 @@ fn dismiss(id: &str) {
 
 /// Reports a hook to the app. Never fails: a hook that errors gets in
 /// Claude's way, and outside a Groundwork terminal there's nothing to do.
-pub fn hook(event: &str, context: impl FnOnce() -> Option<String>) {
+/// `context` gives SessionStart's context; `started` hears the terminal
+/// and Claude's session as one starts.
+pub fn hook(
+    event: &str,
+    context: impl FnOnce() -> Option<String>,
+    started: impl FnOnce(&str, Option<&str>),
+) {
     let Some(tab) = tab() else { return };
     // Claude Code passes the hook's details as JSON on stdin.
     let mut input = String::new();
@@ -187,6 +198,7 @@ pub fn hook(event: &str, context: impl FnOnce() -> Option<String>) {
     }
 
     if event == "session-start" {
+        started(&tab, input["session_id"].as_str());
         print_session_start(context());
     }
     if let Some(mut app) = App::connect(Some(HOOK_TIMEOUT)) {

@@ -252,6 +252,21 @@ groundwork notify "Reorganised Meetings/ into one folder per month" [--link "[[M
 - `ask` shows the question in the app's inbox (with a macOS notification when the app is in the background), waits, and prints the answer. Choices are suggestions; the user can type something else. It fails if the user dismisses the question or `--timeout` passes, so decide what to do then.
 - `notify` posts something to know and returns at once. Use it when you finish something the user should look at, not for every step.
 - Both work while the app is closed: the item waits in the inbox until it opens. `--link` points at the note it's about.
+- When `notify` (or `open`, `tab new`, `workspace open`) returns without an error, it worked. Don't check up on it, wait for the user to click it, or read terminals back to confirm.
+
+### Sessions from the command bar
+
+A session the user started from Groundwork's command bar (`$GROUNDWORK_REQUEST` is set) finishes with `done`, as its last step:
+
+```sh
+groundwork done "Made the TEAM-42 worktree and opened a tab in it" [--link "[[TEAM-42 Login fix]]"]
+groundwork done --keep-open "…"             # the user wants to carry on, or the work does
+groundwork done --outcome needs-you "…"      # waiting on them (keeps the tab open)
+groundwork done --outcome failed "…"         # it didn't work (keeps the tab open)
+groundwork log [--limit 20]                  # the command log: each request, when, and how it went
+```
+
+`done` records the request's outcome in the command log, which the user reviews, tells them in the inbox (so don't also `notify`), and closes the tab once your turn ends, so one-off requests don't pile up open tabs. Keep it open whenever they asked you to keep going or wait for something, the work carries on, or you're unsure. If you carry on later, run `done` again when you finish.
 
 ## The app's window: opening notes, workspaces and terminal tabs
 

@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use chrono::NaiveDate;
+use groundwork_core::command_log::CommandLog;
 use groundwork_core::inbox::{InboxKind, NewItem};
 use groundwork_core::pages;
 use groundwork_core::qmd;
@@ -495,6 +496,7 @@ impl Backend {
                 })
             }
             Request::AppTabs => self.window.call(UiCommand::Tabs),
+            Request::AppCloseTab { tab } => self.window.call(UiCommand::CloseTab { terminal: tab }),
             Request::UiReply { id, result, error } => {
                 self.window
                     .reply(id, error.map_or(Ok(result.unwrap_or(Value::Null)), Err));
@@ -660,12 +662,7 @@ impl Backend {
                 self.session()?
                     .context(note.as_deref(), cwd.as_deref().map(Path::new))?,
             ),
-            Request::AgentCommand {
-                prompt,
-                name,
-                vars,
-                context,
-            } => {
+            Request::AgentCommand { prompt, name, vars } => {
                 let session = self.session()?;
                 let prompt = match (prompt, name) {
                     (Some(p), _) => p,
@@ -677,7 +674,15 @@ impl Backend {
                         ));
                     }
                 };
-                to_value(session.agent_command(&prompt, &vars, context.as_ref())?)
+                to_value(session.agent_command(&prompt, &vars)?)
+            }
+            Request::BarCommand {
+                prompt,
+                context,
+                shown,
+            } => to_value(self.session()?.bar_command(&prompt, &context, shown)?),
+            Request::CommandLogList { limit } => {
+                to_value(CommandLog::new(self.session()?.vault().root()).list(limit.unwrap_or(200)))
             }
             Request::ActionRun { id, note, cwd } => {
                 let context = self

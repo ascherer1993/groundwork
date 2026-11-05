@@ -1022,3 +1022,156 @@ fn live_commands_need_the_app() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("Groundwork isn't running"));
 }
+
+#[test]
+fn command_bar_sessions_finish_with_done() {
+    use groundwork_core::agent::AgentContext;
+    use groundwork_core::command_log::{CommandLog, Outcome};
+    use std::io::{BufRead, BufReader};
+    use std::os::unix::net::UnixListener;
+
+    let v = Vault::new();
+    let socket = v.data.path().join("app.sock");
+    // A stand-in for the app: records each request and answers as it would.
+    let listener = UnixListener::bind(&socket).unwrap();
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<serde_json::Value>::new()));
+    {
+        let seen = seen.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                let mut line = String::new();
+                BufReader::new(stream.try_clone().unwrap())
+                    .read_line(&mut line)
+                    .unwrap();
+                let request: serde_json::Value = serde_json::from_str(&line).unwrap();
+                let ok = match request["method"].as_str().unwrap() {
+                    "inbox.notify" => serde_json::json!({ "id": "i1", "kind": "notify",
+                        "text": request["params"]["text"], "created": 0 }),
+                    _ => serde_json::Value::Null,
+                };
+                seen.lock().unwrap().push(request);
+                writeln!(stream, "{}", serde_json::json!({ "ok": ok })).unwrap();
+            }
+        });
+    }
+    let log = CommandLog::new(&v.root());
+    let background = log
+        .ask(
+            "Open a worktree for TEAM-9",
+            &AgentContext::default(),
+            false,
+        )
+        .unwrap();
+    let shown = log
+        .ask("Summarise this", &AgentContext::default(), true)
+        .unwrap();
+    let run = |args: &[&str], request: Option<&str>, stdin: &str| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_groundwork"));
+        cmd.args(args)
+            .env("GROUNDWORK_DATA_DIR", v.data.path())
+            .env("GROUNDWORK_SOCKET", &socket)
+            .env("GROUNDWORK_VAULT", v.root())
+            .env("GROUNDWORK_TAB_ID", "t1")
+            .env_remove("GROUNDWORK_REQUEST")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        if let Some(request) = request {
+            cmd.env("GROUNDWORK_REQUEST", request);
+        }
+        let mut child = cmd.spawn().unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(stdin.as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        (
+            out.status.success(),
+            String::from_utf8(out.stdout).unwrap(),
+            String::from_utf8(out.stderr).unwrap(),
+        )
+    };
+    let since = |n: usize| seen.lock().unwrap()[n..].to_vec();
+
+    // Claude's SessionStart hook notes where the request runs.
+    run(
+        &["hook", "session-start"],
+        Some(&background),
+        r#"{"session_id":"s-1"}"#,
+    );
+    let entry = log.get(&background).unwrap();
+    assert_eq!(entry.tab.as_deref(), Some("t1"));
+    assert_eq!(entry.session.as_deref(), Some("s-1"));
+
+    // A finished one-off: told in the inbox (not from the closing tab), then closed.
+    let before = seen.lock().unwrap().len();
+    let (ok, out, err) = run(
+        &["done", "Made the worktree", "--link", "[[TEAM-9]]"],
+        Some(&background),
+        "",
+    );
+    assert!(ok, "{err}");
+    assert!(out.contains("closes when your turn ends"), "{out}");
+    let calls = since(before);
+    assert_eq!(calls.len(), 2, "{calls:?}");
+    assert_eq!(calls[0]["method"], "inbox.notify");
+    assert_eq!(calls[0]["params"]["text"], "Made the worktree");
+    assert_eq!(calls[0]["params"]["link"], "[[TEAM-9]]");
+    assert_eq!(calls[0]["params"]["tab"], serde_json::Value::Null);
+    assert_eq!(
+        calls[1],
+        serde_json::json!({ "method": "app.closeTab", "params": { "tab": "t1" } })
+    );
+    let entry = log.get(&background).unwrap();
+    assert_eq!(entry.outcome, Some(Outcome::Done));
+    assert_eq!(entry.summary.as_deref(), Some("Made the worktree"));
+    assert!(entry.closed);
+
+    // Kept open: asked to, or not done. Told from the tab, so it can be gone back to.
+    let before = seen.lock().unwrap().len();
+    let (ok, out, _) = run(
+        &["done", "Asked which repo", "--outcome", "needs-you"],
+        Some(&background),
+        "",
+    );
+    assert!(ok && out.contains("stays open"), "{out}");
+    let calls = since(before);
+    assert_eq!(calls.len(), 1, "{calls:?}");
+    assert_eq!(calls[0]["params"]["tab"], "t1");
+    let entry = log.get(&background).unwrap();
+    assert_eq!(entry.outcome, Some(Outcome::NeedsYou));
+    assert!(!entry.closed);
+
+    // They're watching a shown session: nothing goes to the inbox.
+    let before = seen.lock().unwrap().len();
+    let (ok, _, _) = run(&["done", "Summarised it", "--keep-open"], Some(&shown), "");
+    assert!(ok);
+    assert!(since(before).is_empty());
+    assert!(!log.get(&shown).unwrap().closed);
+
+    // Only for command bar sessions, and it needs a summary.
+    let (ok, _, err) = run(&["done", "Did it"], None, "");
+    assert!(!ok && err.contains("command bar"), "{err}");
+    let (ok, _, err) = run(&["done", " "], Some(&shown), "");
+    assert!(!ok && err.contains("say what you did"), "{err}");
+    let (ok, _, _) = run(&["done", "x", "--outcome", "great"], Some(&shown), "");
+    assert!(!ok);
+
+    // The log, newest first.
+    let (ok, out, _) = run(&["log"], None, "");
+    assert!(ok);
+    let lines: Vec<&str> = out.lines().collect();
+    assert!(
+        lines[0].ends_with(" · done, shown, left open · Summarise this"),
+        "{out}"
+    );
+    assert!(
+        out.contains("needs you, left open · Open a worktree for TEAM-9"),
+        "{out}"
+    );
+    assert!(out.contains("  → Asked which repo"), "{out}");
+    assert!(out.contains("claude --resume s-1"), "{out}");
+}

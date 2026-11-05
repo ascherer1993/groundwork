@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { FIXTURE_VAULT as VAULT } from "./fixtures";
@@ -20,9 +20,7 @@ function calls(from = 0): string {
   }
 }
 
-test("the command bar starts Claude on the whole vault, or what you point it at", async ({
-  page,
-}) => {
+test("the command bar starts Claude on the whole vault, and logs how it went", async ({ page }) => {
   await page.keyboard.press("Meta+o");
   await page.getByLabel("Find a file").fill("Kickoff");
   await page.keyboard.press("Enter");
@@ -38,7 +36,8 @@ test("the command bar starts Claude on the whole vault, or what you point it at"
   await expect(chips.filter({ hasText: "Kickoff" })).toHaveAttribute("aria-pressed", "false");
   await expect(chips.filter({ hasText: "Acme" })).toHaveAttribute("aria-pressed", "false");
   await expect(bar.getByRole("textbox", { name: "Ask Claude" })).toBeFocused();
-  await page.keyboard.type("Open a worktree for TEAM-9");
+  // "[done]": the fake claude finishes with `groundwork done`, as a one-off.
+  await page.keyboard.type("Open a worktree for TEAM-9 [done]");
   await page.keyboard.press("Enter");
 
   // It works in the background: the notes stay as they were.
@@ -49,7 +48,12 @@ test("the command bar starts Claude on the whole vault, or what you point it at"
   const call = calls(before);
   expect(call).toContain("--append-system-prompt The user started this session from Groundwork's");
   expect(call).toContain("all of it is in scope");
+  expect(call).toContain("your last step is `groundwork done");
   expect(call).not.toContain("They pointed you at");
+
+  // It told the inbox, in the background.
+  const inboxButton = page.getByRole("button", { name: /^Inbox/ });
+  await expect(inboxButton).toHaveAccessibleName("Inbox, 1 waiting");
 
   // ⌘↩ shows it; the palette opens the bar too. Agents isn't offered as a chip.
   const again = calls().length;
@@ -61,7 +65,7 @@ test("the command bar starts Claude on the whole vault, or what you point it at"
   await chips.filter({ hasText: "Kickoff" }).click();
   await expect(chips.filter({ hasText: "Kickoff" })).toHaveAttribute("aria-pressed", "true");
   await expect(bar.getByRole("textbox", { name: "Ask Claude" })).toBeFocused();
-  await page.keyboard.type("Summarise this");
+  await page.keyboard.type("Summarise this [keep]");
   await page.keyboard.press("Meta+Enter");
   const terminals = page.getByRole("region", { name: "Terminals" });
   await expect(terminals).toBeVisible();
@@ -77,7 +81,42 @@ test("the command bar starts Claude on the whole vault, or what you point it at"
   await page.keyboard.press("Escape");
   await expect(bar).toBeHidden();
 
-  // The other specs share the vault: Agents goes, with its two sessions.
+  // The command log has both, newest first: the one-off closed its tab.
+  await page.keyboard.press("Meta+p");
+  await page.keyboard.type("command log");
+  await page.keyboard.press("Enter");
+  const log = page.getByRole("dialog", { name: "Command log" });
+  const entries = log.getByRole("list", { name: "Requests" }).getByRole("listitem");
+  await expect(entries).toHaveCount(2);
+  await expect(entries.nth(0)).toContainText("Summarise this [keep]");
+  await expect(entries.nth(0)).toContainText("Done");
+  await expect(entries.nth(0)).toContainText("Shown");
+  await expect(entries.nth(0)).toContainText("Tab left open");
+  await expect(entries.nth(0)).toContainText("Pointed at 2026-11-02 Kickoff");
+  await expect(entries.nth(0).getByRole("button", { name: "Show its tab" })).toBeVisible();
+  const first = entries.nth(1);
+  await expect(first).toContainText("Open a worktree for TEAM-9 [done]");
+  await expect(first).toContainText("In the background");
+  await expect(first).toContainText("Tab closed");
+  await expect(first).toContainText("Did: Open a worktree for TEAM-9 [done]");
+  // Its tab is gone, but the session can be carried on.
+  const resumed = calls().length;
+  await first.getByRole("button", { name: "Resume the session" }).click();
+  await expect(log).toBeHidden();
+  await expect.poll(() => calls(resumed)).toContain("--resume fake-session");
+
+  // The inbox as the other specs expect it: empty.
+  await inboxButton.click();
+  const inbox = page.getByRole("dialog", { name: "Inbox" });
+  await inbox
+    .getByRole("listitem", { name: /Did: Open a worktree/ })
+    .getByRole("button", { name: "Dismiss" })
+    .click();
+  await expect(inboxButton).toHaveAccessibleName("Inbox");
+  await page.keyboard.press("Escape");
+
+  // The other specs share the vault: Agents goes, with its two sessions (the
+  // one kept open, and the one resumed).
   await page.getByRole("tab", { name: "Workspaces" }).click();
   const agents = page
     .locator(".area-row")
@@ -87,4 +126,5 @@ test("the command bar starts Claude on the whole vault, or what you point it at"
   await expect(page.getByText("Its 2 terminals will end.")).toBeVisible();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(agents).toHaveCount(0);
+  rmSync(join(VAULT, ".groundwork/command-log.jsonl"), { force: true });
 });

@@ -8,6 +8,7 @@ import { escapeHtml, extractSubpath, splitFrontmatter } from "../markdown/syntax
 import { startFromBar, useCommandBar } from "../state/commandBar";
 import { useUi } from "../state/ui";
 import { CommandBar } from "./CommandBar";
+import { CommandLog } from "./CommandLog";
 import { Palette } from "./Palette";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { SettingsDialog } from "./SettingsDialog";
@@ -28,6 +29,7 @@ export function Overlays() {
       {switcherOpen && <QuickSwitcher />}
       <Palette />
       <CommandBarOverlay />
+      <CommandLog />
       <SetupDialog />
     </>
   );

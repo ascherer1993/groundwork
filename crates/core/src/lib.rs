@@ -5,6 +5,7 @@
 
 pub mod activity;
 pub mod agent;
+pub mod command_log;
 pub mod config;
 pub mod daily;
 pub mod dates;

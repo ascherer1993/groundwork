@@ -5,7 +5,9 @@
  * palette, it opens over the app. Enter starts a fresh Claude session in the
  * "Agents" workspace, in the vault. The whole vault is in scope: Claude finds
  * what you mean itself. Chips for what you had open can point it at
- * something; they start off. Its questions reach the inbox.
+ * something; they start off. Its questions reach the inbox. Each request
+ * goes in the command log (`components/CommandLog.tsx`); Claude finishes
+ * with `groundwork done`, which closes a one-off's tab.
  */
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
@@ -103,7 +105,7 @@ export async function startFromBar(request: BarRequest): Promise<boolean> {
   for (const chip of request.chips) context[chip.kind] = chip.value;
   try {
     const workspace = await agentsWorkspace();
-    const command = await api.agentCommand({ prompt }, {}, context);
+    const { command } = await api.barCommand(prompt, context, request.show);
     const ws = useWorkspace.getState();
     if (request.show && ws.view === "note") ws.setView("split");
     await ws.newTerminal(useVault.getState().vault?.path, {
@@ -122,6 +124,22 @@ export async function startFromBar(request: BarRequest): Promise<boolean> {
   } catch (err) {
     useUi.getState().notify(message(err));
     return false;
+  }
+}
+
+/** Carries on a command bar session (say, from the command log), on screen. */
+export async function resumeSession(session: string) {
+  try {
+    if (!/^[\w-]+$/.test(session)) throw new Error(`not a Claude session: ${session}`);
+    const workspace = await agentsWorkspace();
+    const ws = useWorkspace.getState();
+    if (ws.view === "note") ws.setView("split");
+    await ws.newTerminal(useVault.getState().vault?.path, {
+      run: `claude --resume ${session}`,
+      workspace,
+    });
+  } catch (err) {
+    useUi.getState().notify(message(err));
   }
 }
 

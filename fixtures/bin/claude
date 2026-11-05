@@ -45,8 +45,16 @@ case "$*" in
   fi
   ;;
 "--append-system-prompt "*)
-  # A command bar session: the context, then the prompt.
+  # A command bar session: the context, then the prompt. It plays Claude
+  # with the plugin's hooks, and finishes as told: "[done]" with `groundwork
+  # done`, "[keep]" with `groundwork done --keep-open`.
   echo "fake claude was asked: $3"
+  echo '{"session_id":"fake-session"}' | groundwork hook session-start >/dev/null
+  case "$3" in
+  *"[done]"*) groundwork done "Did: $3" ;;
+  *"[keep]"*) groundwork done --keep-open "Did: $3" ;;
+  esac
+  groundwork hook stop </dev/null
   ;;
 "--resume "*)
   echo "fake claude: $*"

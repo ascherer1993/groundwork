@@ -5,6 +5,8 @@ import type { GitState } from "./generated/GitState";
 import type { NewTicket } from "./generated/NewTicket";
 import type { ProjectInfo } from "./generated/ProjectInfo";
 import type { AgentContext } from "./generated/AgentContext";
+import type { BarCommand } from "./generated/BarCommand";
+import type { CommandEntry } from "./generated/CommandEntry";
 import type { ProjectView } from "./generated/ProjectView";
 import type { QmdStatus } from "./generated/QmdStatus";
 import type { SmartResult } from "./generated/SmartResult";
@@ -113,6 +115,7 @@ interface Results {
   "app.showWorkspace": Workspace;
   "app.newTab": TabInfo;
   "app.tabs": TabInfo[];
+  "app.closeTab": null;
   "ui.reply": null;
   "workspace.list": Workspace[];
   "workspace.create": Workspace;
@@ -150,6 +153,8 @@ interface Results {
   "context.get": Context;
   "action.run": null;
   "agent.command": string;
+  "bar.command": BarCommand;
+  "commandLog.list": CommandEntry[];
 }
 
 type Method = Request["method"];
@@ -304,11 +309,16 @@ export const api = {
    * The command line starting Claude Code with a prompt: `prompt` itself, or
    * the one called `name`. `vars` fill its `{{tags}}`.
    */
-  agentCommand: (
-    which: { prompt: string } | { name: string },
-    vars: Record<string, string> = {},
-    context?: AgentContext,
-  ) => call("agent.command", { ...which, vars, context }),
+  agentCommand: (which: { prompt: string } | { name: string }, vars: Record<string, string> = {}) =>
+    call("agent.command", { ...which, vars }),
+  /**
+   * Logs a request from the command bar and gives the command line starting
+   * Claude on it, pointed at `context`; `shown` if they asked to see it.
+   */
+  barCommand: (prompt: string, context: AgentContext, shown: boolean) =>
+    call("bar.command", { prompt, context, shown }),
+  /** The command bar's requests, newest first. */
+  commandLog: (limit?: number) => call("commandLog.list", { limit }),
 };
 
 export { ApiCallError } from "./transport";

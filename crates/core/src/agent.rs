@@ -12,6 +12,7 @@ use std::time::{Duration, SystemTime};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::command_log::{CommandLog, REQUEST_ENV};
 use crate::tickets::shell_quote;
 use crate::{CoreError, Result, Session};
 
@@ -51,6 +52,20 @@ pub struct AgentContext {
     pub project: Option<String>,
 }
 
+/// The command line for a command bar session, and its request in the
+/// command log.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct BarCommand {
+    pub id: String,
+    pub command: String,
+}
+
+/// A file's contents, as a shell word.
+fn cat(path: &Path) -> String {
+    format!("\"$(cat {})\"", shell_quote(&path.display().to_string()))
+}
+
 /// Fills in `{{name}}` for each of `vars`; other tags are left as they are.
 pub fn fill(prompt: &str, vars: &HashMap<String, String>) -> String {
     let mut out = prompt.to_string();
@@ -83,41 +98,54 @@ impl Session {
     }
 
     /// The command line that starts Claude Code with `prompt` (its `{{tags}}`
-    /// filled from `vars`), and with `context`, from the command bar, added
-    /// to its system prompt. They go in files, so they reach Claude whole,
-    /// however long and whatever they contain.
-    pub fn agent_command(
-        &self,
-        prompt: &str,
-        vars: &HashMap<String, String>,
-        context: Option<&AgentContext>,
-    ) -> Result<String> {
+    /// filled from `vars`). The prompt goes in a file, so it reaches Claude
+    /// whole, however long and whatever it contains.
+    pub fn agent_command(&self, prompt: &str, vars: &HashMap<String, String>) -> Result<String> {
         let prompt = fill(prompt, vars);
         if prompt.trim().is_empty() {
             return Err(CoreError::Config("the prompt is empty".into()));
         }
+        let prompt_file = write_new(&self.prompts_dir()?, &prompt)?;
+        Ok(format!("claude {}", cat(&prompt_file)))
+    }
+
+    /// A command bar session: logs the request (`command_log`) and returns
+    /// the command line that starts Claude on it, told about the command bar
+    /// and what the user pointed it at in its system prompt.
+    pub fn bar_command(
+        &self,
+        prompt: &str,
+        context: &AgentContext,
+        shown: bool,
+    ) -> Result<BarCommand> {
+        if prompt.trim().is_empty() {
+            return Err(CoreError::Config("the prompt is empty".into()));
+        }
+        let system = self.command_bar_context(context, shown)?;
+        let dir = self.prompts_dir()?;
+        let system = write_new(&dir, &system)?;
+        let prompt_file = write_new(&dir, prompt)?;
+        let id = CommandLog::new(self.vault().root()).ask(prompt, context, shown)?;
+        let command = format!(
+            "{REQUEST_ENV}={id} claude --append-system-prompt {} {}",
+            cat(&system),
+            cat(&prompt_file)
+        );
+        Ok(BarCommand { id, command })
+    }
+
+    fn prompts_dir(&self) -> Result<PathBuf> {
         let dir = self.state_dir().join("prompts");
         fs::create_dir_all(&dir)?;
         clear_old(&dir);
-        let cat = |path: &Path| format!("\"$(cat {})\"", shell_quote(&path.display().to_string()));
-        let prompt_file = write_new(&dir, &prompt)?;
-        match context {
-            Some(context) => {
-                let system = write_new(&dir, &self.command_bar_context(context)?)?;
-                Ok(format!(
-                    "claude --append-system-prompt {} {}",
-                    cat(&system),
-                    cat(&prompt_file)
-                ))
-            }
-            None => Ok(format!("claude {}", cat(&prompt_file))),
-        }
+        Ok(dir)
     }
 
     /// What Claude is told about a command bar session. The whole vault is
     /// in scope: it finds what the user means itself. Chips the user turned
-    /// on point it at something in particular.
-    pub fn command_bar_context(&self, context: &AgentContext) -> Result<String> {
+    /// on point it at something in particular. It finishes with `groundwork
+    /// done`, which logs how it went and, for a one-off, closes its tab.
+    pub fn command_bar_context(&self, context: &AgentContext, shown: bool) -> Result<String> {
         let mut text = String::from(
             "The user started this session from Groundwork's command bar: a quick request, \
              typed or dictated, from wherever they were. The working directory is their \
@@ -132,9 +160,30 @@ impl Session {
              --workspace <name> --cwd <folder>` and `groundwork open <note>` show things in \
              Groundwork's window.\n\
              - When it's ambiguous or you need a decision, ask with `groundwork ask`, so it \
-             reaches their inbox: they may not be watching this terminal. When you're done, say \
-             what you did in a line or two.\n",
+             reaches their inbox.\n\
+             - Trust the app's commands: when `groundwork notify`, `open`, `tab new` or \
+             `workspace open` returns without an error, it worked. Don't check up on it, wait for \
+             the user to click something, or read terminals back to confirm.\n\
+             \n\
+             When you've finished, your last step is `groundwork done \"<what you did, in a line \
+             or two>\"` (add `--link <note>` for the note it's about). It records the request in \
+             the command log, which the user reviews, and tells them in their inbox, so don't \
+             also `notify`. For a one-off request it then closes this tab once your turn ends, so \
+             finished sessions don't pile up. Keep the tab open instead, with `--keep-open`, \
+             whenever the user asked you to keep going, stay around or wait for something, or the \
+             work carries on (something still running, more to do together). If you couldn't do \
+             it, say so with `--outcome failed`; if it's waiting on them, `--outcome needs-you`: \
+             both keep the tab open. When in doubt, keep it open. If you carry on later, run \
+             `groundwork done` again when you finish.\n",
         );
+        text.push_str(if shown {
+            "\nThey opened this session on screen (⌘↩), so they're probably watching: keep the \
+             tab open when you finish unless they asked you to close it.\n"
+        } else {
+            "\nThey left this session in the background (↩), so they aren't watching this \
+             terminal: what they hear from you is your `groundwork ask` questions and the \
+             `groundwork done` summary.\n"
+        });
         let mut pointed = Vec::new();
         if let Some(note) = context.note.as_deref().filter(|n| !n.is_empty()) {
             self.vault().resolve(note)?;
@@ -264,7 +313,7 @@ mod tests {
         let (_dir, s) = session();
         let vars = HashMap::from([("input.ticket".to_string(), "TEAM-9".to_string())]);
         let command = s
-            .agent_command("Set up {{input.ticket}}.\nIt's {{other}}.", &vars, None)
+            .agent_command("Set up {{input.ticket}}.\nIt's {{other}}.", &vars)
             .unwrap();
         let path = command
             .strip_prefix("claude \"$(cat ")
@@ -276,7 +325,7 @@ mod tests {
             "Set up TEAM-9.\nIt's {{other}}."
         );
         assert!(matches!(
-            s.agent_command("  ", &vars, None),
+            s.agent_command("  ", &vars),
             Err(CoreError::Config(_))
         ));
     }
@@ -289,11 +338,11 @@ mod tests {
             workspace: Some("TEAM-12".into()),
             project: Some("acme".into()),
         };
-        let command = s
-            .agent_command("Summarise this", &HashMap::new(), Some(&context))
-            .unwrap();
+        let BarCommand { id, command } = s.bar_command("Summarise this", &context, false).unwrap();
         let files: Vec<&str> = command
-            .strip_prefix("claude --append-system-prompt ")
+            .strip_prefix(&format!(
+                "GROUNDWORK_REQUEST={id} claude --append-system-prompt "
+            ))
             .unwrap_or_else(|| panic!("{command}"))
             .split("\"$(cat ")
             .filter_map(|part| Some(part.split_once(")\"")?.0.trim_matches('\'')))
@@ -311,16 +360,34 @@ mod tests {
                 .contains("- The project Acme (`groundwork project show acme`), in Projects/Acme/")
         );
         assert!(system.contains("- Their workspace TEAM-12 in Groundwork"));
+        assert!(system.contains("groundwork done") && system.contains("in the background"));
         assert_eq!(fs::read_to_string(files[1]).unwrap(), "Summarise this");
+        // The request is in the command log.
+        let logged = CommandLog::new(s.vault().root()).get(&id).unwrap();
+        assert_eq!(
+            (logged.prompt.as_str(), logged.shown),
+            ("Summarise this", false)
+        );
+        assert_eq!(logged.context, context);
 
         // With every chip off (as they start), the whole vault.
-        let bare = s.command_bar_context(&AgentContext::default()).unwrap();
+        let bare = s
+            .command_bar_context(&AgentContext::default(), true)
+            .unwrap();
+        assert!(bare.contains("probably watching"));
         assert!(bare.contains("groundwork search --smart") && bare.contains("groundwork ask"));
         assert!(!bare.contains("They pointed you at"));
         let outside = AgentContext {
             note: Some("../secrets.md".into()),
             ..Default::default()
         };
-        assert!(s.command_bar_context(&outside).is_err());
+        assert!(s.command_bar_context(&outside, false).is_err());
+        assert!(s.bar_command("Read it", &outside, false).is_err());
+        assert!(s.bar_command(" ", &AgentContext::default(), false).is_err());
+        assert_eq!(
+            CommandLog::new(s.vault().root()).list(10).len(),
+            1,
+            "nothing else logged"
+        );
     }
 }

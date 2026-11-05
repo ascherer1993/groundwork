@@ -3,4 +3,4 @@
 /**
  * What the backend asks the window to do; see `Event::UiCommand`.
  */
-export type UiCommand = { "kind": "open", path: string, line?: number, } | { "kind": "showWorkspace", id: string, } | { "kind": "newTab", workspace?: string, beside?: string, cwd?: string, run?: string, background: boolean, } | { "kind": "tabs" };
+export type UiCommand = { "kind": "open", path: string, line?: number, } | { "kind": "showWorkspace", id: string, } | { "kind": "newTab", workspace?: string, beside?: string, cwd?: string, run?: string, background: boolean, } | { "kind": "tabs" } | { "kind": "closeTab", terminal: string, };

@@ -146,6 +146,8 @@ interface WorkspaceState {
   fileTab(path: string): IDockviewPanel | undefined;
   /** Shows a running terminal (by session id) in a tab, if one has it. */
   showTerminal(id: string): boolean;
+  /** Closes a terminal's tab, ending its session; false if no tab has it. */
+  closeTerminal(id: string): boolean;
   /** Every terminal in a tab, with the workspace it's in. */
   terminalTabs(): { area: string; panel: IDockviewPanel; terminal: string }[];
   /** The same, as the CLI sees them (`groundwork tab list`). */
@@ -581,6 +583,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     get().showWorkspace(tab.area);
     tab.panel.api.setActive();
     return true;
+  },
+
+  closeTerminal(id) {
+    const tab = get()
+      .terminalTabs()
+      .find((t) => t.terminal === id);
+    tab?.panel.api.close();
+    return !!tab;
   },
 
   terminalTabs() {

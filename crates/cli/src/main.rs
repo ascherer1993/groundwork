@@ -13,10 +13,12 @@ use std::process::ExitCode;
 use chrono::{DateTime, Duration, Local, NaiveDate};
 use clap::{Args, Parser, Subcommand};
 mod app;
+mod bar;
 mod inbox;
 mod live;
 
 use groundwork_core::activity::{ActivitySource, read_events};
+use groundwork_core::command_log::{CommandLog, Outcome};
 use groundwork_core::dates::parse_natural;
 use groundwork_core::pages;
 use groundwork_core::quickadd::ChoiceKind;
@@ -195,6 +197,29 @@ enum Command {
         /// A note it's about (`[[Note]]` or a path).
         #[arg(long)]
         link: Option<String>,
+    },
+    /// Finishes a command bar session, as its last step: records how it went
+    /// in the command log, tells the user in the inbox (unless they're
+    /// watching), and closes this tab once Claude's turn ends, unless
+    /// `--keep-open` or the outcome isn't `done`.
+    Done {
+        /// What you did, in a line or two.
+        summary: String,
+        /// `done`, `needs-you` (it's waiting on them) or `failed`.
+        #[arg(long, default_value = "done", value_parser = bar::outcome_arg)]
+        outcome: Outcome,
+        /// A note it's about (`[[Note]]` or a path).
+        #[arg(long)]
+        link: Option<String>,
+        /// Leave the tab open: the user asked to keep going, or there's more to do.
+        #[arg(long)]
+        keep_open: bool,
+    },
+    /// The command log: what was asked from the command bar, when, and how
+    /// it went, newest first.
+    Log {
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
     },
     /// Opens a note, page or file in Groundwork's window. Needs the app.
     Open {
@@ -751,21 +776,41 @@ fn run(cli: Cli) -> Fallible<()> {
             };
         }
         Command::Hook { event } => {
-            inbox::hook(&event, || {
-                let (vault, _) = find_vault(cli.vault).ok()?;
-                let session =
-                    Session::open_for_tool(vault, &data_dir(), ActivitySource::Cli).ok()?;
-                let cwd = std::env::current_dir().ok()?;
-                let context = session.context(None, Some(&cwd)).ok()?;
-                let mut text = Vec::new();
-                print_context_to(&mut text, &context);
-                String::from_utf8(text).ok()
-            });
+            let vault = find_vault(cli.vault).ok().map(|(v, _)| v);
+            inbox::hook(
+                &event,
+                || {
+                    let session =
+                        Session::open_for_tool(vault.clone()?, &data_dir(), ActivitySource::Cli)
+                            .ok()?;
+                    let cwd = std::env::current_dir().ok()?;
+                    let context = session.context(None, Some(&cwd)).ok()?;
+                    let mut text = Vec::new();
+                    print_context_to(&mut text, &context);
+                    String::from_utf8(text).ok()
+                },
+                |tab, claude| {
+                    // A command bar session: the log notes where it runs.
+                    if let (Some(id), Some(vault)) = (bar::this_request(), &vault) {
+                        let _ = CommandLog::new(vault.root()).started(&id, Some(tab), claude);
+                    }
+                },
+            );
             return Ok(());
         }
         _ => {}
     }
     let (vault, source) = find_vault(cli.vault)?;
+    match cli.command {
+        Command::Done {
+            summary,
+            outcome,
+            link,
+            keep_open,
+        } => return bar::done(vault.root(), summary, outcome, link, keep_open, cli.json),
+        Command::Log { limit } => return bar::list(vault.root(), limit, cli.json),
+        _ => {}
+    }
     if let Command::Vault = cli.command {
         let path = vault.root().display().to_string();
         if cli.json {
@@ -1065,6 +1110,8 @@ fn run(cli: Cli) -> Fallible<()> {
             Ok(())
         }
         Command::Vault
+        | Command::Done { .. }
+        | Command::Log { .. }
         | Command::Ask { .. }
         | Command::Wait { .. }
         | Command::Notify { .. }

@@ -1,10 +1,11 @@
 /**
  * What the CLI asks the window to do (`groundwork open`, `workspace open`,
- * `tab new`, `tab list`). The backend sends a `ui.command` event and waits
+ * `tab new`, `tab list`, and `done` closing its tab). The backend sends a `ui.command` event and waits
  * for the answer (`crates/backend/src/window.rs`).
  */
 import { api, transport } from "../api/client";
 import type { UiCommand } from "../api/generated/UiCommand";
+import { useTerminals } from "./terminals";
 import { message } from "./vault";
 import { useWorkspace } from "./workspace";
 import { useWorkspaces } from "./workspaces";
@@ -32,7 +33,32 @@ async function run(command: UiCommand): Promise<unknown> {
       });
     case "tabs":
       return ws.tabInfos();
+    case "closeTab":
+      closeWhenFinished(command.terminal);
+      return null;
   }
+}
+
+/** Without Claude Code's hooks to say when its turn ends, a guess. */
+const NO_HOOKS = 10_000;
+
+/**
+ * Closes a terminal's tab once Claude Code in it finishes its turn, so it
+ * can say its last words: `groundwork done` asks for this as it runs.
+ */
+function closeWhenFinished(terminal: string) {
+  let last = useTerminals.getState().byId[terminal]?.agent;
+  const close = () => {
+    stop();
+    clearTimeout(timer);
+    useWorkspace.getState().closeTerminal(terminal);
+  };
+  const stop = useTerminals.subscribe((s) => {
+    const agent = s.byId[terminal]?.agent;
+    if (agent === "finished" && last !== "finished") close();
+    last = agent;
+  });
+  const timer = last === undefined ? setTimeout(close, NO_HOOKS) : undefined;
 }
 
 let watching = false;

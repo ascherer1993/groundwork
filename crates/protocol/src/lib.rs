@@ -386,6 +386,10 @@ pub enum Request {
     /// → `TabInfo[]`: every terminal tab in the window.
     #[serde(rename = "app.tabs")]
     AppTabs,
+    /// → `null`: closes a terminal tab, ending its session, once Claude Code
+    /// in it finishes its turn (at once if it isn't running Claude).
+    #[serde(rename = "app.closeTab")]
+    AppCloseTab { tab: String },
     /// → `null`: the window's answer to a `ui.command` event.
     #[serde(rename = "ui.reply")]
     UiReply {
@@ -567,9 +571,23 @@ pub enum Request {
         name: Option<String>,
         #[serde(default)]
         vars: HashMap<String, String>,
-        /// From the command bar: what the user had open, for Claude's system prompt.
+    },
+    /// → `BarCommand`: logs a request from the command bar in the command
+    /// log and gives the command line that starts Claude on it. `context` is
+    /// what the user pointed it at; `shown`, whether they asked to see it.
+    #[serde(rename = "bar.command")]
+    BarCommand {
+        prompt: String,
+        #[serde(default)]
+        context: AgentContext,
+        #[serde(default)]
+        shown: bool,
+    },
+    /// → `CommandEntry[]`: the command bar's requests, newest first.
+    #[serde(rename = "commandLog.list")]
+    CommandLogList {
         #[ts(optional)]
-        context: Option<AgentContext>,
+        limit: Option<usize>,
     },
     /// → `null`: runs a `shell` action from the note's (or folder's) context,
     /// in the background. Terminal and URL actions are run by the app.
@@ -685,6 +703,8 @@ pub enum UiCommand {
     },
     /// → `TabInfo[]`
     Tabs,
+    /// → `null`: see `Request::AppCloseTab`.
+    CloseTab { terminal: String },
 }
 
 /// A terminal tab in the window.

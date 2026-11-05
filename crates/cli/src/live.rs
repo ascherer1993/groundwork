@@ -27,7 +27,7 @@ fn call<T: DeserializeOwned>(method: &str, params: Value) -> Fallible<T> {
 }
 
 /// The terminal this runs in (`GROUNDWORK_TAB_ID`).
-fn this_tab() -> Option<String> {
+pub fn this_tab() -> Option<String> {
     std::env::var("GROUNDWORK_TAB_ID")
         .ok()
         .filter(|t| !t.is_empty())
@@ -163,6 +163,12 @@ pub fn tab_fork(tab: Option<String>, background: bool, json: bool) -> Fallible<(
         json!({ "tab": tab, "background": background }),
     )?;
     print_tab(&forked, json)
+}
+
+/// Closes a tab once Claude Code in it finishes its turn.
+pub fn close_tab(tab: &str) -> Fallible<()> {
+    call::<Value>("app.closeTab", json!({ "tab": tab }))?;
+    Ok(())
 }
 
 fn print_tab(tab: &TabInfo, json: bool) -> Fallible<()> {

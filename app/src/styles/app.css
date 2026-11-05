@@ -2132,6 +2132,76 @@ button.link-button:hover:not(:disabled) {
   overflow-wrap: anywhere;
 }
 
+/* Command log */
+
+.command-log {
+  width: min(640px, calc(100vw - 32px));
+  max-height: 76vh;
+}
+
+.command-log-list {
+  list-style: none;
+  margin: 0 -16px;
+  padding: 0;
+  overflow: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.command-log-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.command-log-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.command-log-outcome {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.command-log-outcome.outcome-done {
+  color: var(--success);
+}
+
+.command-log-outcome.outcome-needsYou {
+  color: var(--warning);
+}
+
+.command-log-outcome.outcome-failed {
+  color: var(--danger);
+}
+
+.command-log-when {
+  margin-left: auto;
+}
+
+.dialog .command-log-prompt {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-weight: 550;
+}
+
+.dialog .command-log-summary {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+}
+
+.dialog .command-log-about {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
 /* Project view */
 
 .project-view {

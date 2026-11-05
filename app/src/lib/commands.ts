@@ -14,6 +14,7 @@ import { useWorkspaces } from "../state/workspaces";
 import { useInbox } from "../state/inbox";
 import { testNotification } from "../state/inbox";
 import { openCommandBar } from "../state/commandBar";
+import { showCommandLog } from "../components/CommandLog";
 import { newTicketFromJira, triageTodos } from "../state/claude";
 import { allCommands, keyLabel } from "../state/keys";
 import { choiceCommand, openQuickAdd, runChoice, useQuickAdd } from "../state/quickadd";
@@ -238,6 +239,11 @@ function commands(): Command[] {
     },
     { id: "new-ticket", label: "New ticket…", run: () => useTickets.getState().newTicket() },
     { id: "command-bar", label: "Ask Claude…", run: openCommandBar },
+    {
+      id: "command-log",
+      label: "Show the command log (what you asked Claude)",
+      run: showCommandLog,
+    },
     { id: "new-ticket-jira", label: "New ticket from Jira (Claude)…", run: newTicketFromJira },
     { id: "triage-todos", label: "Triage todos (Claude)", run: triageTodos },
     { id: "new-worktree", label: "New worktree in…", run: newWorktreeIn },
