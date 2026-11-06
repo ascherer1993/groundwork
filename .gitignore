@@ -1,5 +1,7 @@
 # Build output (app/ and app/src-tauri/ have their own ignores too)
 /target
+# The CLI and daemon, copied in for the bundle (`make build`)
+app/src-tauri/binaries/
 node_modules/
 dist/
 *.tsbuildinfo

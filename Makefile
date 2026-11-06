@@ -1,4 +1,4 @@
-.PHONY: setup dev browser build cli test e2e lint fmt bindings perf
+.PHONY: setup dev browser build install cli test e2e lint fmt bindings perf
 
 setup: ## Install JS dependencies and the Playwright browser
 	cd app && npm ci && npx playwright install webkit
@@ -14,8 +14,24 @@ dev: cli ## Desktop app with hot reload
 browser: cli ## UI in a normal browser (http://localhost:1420) against the real backend
 	cd app && npm run dev:browser
 
-build: ## Release .app bundle
-	cd app && npm run tauri build
+# Signs with your Developer ID if you have one, else your Apple Development
+# certificate, else ad hoc ("-"). SIGNING_IDENTITY="…" picks another.
+identity = $(shell security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\($(1):.*\)"/\1/p' | head -1)
+SIGNING_IDENTITY ?= $(or $(call identity,Developer ID Application),$(call identity,Apple Development),-)
+BUNDLE := target/release/bundle/macos/Groundwork.app
+
+build: ## Release Groundwork.app (target/release/bundle/macos), signed; the CLI, daemon and Claude Code plugin inside
+	cargo build -q --release -p groundwork-cli -p groundwork-terminal-daemon
+	mkdir -p app/src-tauri/binaries
+	cp target/release/groundwork app/src-tauri/binaries/groundwork-$(HOST)
+	cp target/release/groundworkd app/src-tauri/binaries/groundworkd-$(HOST)
+	cd app && APPLE_SIGNING_IDENTITY="$(SIGNING_IDENTITY)" npm run tauri build -- --config src-tauri/tauri.bundle.conf.json
+	codesign --verify --deep --strict "$(BUNDLE)"
+	@echo "Built $(BUNDLE), signed as: $(SIGNING_IDENTITY)"
+
+install: build ## Build, then put Groundwork.app in /Applications (replacing the one there)
+	rm -rf /Applications/Groundwork.app
+	ditto "$(BUNDLE)" /Applications/Groundwork.app
 
 cli: ## Build the `groundwork` CLI and the `groundworkd` terminal daemon next to the app ("Set up Claude Code…" links the CLI onto PATH)
 	cargo build -q -p groundwork-cli -p groundwork-terminal-daemon

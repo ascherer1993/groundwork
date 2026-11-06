@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": ["app"],
+    "externalBin": ["binaries/groundwork", "binaries/groundworkd"],
+    "resources": {
+      "../../.claude-plugin/marketplace.json": "claude-marketplace/.claude-plugin/marketplace.json",
+      "../../claude-plugin/": "claude-marketplace/claude-plugin/"
+    }
+  }
+}

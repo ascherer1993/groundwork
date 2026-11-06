@@ -47,6 +47,11 @@ export function NoteView({ path, mode, focus, editTitle }: Props) {
   const pathRef = useRef(path);
   const loadedPath = useRef<string | null>(null);
   const latest = useRef<string>("");
+  // The last place asked for, until the note it's in has loaded.
+  const pendingFocus = useRef<FocusTarget | undefined>(undefined);
+  useEffect(() => {
+    pendingFocus.current = focus;
+  }, [focus]);
   const saved = useRef<string>("");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modeRef = useRef(mode);
@@ -95,7 +100,8 @@ export function NoteView({ path, mode, focus, editTitle }: Props) {
         setError(null);
         setText(body);
         // A fresh state, so undo history doesn't cross files.
-        view.current?.setState(
+        const v = view.current;
+        v?.setState(
           EditorState.create({
             doc: body,
             extensions: editorExtensions(
@@ -104,6 +110,7 @@ export function NoteView({ path, mode, focus, editTitle }: Props) {
             ),
           }),
         );
+        if (v && pendingFocus.current) focusTarget(v, pendingFocus.current);
       } catch (err) {
         if (!cancelled) setError(message(err));
       }
@@ -183,13 +190,14 @@ export function NoteView({ path, mode, focus, editTitle }: Props) {
     v.dispatch({ effects: modeCompartment.reconfigure(modeExtensions(mode)) });
   }, [mode]);
 
-  // Scroll to a heading/block/line on request.
+  // Scroll to a heading/block/line on request, once the note asked about is
+  // in the editor: a tab opening another note still holds the old one, and
+  // loading the new one would put the cursor back at the top. (At once, not
+  // on the next frame, or keys typed in between land at the top too.)
   useEffect(() => {
-    if (!focus || text === null) return;
+    if (!focus || text === null || loadedPath.current !== path) return;
     const v = view.current;
-    if (v) {
-      requestAnimationFrame(() => focusTarget(v, focus));
-    }
+    if (v) focusTarget(v, focus);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus?.nonce, text === null]);
 

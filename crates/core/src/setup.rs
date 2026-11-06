@@ -96,15 +96,15 @@ impl SetupEnv {
             // or `Contents/MacOS` once bundled).
             cli: var("GROUNDWORK_CLI").unwrap_or_else(|| exe_dir.join("groundwork")),
             marketplace: var("GROUNDWORK_PLUGIN_ROOT").unwrap_or_else(|| {
-                // This checkout, when running from source. A bundled app
-                // will ship it in its resources (PLAN Phase 7).
-                let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-                let repo = repo.canonicalize().unwrap_or(repo);
-                if repo.join(".claude-plugin/marketplace.json").is_file() {
-                    repo
-                } else {
-                    exe_dir.join("../Resources/claude-marketplace")
+                // The app's own copy, once bundled (`make build`), so it
+                // doesn't depend on the checkout it was built from; this
+                // checkout when running from source.
+                let bundled = exe_dir.join("../Resources/claude-marketplace");
+                if bundled.join(".claude-plugin/marketplace.json").is_file() {
+                    return bundled.canonicalize().unwrap_or(bundled);
                 }
+                let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+                repo.canonicalize().unwrap_or(repo)
             }),
             claude: var("GROUNDWORK_CLAUDE").or_else(find_claude),
             data_dir: crate::data_dir(),
