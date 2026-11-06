@@ -26,6 +26,8 @@ A macOS notes app (Tauri v2 + React) over an Obsidian-compatible vault, adding H
 
 ## Commands
 
+Rust comes from rustup (the version is in `rust-toolchain.toml`), not Homebrew, so builds are native on Apple Silicon; the Makefile refuses an Intel Rust there.
+
 - `make build`: the signed release `Groundwork.app` (`target/release/bundle/macos`), with the CLI, daemon and plugin inside; `make install` copies it to /Applications. The bundle-only settings are in `app/src-tauri/tauri.bundle.conf.json`.
 - `make dev`: run the desktop app. It runs inside a `Groundwork Dev.app` bundle in `target/debug` (`scripts/dev-app`) so macOS shows its notifications.
 - `make browser`: run the same UI in a browser at http://localhost:1420.

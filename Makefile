@@ -1,11 +1,19 @@
 .PHONY: setup dev browser build install cli test e2e lint fmt bindings perf
 
-setup: ## Install JS dependencies and the Playwright browser
+setup: ## Install JS dependencies and the Playwright browser (Rust comes from rustup, https://rustup.rs)
 	cd app && npm ci && npx playwright install webkit
 
 # `make dev` runs the app through scripts/dev-app, which starts it inside a
 # "Groundwork Dev.app" bundle so macOS shows its notifications.
 HOST := $(shell rustc -vV | sed -n 's/^host: //p')
+
+# An Intel Rust (Homebrew's, on a Mac whose Homebrew is the Intel one) builds
+# an Intel app that runs under Rosetta. Rust from rustup is native.
+ifeq ($(shell uname -m),arm64)
+ifneq ($(filter x86_64-%,$(HOST)),)
+$(error $(shell which rustc) is an Intel build of Rust. Install Rust with rustup (https://rustup.rs), remove the other one (brew uninstall rust), and open a new terminal)
+endif
+endif
 DEV_RUNNER := CARGO_TARGET_$(shell echo $(HOST) | tr 'a-z-' 'A-Z_')_RUNNER
 
 dev: cli ## Desktop app with hot reload

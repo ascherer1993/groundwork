@@ -1,0 +1,5 @@
+# rustup reads this, so every Mac builds with the same Rust (installing it the
+# first time). Rust from rustup, not Homebrew: see the check in the Makefile.
+[toolchain]
+channel = "1.99"
+components = ["rustfmt", "clippy"]
