@@ -25,7 +25,7 @@ const header = (page: Page) => page.locator(".terminals-header");
 const activeNote = (page: Page) =>
   page.locator(".notes-side .dv-active-group .dv-tab.dv-active-tab");
 
-test("the terminals follow the open note, unless pinned", async ({ page }) => {
+test("the terminals follow the open note, unless locked", async ({ page }) => {
   // Two notes with workspaces: a project overview and a contact.
   await quickOpen(page, "Acme");
   await command(page, "Open this note’s workspace");
@@ -44,14 +44,14 @@ test("the terminals follow the open note, unless pinned", async ({ page }) => {
   await quickOpen(page, "Welcome");
   await expect(header(page).locator(".terminals-name")).toHaveText("Jane Doe");
 
-  // Pinned, they stay; unpinned, they catch up.
-  await header(page).getByRole("button", { name: "Pin this workspace" }).click();
-  await expect(header(page)).toContainText("Pinned");
+  // Locked, they stay; unlocked, they catch up.
+  await header(page).getByRole("button", { name: "Lock to this workspace" }).click();
+  await expect(header(page)).toContainText("Locked");
   await quickOpen(page, "Acme");
   await expect(header(page).locator(".terminals-name")).toHaveText("Jane Doe");
   await page.reload();
-  await expect(header(page)).toContainText("Pinned");
-  await header(page).getByRole("button", { name: "Unpin" }).click();
+  await expect(header(page)).toContainText("Locked");
+  await header(page).getByRole("button", { name: "Unlock" }).click();
   await expect(header(page).locator(".terminals-name")).toHaveText("Acme");
 
   // Picking a workspace brings up its note.

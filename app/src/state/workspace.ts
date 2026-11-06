@@ -50,6 +50,8 @@ export interface TerminalParams {
   cwd: string;
   /** The Claude Code session last seen in it, to resume or fork after a restart. */
   session?: string;
+  /** A name you gave the tab, shown instead of what the program set. */
+  name?: string;
 }
 
 export function isTerminal(panel: IDockviewPanel): boolean {
@@ -99,7 +101,7 @@ interface WorkspaceState {
   /** The workspace whose terminals show in the split and terminal views. */
   workspace: string | null;
   /** Keeps the current workspace when other notes open (see `follow.ts`). */
-  pinned: boolean;
+  locked: boolean;
   /** Which side the last click or keypress went to, for ⌘W. */
   focused: "notes" | "terminals";
   /** Bumped when any dock's tabs change, for views that list them. */
@@ -121,7 +123,7 @@ interface WorkspaceState {
    */
   showWorkspace(id: string | null, view?: View): void;
   setFocused(side: "notes" | "terminals"): void;
-  setPinned(pinned: boolean): void;
+  setLocked(locked: boolean): void;
   open(path: string, opts?: OpenOptions): void;
   openLink(
     source: string,
@@ -178,7 +180,7 @@ function layoutKey(): string | null {
   return vault ? `groundwork.layout:${vault.path}` : null;
 }
 
-type Remembered = "workspace" | "view" | "pinned";
+type Remembered = "workspace" | "view" | "locked" | "pinned";
 
 function storageKey(name: Remembered): string | null {
   const vault = useVault.getState().vault;
@@ -204,13 +206,14 @@ function recall(name: Remembered): string | null {
   }
 }
 
-/** The workspace and view last on screen in this vault, and whether it was pinned. */
-export function savedView(): { workspace: string | null; view: View; pinned: boolean } {
+/** The workspace and view last on screen in this vault, and whether it was locked. */
+export function savedView(): { workspace: string | null; view: View; locked: boolean } {
   const view = recall("view");
   return {
     workspace: recall("workspace"),
     view: view === "split" || view === "terminal" ? view : "note",
-    pinned: recall("pinned") === "true",
+    // Locking was called pinning at first.
+    locked: (recall("locked") ?? recall("pinned")) === "true",
   };
 }
 
@@ -259,11 +262,14 @@ function activeFile(): IDockviewPanel | undefined {
   return useWorkspace.getState().docks[NOTES]?.activePanel;
 }
 
+/** Counts workspaces coming on screen, to tell whether one did meanwhile. */
+let switches = 0;
+
 export const useWorkspace = create<WorkspaceState>((set, get) => ({
   docks: {},
   view: "note",
   workspace: null,
-  pinned: false,
+  locked: false,
   focused: "notes",
   tabsVersion: 0,
   activePath: null,
@@ -387,6 +393,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   },
 
   showWorkspace(id, view) {
+    switches++;
     set({ workspace: id });
     remember("workspace", id);
     if (view) get().setView(view);
@@ -397,9 +404,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     if (get().focused !== side) set({ focused: side });
   },
 
-  setPinned(pinned) {
-    set({ pinned });
-    remember("pinned", pinned ? "true" : null);
+  setLocked(locked) {
+    set({ locked });
+    remember("locked", locked ? "true" : null);
+    remember("pinned", null);
   },
 
   open(path, opts = {}) {
@@ -548,9 +556,17 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   async newTerminal(cwd, opts = {}) {
     const id = await terminalWorkspace(cwd, opts);
     if (!id) throw new Error("there's no workspace for the terminal");
+    const seen = switches;
     // The view resizes it to fit once it's on screen.
     const info = await api.createTerminal({ cols: 100, rows: 30 }, cwd ?? hooks.folder(id), id);
-    const tab = await get().addTerminal(info, { ...opts, workspace: id });
+    // Another workspace came on screen while it started (the terminals
+    // following a note, a pick): the tab joins its own quietly.
+    const moved = switches !== seen && get().workspace !== id;
+    const tab = await get().addTerminal(info, {
+      ...opts,
+      workspace: id,
+      background: opts.background || moved,
+    });
     // The shell reads it once it starts.
     if (opts.run) await api.terminalInput(info.id, `${opts.run}\r`);
     if (!tab) throw new Error("the terminal's workspace went away");

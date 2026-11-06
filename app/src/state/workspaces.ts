@@ -35,6 +35,12 @@ interface WorkspacesState {
   rename(id: string): Promise<void>;
   /** Where its new terminals start; open ones stay where they are. */
   changeFolder(id: string): Promise<void>;
+  /** A colour's name (`workspaces.rs` COLORS), or `""` for none. */
+  setColor(id: string, color: string): Promise<void>;
+  /** Pinned workspaces are listed first. */
+  setPinned(id: string, pinned: boolean): Promise<void>;
+  /** Moves it to just before `before`, or to the end. */
+  move(id: string, before?: string): Promise<void>;
   /** After confirming, ends its terminals and forgets it. */
   remove(id: string): Promise<void>;
 }
@@ -52,7 +58,7 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
       const current = list.find((w) => w.id === saved.workspace) ?? list[0];
       // Restored before `loaded`, which the terminals following the notes wait for.
       set({ list });
-      useWorkspace.setState({ pinned: saved.pinned });
+      useWorkspace.setState({ locked: saved.locked });
       useWorkspace.getState().showWorkspace(current?.id ?? null, current ? saved.view : "note");
       set({ loaded: true });
     } catch (err) {
@@ -146,6 +152,23 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
     }
   },
 
+  async setColor(id, color) {
+    await change(id, { color });
+  },
+
+  async setPinned(id, pinned) {
+    await change(id, { pinned });
+  },
+
+  async move(id, before) {
+    if (id === before) return;
+    try {
+      set({ list: await api.moveWorkspace(id, before) });
+    } catch (err) {
+      useUi.getState().notify(message(err));
+    }
+  },
+
   async remove(id) {
     const workspace = get().list.find((w) => w.id === id);
     const dock = useWorkspace.getState().docks[id];
@@ -171,6 +194,15 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
     }
   },
 }));
+
+async function change(id: string, what: { color?: string; pinned?: boolean }) {
+  try {
+    const updated = await api.updateWorkspace(id, what);
+    useWorkspaces.setState((s) => ({ list: s.list.map((w) => (w.id === id ? updated : w)) }));
+  } catch (err) {
+    useUi.getState().notify(message(err));
+  }
+}
 
 /** If the current workspace is gone, another takes its place (or only notes show). */
 function leaveIfGone(list: Workspace[]) {

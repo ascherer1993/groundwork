@@ -122,6 +122,7 @@ interface Results {
   "workspace.list": Workspace[];
   "workspace.create": Workspace;
   "workspace.update": Workspace;
+  "workspace.move": Workspace[];
   "workspace.saveLayout": null;
   "workspace.delete": null;
   "workspace.forNote": Workspace;
@@ -271,8 +272,13 @@ export const api = {
   workspaces: () => call("workspace.list"),
   /** `cwd` is absolute; the vault root by default. */
   createWorkspace: (name: string, cwd?: string) => call("workspace.create", { name, cwd }),
-  updateWorkspace: (id: string, change: { name?: string; cwd?: string }) =>
-    call("workspace.update", { id, ...change }),
+  /** `color: ""` takes the colour away. */
+  updateWorkspace: (
+    id: string,
+    change: { name?: string; cwd?: string; color?: string; pinned?: boolean },
+  ) => call("workspace.update", { id, ...change }),
+  /** Moves a workspace to just before another, or to the end; returns them all. */
+  moveWorkspace: (id: string, before?: string) => call("workspace.move", { id, before }),
   saveWorkspaceLayout: (id: string, layout: unknown) =>
     call("workspace.saveLayout", { id, layout }),
   deleteWorkspace: (id: string) => call("workspace.delete", { id }),

@@ -10,6 +10,7 @@ import { isViewPath, TODO_BOARD } from "./paths";
 import { formDialog, type PaletteItem, promptDialog, useUi } from "../state/ui";
 import { message, newNoteFolder, useVault } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
+import { orderedWorkspaces } from "../state/workspaceOrder";
 import { useWorkspaces } from "../state/workspaces";
 import { useInbox } from "../state/inbox";
 import { testNotification } from "../state/inbox";
@@ -209,9 +210,9 @@ function commands(): Command[] {
     { id: "switch-workspace", label: "Switch workspace…", run: switchWorkspace },
     {
       id: "toggle-pin",
-      label: ws.pinned ? "Let the terminals follow notes" : "Pin the terminals to this workspace",
-      when: () => ws.pinned || !!ws.workspace,
-      run: () => ws.setPinned(!ws.pinned),
+      label: ws.locked ? "Let the terminals follow notes" : "Lock the terminals to this workspace",
+      when: () => ws.locked || !!ws.workspace,
+      run: () => ws.setLocked(!ws.locked),
     },
     { id: "next-workspace", label: "Next workspace", run: () => stepWorkspace(1) },
     { id: "previous-workspace", label: "Previous workspace", run: () => stepWorkspace(-1) },
@@ -442,7 +443,7 @@ async function terminalInFolder() {
 export function switchWorkspace() {
   useUi.getState().openPalette({
     placeholder: "Switch to…",
-    items: useWorkspaces.getState().list.map((w, i) => ({
+    items: orderedWorkspaces().map((w, i) => ({
       id: w.id,
       label: w.name,
       detail: w.cwd,
@@ -454,7 +455,7 @@ export function switchWorkspace() {
 
 /** The workspace after (or before) the current one, round the list. */
 function stepWorkspace(by: number) {
-  const list = useWorkspaces.getState().list;
+  const list = orderedWorkspaces();
   if (!list.length) return;
   const at = list.findIndex((w) => w.id === useWorkspace.getState().workspace);
   const next = list[(at + by + list.length) % list.length]!;
@@ -494,7 +495,7 @@ export function runKey(id: string, target: EventTarget | null): boolean {
   }
   const n = id.match(/^workspace-(\d)$/);
   if (n) {
-    const workspace = useWorkspaces.getState().list[Number(n[1]) - 1];
+    const workspace = orderedWorkspaces()[Number(n[1]) - 1];
     if (workspace) useWorkspaces.getState().pick(workspace.id);
     return true;
   }

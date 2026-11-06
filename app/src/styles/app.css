@@ -838,6 +838,25 @@ button.danger-button {
   color: var(--danger);
 }
 
+.menu-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin: auto 8px auto 0;
+  border-radius: 50%;
+  background: var(--ws-color, transparent);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.menu-swatch[data-color] {
+  box-shadow: none;
+}
+
+.menu-check {
+  flex: none;
+  margin: auto 0 auto auto;
+}
+
 .menu button.danger:hover,
 .menu button.danger:focus-visible {
   background: var(--danger);
@@ -1328,6 +1347,36 @@ button.terminals-name:hover {
   color: var(--accent);
 }
 
+/* A workspace's colour, wherever it's shown. */
+[data-color="red"] {
+  --ws-color: var(--ws-red);
+}
+[data-color="orange"] {
+  --ws-color: var(--ws-orange);
+}
+[data-color="yellow"] {
+  --ws-color: var(--ws-yellow);
+}
+[data-color="green"] {
+  --ws-color: var(--ws-green);
+}
+[data-color="teal"] {
+  --ws-color: var(--ws-teal);
+}
+[data-color="blue"] {
+  --ws-color: var(--ws-blue);
+}
+[data-color="purple"] {
+  --ws-color: var(--ws-purple);
+}
+[data-color="pink"] {
+  --ws-color: var(--ws-pink);
+}
+
+.terminals-header[data-color] {
+  box-shadow: inset 3px 0 0 var(--ws-color);
+}
+
 /* Workspaces view */
 
 .workspaces-panel {
@@ -1374,6 +1423,26 @@ button.terminals-name:hover {
 
 .area-head {
   position: relative;
+}
+
+/* Its colour, down the left edge. */
+.area-item[data-color] > .area-head > .area-row {
+  box-shadow: inset 3px 0 0 var(--ws-color);
+}
+
+/* Where a dragged workspace would go. */
+.area-head.drop-before {
+  box-shadow: 0 -2px 0 var(--accent);
+}
+
+.area-head.drop-after {
+  box-shadow: 0 2px 0 var(--accent);
+}
+
+.area-pin {
+  flex: none;
+  margin-left: -2px;
+  color: var(--text-faint);
 }
 
 .area-row {

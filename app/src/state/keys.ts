@@ -97,7 +97,7 @@ export const KEY_COMMANDS: KeyCommand[] = [
   },
   {
     id: "toggle-pin",
-    label: "Pin or unpin the terminals",
+    label: "Lock or unlock the terminals",
     group: "Views and workspaces",
     key: null,
   },

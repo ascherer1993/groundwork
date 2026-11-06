@@ -436,6 +436,19 @@ pub enum Request {
         name: Option<String>,
         #[ts(optional)]
         cwd: Option<String>,
+        /// A colour's name, or `""` for none.
+        #[ts(optional)]
+        color: Option<String>,
+        /// Kept at the top of the list.
+        #[ts(optional)]
+        pinned: Option<bool>,
+    },
+    /// → `Workspace[]`: moves a workspace to just before another, or to the end.
+    #[serde(rename = "workspace.move")]
+    WorkspaceMove {
+        id: String,
+        #[ts(optional)]
+        before: Option<String>,
     },
     /// → `null`: saves a workspace's tabs and splits.
     #[serde(rename = "workspace.saveLayout")]

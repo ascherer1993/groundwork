@@ -8,10 +8,10 @@ import {
   themeLight,
 } from "dockview-react";
 import "dockview-react/dist/styles/dockview.css";
-import { ChevronDown, FilePlus, Pin, PinOff, Plus, Search, SquareTerminal } from "lucide-react";
+import { ChevronDown, FilePlus, Lock, LockOpen, Plus, Search, SquareTerminal } from "lucide-react";
 import { createContext, useEffect, useRef, useState } from "react";
 import { switchWorkspace } from "../lib/commands";
-import { showTerminalMenu } from "../state/claude";
+import { renameTab, showTerminalMenu } from "../state/claude";
 import { NOTES, useWorkspace } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
 import { useKeyLabel } from "../state/keys";
@@ -29,14 +29,21 @@ const components = {
 
 /** A terminal's tab, with its menu (Fork session, Resume conversation…). */
 function TerminalTab(props: IDockviewPanelHeaderProps) {
+  // Read when clicked: a replacement shell changes it.
+  const terminal = () =>
+    (props.containerApi.getPanel(props.api.id)?.params as { terminal?: string } | undefined)
+      ?.terminal;
   return (
     <DockviewDefaultTab
       {...props}
       onContextMenu={(e) => {
-        // Read when clicked: a replacement shell changes it.
-        const params = props.containerApi.getPanel(props.api.id)?.params;
-        const terminal = (params as { terminal?: string } | undefined)?.terminal;
-        if (terminal) showTerminalMenu(e, terminal);
+        const id = terminal();
+        if (id) showTerminalMenu(e, id);
+      }}
+      // A double click names it.
+      onDoubleClick={() => {
+        const id = terminal();
+        if (id) void renameTab(id);
       }}
     />
   );
@@ -99,11 +106,11 @@ function Area({ area, layout, shown }: { area: string; layout?: unknown; shown: 
 }
 
 /** Which workspace's terminals these are, and whether they follow the notes. */
-function TerminalsHeader({ name }: { name: string }) {
-  const pinned = useWorkspace((s) => s.pinned);
+function TerminalsHeader({ name, color }: { name: string; color?: string }) {
+  const locked = useWorkspace((s) => s.locked);
   const split = useWorkspace((s) => s.view === "split");
   return (
-    <header className="terminals-header">
+    <header className="terminals-header" data-color={color}>
       <button
         type="button"
         className="terminals-name"
@@ -113,21 +120,21 @@ function TerminalsHeader({ name }: { name: string }) {
         {name} <ChevronDown size={12} />
       </button>
       {split && (
-        <span className="terminals-state muted">{pinned ? "Pinned" : "Following notes"}</span>
+        <span className="terminals-state muted">{locked ? "Locked" : "Following notes"}</span>
       )}
       <button
         type="button"
         className="icon"
-        aria-pressed={pinned}
-        aria-label={pinned ? "Unpin" : "Pin this workspace"}
+        aria-pressed={locked}
+        aria-label={locked ? "Unlock" : "Lock to this workspace"}
         title={
-          pinned
-            ? "Pinned: other notes don't change the terminals. Click to follow notes again."
+          locked
+            ? "Locked: other notes don't change the terminals. Click to follow notes again."
             : "Keep these terminals when other notes open"
         }
-        onClick={() => useWorkspace.getState().setPinned(!pinned)}
+        onClick={() => useWorkspace.getState().setLocked(!locked)}
       >
-        {pinned ? <PinOff size={13} /> : <Pin size={13} />}
+        {locked ? <Lock size={13} /> : <LockOpen size={13} />}
       </button>
     </header>
   );
@@ -230,7 +237,9 @@ export function Workspace() {
         onPointerDownCapture={focus("terminals")}
         onFocusCapture={focus("terminals")}
       >
-        {currentWorkspace && <TerminalsHeader name={currentWorkspace.name} />}
+        {currentWorkspace && (
+          <TerminalsHeader name={currentWorkspace.name} color={currentWorkspace.color} />
+        )}
         <div className="terminal-docks">
           {loaded &&
             workspaces.map((w) => (

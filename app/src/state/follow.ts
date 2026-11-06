@@ -1,6 +1,6 @@
 /**
  * The terminals follow the notes: when a note opens, its workspace becomes
- * the current one, unless the current one is pinned. A note's workspace is
+ * the current one, unless the terminals are locked to the current one. A note's workspace is
  * its own, else the nearest one above it (a folder note's, like
  * `Acme/Acme.md`, or a project overview's); with neither, nothing changes.
  */
@@ -31,10 +31,10 @@ export function workspaceFor(
   return undefined;
 }
 
-/** Makes the open note's workspace the current one, unless it's pinned. */
+/** Makes the open note's workspace the current one, unless the terminals are locked. */
 export function follow() {
   const ws = useWorkspace.getState();
-  if (ws.pinned || !ws.activePath) return;
+  if (ws.locked || !ws.activePath) return;
   // A project's view follows like its overview note.
   const project = projectOfView(ws.activePath);
   const projects = useTickets.getState().projects;
@@ -52,7 +52,7 @@ export function watchFollow() {
   if (watching) return;
   watching = true;
   useWorkspace.subscribe((s, before) => {
-    if (s.activePath !== before.activePath || (before.pinned && !s.pinned)) follow();
+    if (s.activePath !== before.activePath || (before.locked && !s.locked)) follow();
   });
   // Workspaces and projects load after the notes do. (Only then: later
   // changes to the lists shouldn't undo a workspace you picked.)

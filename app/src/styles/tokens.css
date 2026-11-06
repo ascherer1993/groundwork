@@ -54,6 +54,16 @@
   --term-bright-cyan: #2a98a8;
   --term-bright-white: #e3e3e1;
 
+  /* Workspace colours (workspaces.rs COLORS). */
+  --ws-red: #d64545;
+  --ws-orange: #dd7a1f;
+  --ws-yellow: #c9a20c;
+  --ws-green: #3f9b4f;
+  --ws-teal: #1d9a9a;
+  --ws-blue: #3d6fe0;
+  --ws-purple: #8b5cd6;
+  --ws-pink: #d4508f;
+
   --kind-note: var(--text-muted);
   --kind-page: #2d8a6e;
   --kind-bundle: #a35fd0;
@@ -113,6 +123,15 @@
     --term-bright-magenta: #eeaad8;
     --term-bright-cyan: #9fd8ea;
     --term-bright-white: #ffffff;
+
+    --ws-red: #f0716a;
+    --ws-orange: #f0a04b;
+    --ws-yellow: #e3c45a;
+    --ws-green: #63c477;
+    --ws-teal: #4fc4c4;
+    --ws-blue: #7b9bff;
+    --ws-purple: #b38cf5;
+    --ws-pink: #ee85bb;
 
     --kind-page: #5cc5a3;
     --kind-bundle: #c995ee;

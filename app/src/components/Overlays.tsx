@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { closePreview, enterPreview, leavePreview } from "../lib/linkPreview";
@@ -98,12 +98,17 @@ function ContextMenu() {
               role="menuitem"
               className={item.danger ? "danger" : undefined}
               disabled={item.disabled}
+              aria-current={item.checked || undefined}
               onClick={() => {
                 close();
                 item.action();
               }}
             >
+              {item.color !== undefined && (
+                <span className="menu-swatch" data-color={item.color || undefined} />
+              )}
               {item.label}
+              {item.checked && <Check size={13} className="menu-check" aria-hidden="true" />}
             </button>
           ),
         )}

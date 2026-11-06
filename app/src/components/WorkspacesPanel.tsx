@@ -1,11 +1,11 @@
-import { ChevronRight, Plus, SquareTerminal, X } from "lucide-react";
+import { ChevronRight, Pin, Plus, SquareTerminal, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { TerminalInfo } from "../api/generated/TerminalInfo";
 import type { Workspace } from "../api/generated/Workspace";
 import { showTerminalMenu } from "../state/claude";
 import { useKeyLabel } from "../state/keys";
-import { showSplit, useTickets } from "../state/tickets";
+import { showSplit } from "../state/tickets";
 import {
   mostUrgent,
   stateOf,
@@ -13,9 +13,10 @@ import {
   type TerminalStatus,
   useTerminals,
 } from "../state/terminals";
-import { confirmDialog, useUi } from "../state/ui";
+import { confirmDialog, type MenuEntry, useUi } from "../state/ui";
 import { message, useVault } from "../state/vault";
 import { shownTerminal, useWorkspace } from "../state/workspace";
+import { type Grouping, useGrouping, useSections } from "../state/workspaceOrder";
 import { useWorkspaces } from "../state/workspaces";
 
 const LABELS: Record<TerminalState, string> = {
@@ -89,18 +90,46 @@ function setExpanded(area: string, open: boolean) {
   }
 }
 
-/** One workspace: its shortcut, its terminal tabs (folded unless you open them) and their states. */
+/** The colours a workspace can have (`workspaces.rs` COLORS). */
+const COLORS = ["red", "orange", "yellow", "green", "teal", "blue", "purple", "pink"];
+
+function colorMenu(workspace: Workspace): MenuEntry[] {
+  const set = (color: string) => () => void useWorkspaces.getState().setColor(workspace.id, color);
+  return [
+    ...COLORS.map((color) => ({
+      label: color[0]!.toUpperCase() + color.slice(1),
+      color,
+      checked: workspace.color === color,
+      action: set(color),
+    })),
+    "separator",
+    { label: "No colour", color: "", checked: !workspace.color, action: set("") },
+  ];
+}
+
+/** The workspace being dragged, and its section: it moves only within that. */
+let dragging: { id: string; section: string } | null = null;
+const DRAGGED = "application/x-groundwork-workspace";
+
+/**
+ * One workspace: its colour, shortcut, terminal tabs (folded unless you open
+ * them) and their states. Dragged within its section, it moves.
+ */
 function AreaRow({
-  area,
-  name,
-  folder,
+  workspace,
+  section,
+  next,
   index,
 }: {
-  area: string;
-  name: string;
-  folder?: string;
+  workspace: Workspace;
+  /** The section it's listed in. */
+  section: string;
+  /** The workspace after it in the saved order, to drop after it. */
+  next?: string;
   index: number;
 }) {
+  const { id: area, name, cwd: folder } = workspace;
+  const [drop, setDrop] = useState<"before" | "after" | null>(null);
   useWorkspace((s) => s.tabsVersion);
   const [open, setOpen] = useState(() => expandedAreas().has(area));
   const shortcut = useKeyLabel(`workspace-${index + 1}`);
@@ -131,6 +160,15 @@ function AreaRow({
         action: () => switchAnd(area, () => useWorkspace.getState().openTerminal(c.absPath!)),
       })),
       ...(note ? [{ label: "Open note", action: () => void showSplit(note, area) }] : []),
+      "separator",
+      {
+        label: workspace.pinned ? "Unpin" : "Pin to top",
+        action: () => void useWorkspaces.getState().setPinned(area, !workspace.pinned),
+      },
+      {
+        label: "Colour…",
+        action: () => useUi.getState().showMenu(x, y, colorMenu(workspace)),
+      },
       { label: "Rename…", action: () => void useWorkspaces.getState().rename(area) },
       {
         label: "Change folder…",
@@ -151,8 +189,36 @@ function AreaRow({
   };
 
   return (
-    <li className="area-item">
-      <div className="area-head">
+    <li className="area-item" data-color={workspace.color}>
+      <div
+        className={`area-head${drop ? ` drop-${drop}` : ""}`}
+        draggable
+        onDragStart={(e) => {
+          dragging = { id: area, section };
+          e.dataTransfer.setData(DRAGGED, area);
+          e.dataTransfer.setData("text/plain", name);
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        onDragEnd={() => (dragging = null)}
+        onDragOver={(e) => {
+          if (!dragging || dragging.section !== section || dragging.id === area) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          const box = e.currentTarget.getBoundingClientRect();
+          setDrop(e.clientY < box.top + box.height / 2 ? "before" : "after");
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDrop(null);
+        }}
+        onDrop={(e) => {
+          const where = drop;
+          setDrop(null);
+          const id = e.dataTransfer.getData(DRAGGED);
+          if (!id || !where || id === area) return;
+          e.preventDefault();
+          void useWorkspaces.getState().move(id, where === "before" ? area : next);
+        }}
+      >
         <button
           className={`area-row${current ? " current" : ""}`}
           aria-current={current || undefined}
@@ -161,6 +227,9 @@ function AreaRow({
           onContextMenu={(e) => void menu(e)}
         >
           <span className="area-name">{name}</span>
+          {workspace.pinned && (
+            <Pin size={11} className="area-pin" aria-label="Pinned" role="img" />
+          )}
           {folder && <span className="area-folder">{shortPath(folder, root)}</span>}
           {tabs.length > 0 && <Badge state={mostUrgent(states)} />}
           {shortcut && (
@@ -338,50 +407,14 @@ function Sessions() {
   );
 }
 
-type Grouping = "project" | "repo" | "none";
-const GROUP_KEY = "groundwork.workspacesGroup";
-
-function savedGrouping(): Grouping {
-  try {
-    const g = localStorage.getItem(GROUP_KEY);
-    return g === "repo" || g === "none" ? g : "project";
-  } catch {
-    return "project";
-  }
-}
-
 /** Workspaces and their terminals, with what each is doing, then every running terminal. */
 export function WorkspacesPanel() {
   useTick();
   const workspaces = useWorkspaces((s) => s.list);
-  const { tickets, projects, repos } = useTickets();
-  const [grouping, setGrouping] = useState<Grouping>(savedGrouping);
-
-  // A workspace belongs to its note's ticket's home project (or repo), or
-  // to the project folder its note is in.
-  const groupOf = (w: Workspace): string => {
-    if (grouping === "none") return "";
-    const ticket = w.note ? tickets.find((t) => t.path === w.note) : undefined;
-    if (grouping === "repo") {
-      const repo = ticket?.repo;
-      return repo ? (repos.find((r) => r.id === repo)?.name ?? repo) : "Other";
-    }
-    const id =
-      ticket?.projects[0] ??
-      projects
-        .filter((p) => w.note?.startsWith(`${p.folder}/`))
-        .sort((a, b) => b.folder.length - a.folder.length)[0]?.id;
-    return id ? (projects.find((p) => p.id === id)?.name ?? id) : "Other";
-  };
-  const groups = new Map<string, Workspace[]>();
-  for (const w of workspaces) {
-    const g = groupOf(w);
-    groups.set(g, [...(groups.get(g) ?? []), w]);
-  }
-  const names = [...groups.keys()].sort((a, b) =>
-    a === "Other" ? 1 : b === "Other" ? -1 : a.localeCompare(b),
-  );
-  const grouped = names.length > 1 || (names[0] ?? "") !== "Other";
+  const grouping = useGrouping((s) => s.grouping);
+  const sections = useSections();
+  // Numbered as listed, for ⌘1–9.
+  const listed = sections.flatMap((s) => s.workspaces);
 
   return (
     <div className="workspaces-panel">
@@ -402,15 +435,7 @@ export function WorkspacesPanel() {
             Group by{" "}
             <select
               value={grouping}
-              onChange={(e) => {
-                const g = e.target.value as Grouping;
-                setGrouping(g);
-                try {
-                  localStorage.setItem(GROUP_KEY, g);
-                } catch {
-                  // Not remembered.
-                }
-              }}
+              onChange={(e) => useGrouping.getState().setGrouping(e.target.value as Grouping)}
             >
               <option value="project">Project</option>
               <option value="repo">Repo</option>
@@ -420,22 +445,25 @@ export function WorkspacesPanel() {
         </div>
       )}
       <ul className="area-list" aria-label="Workspaces">
-        {names.map((name) => (
-          <li key={name || "all"} className="area-group">
-            {grouped && name && <div className="area-group-name">{name}</div>}
-            <ul className="area-list">
-              {groups.get(name)!.map((w) => (
-                <AreaRow
-                  key={w.id}
-                  area={w.id}
-                  name={w.name}
-                  folder={w.cwd}
-                  index={workspaces.indexOf(w)}
-                />
-              ))}
-            </ul>
-          </li>
-        ))}
+        {sections.map((section) => {
+          const key = section.pinned ? "\u0000pinned" : section.name;
+          return (
+            <li key={key} className="area-group">
+              {section.name && <div className="area-group-name">{section.name}</div>}
+              <ul className="area-list">
+                {section.workspaces.map((w) => (
+                  <AreaRow
+                    key={w.id}
+                    workspace={w}
+                    section={key}
+                    next={workspaces[workspaces.indexOf(w) + 1]?.id}
+                    index={listed.indexOf(w)}
+                  />
+                ))}
+              </ul>
+            </li>
+          );
+        })}
       </ul>
       <Sessions />
     </div>

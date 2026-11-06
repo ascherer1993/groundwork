@@ -25,7 +25,7 @@ use groundwork_core::search;
 use groundwork_core::settings::Settings;
 use groundwork_core::setup::{self, SetupEnv, SetupStatus};
 use groundwork_core::watch::{self, VaultWatcher};
-use groundwork_core::workspaces;
+use groundwork_core::workspaces::{self, WorkspaceChange};
 use groundwork_core::{FileChange, RecentVaults, Session, Vault};
 use groundwork_protocol::{
     ApiError, AppInfo, CreatedNote, ErrorCode, Event, Host, QuickAdded, RenderedTemplate, Request,
@@ -522,13 +522,30 @@ impl Backend {
                 (self.events)(Event::WorkspacesChanged);
                 to_value(workspace)
             }
-            Request::WorkspaceUpdate { id, name, cwd } => {
-                let workspace =
-                    self.session()?
-                        .workspaces()
-                        .update(&id, name.as_deref(), cwd.as_deref())?;
+            Request::WorkspaceUpdate {
+                id,
+                name,
+                cwd,
+                color,
+                pinned,
+            } => {
+                let change = WorkspaceChange {
+                    name: name.as_deref(),
+                    cwd: cwd.as_deref(),
+                    color: color.as_deref(),
+                    pinned,
+                };
+                let workspace = self.session()?.workspaces().update(&id, &change)?;
                 (self.events)(Event::WorkspacesChanged);
                 to_value(workspace)
+            }
+            Request::WorkspaceMove { id, before } => {
+                let list = self
+                    .session()?
+                    .workspaces()
+                    .move_before(&id, before.as_deref())?;
+                (self.events)(Event::WorkspacesChanged);
+                to_value(list)
             }
             Request::WorkspaceSaveLayout { id, layout } => {
                 self.session()?.workspaces().save_layout(&id, layout)?;

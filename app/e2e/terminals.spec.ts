@@ -289,6 +289,88 @@ test("workspaces keep their own terminals, with badges and a session manager", a
   });
 });
 
+test("workspaces can be coloured, pinned and moved, and terminal tabs named", async ({ page }) => {
+  await page.getByRole("tab", { name: "Workspaces" }).click();
+  const panel = page.locator(".workspaces-panel");
+  for (const name of ["Alpha", "Beta"]) {
+    await panel.getByRole("button", { name: "New workspace" }).click();
+    const dialog = page.getByRole("dialog", { name: "New workspace" });
+    await dialog.getByLabel("Name").fill(name);
+    await dialog.getByRole("button", { name: "Create" }).click();
+    await expect(page.locator(".terminals-header .terminals-name")).toHaveText(name);
+  }
+  const item = (name: string) => panel.locator(".area-item").filter({ hasText: name });
+  const names = () => panel.locator(".area-name").allTextContents();
+  const menu = async (name: string, entry: string) => {
+    await item(name).locator(".area-row").click({ button: "right" });
+    await page.getByRole("menuitem", { name: entry }).click();
+  };
+
+  // A colour, down the row's edge and the terminals' header.
+  await menu("Alpha", "Colour…");
+  await page.getByRole("menuitem", { name: "Teal" }).click();
+  await expect(item("Alpha")).toHaveAttribute("data-color", "teal");
+  await item("Alpha").locator(".area-row").click();
+  await expect(page.locator(".terminals-header")).toHaveAttribute("data-color", "teal");
+
+  // Pinned: first, under its own heading, and ⌘1.
+  await menu("Beta", "Pin to top");
+  await expect(panel.locator(".area-group").first().locator(".area-group-name")).toHaveText(
+    "Pinned",
+  );
+  await expect(panel.locator(".area-name").first()).toHaveText("Beta");
+  await expect(item("Beta").getByRole("img", { name: "Pinned" })).toBeVisible();
+  await expect(item("Beta").locator(".area-key")).toHaveText("⌘1");
+  await page.keyboard.press("Meta+1");
+  await expect(page.locator(".terminals-header .terminals-name")).toHaveText("Beta");
+  await menu("Beta", "Unpin");
+  await expect(panel.locator(".area-group-name")).toHaveCount(0);
+
+  // Dragged above Alpha, Beta moves there, and stays after a reload.
+  expect((await names()).indexOf("Beta")).toBeGreaterThan((await names()).indexOf("Alpha"));
+  const from = item("Beta").locator(".area-head");
+  const to = item("Alpha").locator(".area-head");
+  const box = (await to.boundingBox())!;
+  const data = await page.evaluateHandle("new DataTransfer()");
+  await from.dispatchEvent("dragstart", { dataTransfer: data });
+  for (const type of ["dragenter", "dragover", "drop"]) {
+    await to.dispatchEvent(type, { dataTransfer: data, clientY: box.y + 2 });
+  }
+  await from.dispatchEvent("dragend", { dataTransfer: data });
+  await expect
+    .poll(async () => (await names()).indexOf("Beta"))
+    .toBe((await names()).indexOf("Alpha") - 1);
+  await page.reload();
+  await page.getByRole("tab", { name: "Workspaces" }).click();
+  await expect
+    .poll(async () => (await names()).indexOf("Beta") + 1)
+    .toBe((await names()).indexOf("Alpha"));
+
+  // A tab's name, from a double click, outlives a reload; empty, it's the program's again.
+  await item("Alpha").locator(".area-row").click();
+  const shell = page.locator(`${TERMINALS} .dv-tab`).first();
+  await expect(shell).toHaveText("vault");
+  await shell.dblclick();
+  const rename = page.getByRole("dialog", { name: "Rename tab" });
+  await rename.getByRole("textbox").fill("Dev server");
+  await rename.getByRole("button", { name: "Rename" }).click();
+  await expect(shell).toHaveText("Dev server");
+  await page.reload();
+  await expect(page.locator(`${TERMINALS} .dv-tab`).first()).toHaveText("Dev server");
+  await page.locator(`${TERMINALS} .dv-tab`).first().click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Rename tab…" }).click();
+  await rename.getByRole("textbox").fill("");
+  await rename.getByRole("button", { name: "Rename" }).click();
+  await expect(page.locator(`${TERMINALS} .dv-tab`).first()).toHaveText("vault");
+
+  for (const name of ["Alpha", "Beta"]) {
+    await page.getByRole("tab", { name: "Workspaces" }).click();
+    await menu(name, "Delete…");
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(item(name)).toHaveCount(0);
+  }
+});
+
 test("terminals open in a chosen folder", async ({ page }) => {
   const tree = page.getByRole("tree", { name: "Files" });
   /** Checks the active terminal's folder, then ends it. */

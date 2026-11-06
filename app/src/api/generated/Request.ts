@@ -35,7 +35,15 @@ run?: string,
 /**
  * Leave what's on screen as it is.
  */
-background: boolean, } } | { "method": "app.tabs" } | { "method": "app.closeTab", "params": { tab: string, } } | { "method": "ui.reply", "params": { id: number, result?: unknown, error?: string, } } | { "method": "workspace.list" } | { "method": "workspace.create", "params": { name: string, cwd?: string, } } | { "method": "workspace.update", "params": { id: string, name?: string, cwd?: string, } } | { "method": "workspace.saveLayout", "params": { id: string, layout: unknown, } } | { "method": "workspace.delete", "params": { id: string, } } | { "method": "workspace.forNote", "params": { path: string, } } | { "method": "repo.list" } | { "method": "repo.locate", "params": { id: string, path: string, worktrees?: string, } } | { "method": "inbox.list" } | { "method": "inbox.history" } | { "method": "inbox.ask", "params": { text: string, choices: Array<string>, link?: string, tab?: string, } } | { "method": "inbox.notify", "params": { text: string, link?: string, tab?: string, 
+background: boolean, } } | { "method": "app.tabs" } | { "method": "app.closeTab", "params": { tab: string, } } | { "method": "ui.reply", "params": { id: number, result?: unknown, error?: string, } } | { "method": "workspace.list" } | { "method": "workspace.create", "params": { name: string, cwd?: string, } } | { "method": "workspace.update", "params": { id: string, name?: string, cwd?: string, 
+/**
+ * A colour's name, or `""` for none.
+ */
+color?: string, 
+/**
+ * Kept at the top of the list.
+ */
+pinned?: boolean, } } | { "method": "workspace.move", "params": { id: string, before?: string, } } | { "method": "workspace.saveLayout", "params": { id: string, layout: unknown, } } | { "method": "workspace.delete", "params": { id: string, } } | { "method": "workspace.forNote", "params": { path: string, } } | { "method": "repo.list" } | { "method": "repo.locate", "params": { id: string, path: string, worktrees?: string, } } | { "method": "inbox.list" } | { "method": "inbox.history" } | { "method": "inbox.ask", "params": { text: string, choices: Array<string>, link?: string, tab?: string, } } | { "method": "inbox.notify", "params": { text: string, link?: string, tab?: string, 
 /**
  * Nothing to do about it: straight to the history (Earlier), with
  * no notification. `groundwork done`'s summary.

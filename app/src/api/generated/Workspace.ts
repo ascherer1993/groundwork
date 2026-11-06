@@ -12,4 +12,12 @@ note?: string,
 /**
  * Its tabs and splits, as the app saved them (dockview's layout).
  */
-layout: unknown, };
+layout: unknown, 
+/**
+ * One of [`COLORS`], marking it in the list.
+ */
+color?: string, 
+/**
+ * Kept at the top of the list.
+ */
+pinned?: boolean, };

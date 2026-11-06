@@ -29,6 +29,29 @@ pub struct Workspace {
     #[serde(default)]
     #[ts(type = "unknown")]
     pub layout: Value,
+    /// One of [`COLORS`], marking it in the list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub color: Option<String>,
+    /// Kept at the top of the list.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub pinned: bool,
+}
+
+/// The colours a workspace can have (the app has a shade of each for light and dark).
+pub const COLORS: [&str; 8] = [
+    "red", "orange", "yellow", "green", "teal", "blue", "purple", "pink",
+];
+
+/// What to change about a workspace; `None` leaves it as it is.
+#[derive(Debug, Default)]
+pub struct WorkspaceChange<'a> {
+    pub name: Option<&'a str>,
+    pub cwd: Option<&'a str>,
+    /// `""` takes the colour away.
+    pub color: Option<&'a str>,
+    pub pinned: Option<bool>,
 }
 
 pub struct Workspaces {
@@ -46,7 +69,7 @@ impl Workspaces {
         }
     }
 
-    /// In the order they were created.
+    /// In the order they were created, or as they've been moved.
     pub fn list(&self) -> Vec<Workspace> {
         fs::read(&self.file)
             .ok()
@@ -67,6 +90,8 @@ impl Workspaces {
             cwd: valid_folder(cwd)?,
             note: note.map(str::to_string),
             layout: Value::Null,
+            color: None,
+            pinned: false,
         };
         let mut all = self.list();
         all.push(workspace.clone());
@@ -74,16 +99,48 @@ impl Workspaces {
         Ok(workspace)
     }
 
-    pub fn update(&self, id: &str, name: Option<&str>, cwd: Option<&str>) -> Result<Workspace> {
+    pub fn update(&self, id: &str, change: &WorkspaceChange) -> Result<Workspace> {
         self.change(id, |w| {
-            if let Some(name) = name {
+            if let Some(name) = change.name {
                 w.name = valid_name(name)?;
             }
-            if let Some(cwd) = cwd {
+            if let Some(cwd) = change.cwd {
                 w.cwd = valid_folder(cwd)?;
+            }
+            match change.color {
+                Some("") => w.color = None,
+                Some(color) if COLORS.contains(&color) => w.color = Some(color.to_string()),
+                Some(color) => {
+                    return Err(CoreError::InvalidPath(format!("no colour called {color}")));
+                }
+                None => {}
+            }
+            if let Some(pinned) = change.pinned {
+                w.pinned = pinned;
             }
             Ok(())
         })
+    }
+
+    /// Moves a workspace to just before `before`, or to the end. Returns the list.
+    pub fn move_before(&self, id: &str, before: Option<&str>) -> Result<Vec<Workspace>> {
+        let _guard = self.lock.lock().unwrap();
+        let mut all = self.list();
+        let from = all
+            .iter()
+            .position(|w| w.id == id)
+            .ok_or_else(|| CoreError::NotFound(format!("workspace {id}")))?;
+        let moving = all.remove(from);
+        let to = match before {
+            Some(before) => all
+                .iter()
+                .position(|w| w.id == before)
+                .ok_or_else(|| CoreError::NotFound(format!("workspace {before}")))?,
+            None => all.len(),
+        };
+        all.insert(to, moving);
+        self.save(&all)?;
+        Ok(all)
     }
 
     pub fn save_layout(&self, id: &str, layout: Value) -> Result<()> {
@@ -189,14 +246,26 @@ mod tests {
         store
             .save_layout(&a.id, serde_json::json!({ "grid": 1 }))
             .unwrap();
-        let renamed = store.update(&a.id, Some("Acme API"), None).unwrap();
+        let renamed = store
+            .update(
+                &a.id,
+                &WorkspaceChange {
+                    name: Some("Acme API"),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
         assert_eq!(renamed.layout["grid"], 1);
         let names: Vec<_> = store.list().into_iter().map(|w| w.name).collect();
         assert_eq!(names, ["Acme API", "Spike"]);
 
         assert!(store.create("  ", cwd).is_err());
         assert!(store.create("X", "relative").is_err());
-        assert!(store.update(&b.id, None, Some("/no/such/folder")).is_err());
+        let folder = WorkspaceChange {
+            cwd: Some("/no/such/folder"),
+            ..Default::default()
+        };
+        assert!(store.update(&b.id, &folder).is_err());
         assert!(matches!(
             store.delete("ws-nope"),
             Err(CoreError::NotFound(_))
@@ -204,6 +273,57 @@ mod tests {
 
         store.delete(&a.id).unwrap();
         assert_eq!(store.list(), [b]);
+    }
+
+    #[test]
+    fn workspaces_are_coloured_pinned_and_moved() {
+        let state = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        let cwd = folder.path().to_str().unwrap();
+        let store = Workspaces::new(state.path());
+        let a = store.create("A", cwd).unwrap();
+        let b = store.create("B", cwd).unwrap();
+        let c = store.create("C", cwd).unwrap();
+
+        let style = WorkspaceChange {
+            color: Some("teal"),
+            pinned: Some(true),
+            ..Default::default()
+        };
+        let styled = store.update(&b.id, &style).unwrap();
+        assert_eq!(styled.color.as_deref(), Some("teal"));
+        assert!(styled.pinned);
+        let plain = WorkspaceChange {
+            color: Some(""),
+            ..Default::default()
+        };
+        assert_eq!(store.update(&b.id, &plain).unwrap().color, None);
+        let odd = WorkspaceChange {
+            color: Some("chartreuse"),
+            ..Default::default()
+        };
+        assert!(store.update(&b.id, &odd).is_err());
+        // Unset, they aren't written at all.
+        let saved = fs::read_to_string(state.path().join("workspaces.json")).unwrap();
+        assert_eq!(saved.matches("pinned").count(), 1);
+        assert!(!saved.contains("color"));
+
+        let names = |list: Vec<Workspace>| list.into_iter().map(|w| w.name).collect::<Vec<_>>();
+        assert_eq!(
+            names(store.move_before(&c.id, Some(&a.id)).unwrap()),
+            ["C", "A", "B"]
+        );
+        assert_eq!(
+            names(store.move_before(&c.id, None).unwrap()),
+            ["A", "B", "C"]
+        );
+        assert_eq!(
+            names(store.move_before(&a.id, Some(&c.id)).unwrap()),
+            ["B", "A", "C"]
+        );
+        assert_eq!(names(store.list()), ["B", "A", "C"]);
+        assert!(store.move_before("ws-nope", None).is_err());
+        assert!(store.move_before(&a.id, Some("ws-nope")).is_err());
     }
 
     #[test]

@@ -1,12 +1,12 @@
 /**
  * Claude Code in terminal tabs: the session each tab last ran (from the
  * hooks; kept in the tab's params too, so it outlives a restart), and the
- * tab menu's Fork session and Resume conversation. Also agents: a Claude
+ * tab menu (Rename, Fork session, Resume conversation). Also agents: a Claude
  * Code session started with a prompt, in a tab you can watch.
  */
 import { api } from "../api/client";
 import { useTerminals } from "./terminals";
-import { formDialog, type MenuEntry, useUi } from "./ui";
+import { formDialog, type MenuEntry, promptDialog, useUi } from "./ui";
 import { message, useVault } from "./vault";
 import { type TerminalParams, useWorkspace } from "./workspace";
 
@@ -64,10 +64,27 @@ export async function resumeConversation(terminal: string) {
   }
 }
 
+/** Names a terminal's tab; an empty name goes back to the program's title. */
+export async function renameTab(terminal: string) {
+  const tab = tabOf(terminal);
+  if (!tab) return;
+  const name = await promptDialog({
+    title: "Rename tab",
+    message: "Leave it empty to show what's running in it.",
+    value: paramsOf(terminal)?.name ?? tab.panel.title ?? "",
+    confirmLabel: "Rename",
+  });
+  if (name === null || name === undefined) return;
+  tab.panel.api.updateParameters({ name: name.trim() || undefined });
+}
+
 /** The menu of a terminal's tab. */
 export function terminalMenu(terminal: string): MenuEntry[] {
   const session = sessionOf(terminal);
-  const items: MenuEntry[] = [];
+  const items: MenuEntry[] = [
+    { label: "Rename tab…", action: () => void renameTab(terminal) },
+    "separator",
+  ];
   if (session) {
     items.push({ label: "Fork session", action: () => void forkSession(terminal) });
     if (!claudeRunning(terminal)) {

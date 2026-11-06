@@ -5,6 +5,10 @@ export interface MenuItem {
   action: () => void;
   danger?: boolean;
   disabled?: boolean;
+  /** A swatch of a workspace colour before the label. */
+  color?: string;
+  /** Marked as the current choice. */
+  checked?: boolean;
 }
 
 export type MenuEntry = MenuItem | "separator";
@@ -158,11 +162,13 @@ export function confirmDialog(opts: {
 /** Asks for a line of text. Resolves `null` if cancelled. */
 export function promptDialog(opts: {
   title: string;
+  message?: string;
   value?: string;
   confirmLabel?: string;
 }): Promise<string | null> {
   return formDialog({
     title: opts.title,
+    message: opts.message,
     confirmLabel: opts.confirmLabel,
     fields: [{ label: opts.title, value: opts.value }],
   }).then((values) => values?.[0] ?? null);

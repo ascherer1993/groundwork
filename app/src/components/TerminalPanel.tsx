@@ -1,5 +1,5 @@
 import type { IDockviewPanelProps } from "dockview-react";
-import { useContext, useEffect, useRef } from "react";
+import { useCallback, useContext, useEffect, useRef } from "react";
 import { mountTerminal } from "../lib/terminals";
 import { vaultLinkProvider } from "../lib/terminalLinks";
 import { useTerminals } from "../state/terminals";
@@ -18,6 +18,13 @@ export function TerminalPanel({ api: panel, params }: IDockviewPanelProps<Termin
   // Kept up to date, so after a reboot the shell restarts where it was.
   const cwd = useRef(params.cwd);
   const title = useRef("");
+  // A name you gave the tab wins over the program's title.
+  const label = useCallback(
+    () =>
+      panel.getParameters<Partial<TerminalParams>>().name ||
+      terminalTitle(title.current, cwd.current),
+    [panel],
+  );
 
   useEffect(() => {
     const view = mountTerminal(ref.current!, {
@@ -25,7 +32,7 @@ export function TerminalPanel({ api: panel, params }: IDockviewPanelProps<Termin
       cwd: () => cwd.current,
       onTitle: (t) => {
         title.current = t;
-        panel.setTitle(terminalTitle(t, cwd.current));
+        panel.setTitle(label());
       },
       // Unless the tab is already gone: closing it ends the session, whose
       // exit can arrive before a tab in a background workspace unmounts.
@@ -54,7 +61,13 @@ export function TerminalPanel({ api: panel, params }: IDockviewPanelProps<Termin
       active.dispose();
       view.dispose();
     };
-  }, [panel]);
+  }, [panel, label]);
+
+  // Named or unnamed (`renameTab`).
+  useEffect(() => {
+    const changed = panel.onDidParametersChange(() => panel.setTitle(label()));
+    return () => changed.dispose();
+  }, [panel, label]);
 
   useEffect(
     () =>
@@ -63,9 +76,9 @@ export function TerminalPanel({ api: panel, params }: IDockviewPanelProps<Termin
         if (!now || now === cwd.current) return;
         cwd.current = now;
         panel.updateParameters({ terminal: session.current, cwd: now });
-        panel.setTitle(terminalTitle(title.current, now));
+        panel.setTitle(label());
       }),
-    [panel],
+    [panel, label],
   );
 
   // Whether it's on screen, for its badge: seen output isn't news.
