@@ -36,7 +36,7 @@ import { wikilinkCompletions } from "./autocomplete";
 import { popupTheme } from "./popupTheme";
 import { createdStamps, todoCompletions } from "./todoInput";
 import { type NoteContext, noteContext, notePath } from "./context";
-import { blockPreview, inlinePreview, structure } from "./livePreview";
+import { blockPreview, inlinePreview, revealAt, structure } from "./livePreview";
 import { obsidianSyntax } from "./syntax";
 
 export type EditorMode = "live" | "source";
@@ -286,7 +286,10 @@ export function focusTarget(
   const line = doc.line(lineNo);
   view.dispatch({
     selection: EditorSelection.cursor(line.to),
-    effects: EditorView.scrollIntoView(line.from, { y: "start", yMargin: 40 }),
+    effects: [
+      revealAt.of(line.to),
+      EditorView.scrollIntoView(line.from, { y: "start", yMargin: 40 }),
+    ],
   });
 }
 

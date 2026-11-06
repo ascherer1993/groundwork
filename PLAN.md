@@ -577,10 +577,13 @@ Every command supports `--json` output, so agents can parse it reliably.
   - **Due:** due on that date
   - **Carried over:** undated tasks from earlier daily notes that aren't done yet, labelled with their source and age ("from Nov 2 · 5d")
   - **Done:** completed on that date. This makes past daily notes a record of what got done that day.
+- **One list per day** (decided 2026-11-06; before, the note's own todos were lines above the block and the block left them out, so a day's todos were in two lists). The todos written beside the block (the task lists right above or below it, blank lines between allowed) are the block's own: the app draws them inside the block, in its sections, instead of as lines on the page, in live preview and the reading view. Undated ones count as that day's; ones due after it go under **Later**; done and cancelled ones stay, under Done. They don't say where they're from. Clicking the block (not a todo) shows the lines to edit, like other blocks. A list that mixes tasks with other items stays on the page, as do tasks elsewhere in the note (under a meeting's notes, say), which the block leaves out. The rule is `app/src/markdown/daySpan.ts`; the app sends the lines with `todo.day`.
+- **Dates in a day block are told from its day.** In any daily note but today's they're dates ("Overdue Thu, Nov 5"), not "today" or "tomorrow", so they agree with the sections.
 - **Using the block:**
   - You can tick, reschedule (`@fri`) or cancel a task from the view. The change is written to the line in the file where the task actually lives.
-  - The block's "add todo" field writes a new task into that daily note, under its `## Todos` heading (configurable), due that day.
-  - In Obsidian the block shows as plain text. Tasks written as normal lines in the note still appear there.
+  - The block's "add todo" field writes a new task into that daily note, under its `## Todos` heading (configurable), due that day. It shows in the block, and the field stays ready for the next.
+  - In Obsidian the block shows as plain text, and the note's own todos as ordinary task lines.
+- **Where a new todo goes:** today's daily note, or the note it belongs to (a project's, a ticket's), with a due date; never a future day's note. Every daily note shows what's due that day, wherever it's written. The skill tells agents so (`todo add --due tomorrow`).
 - **Todos panel:** a sidebar view of every open todo, grouped into Overdue, Today, Next 7 days, Later and No date. Its filter box takes words, `#tag`, `path:` and `p1`.
 - **`todos` block syntax:** `day` gives the day view. Otherwise each line is a filter: `tag:`, `path:` (alias `project:` until projects exist), `due: overdue|today|week|any|none`, `status:`, `priority: p1`, `text:`, `title:`. A first line of `agenda` groups the results like the panel.
 - **Typing todos:** on a task line, and in a day block's add field, `@` offers dates (typed text such as `@fri`, `@nov 12`, `@+3d`, or suggestions) followed by priorities (`@p1` narrows to one), and `!` offers priorities only. Both replace an existing due date or priority, not add a second one. A task you write gets `➕ today` once the cursor leaves its line, so half-typed tasks aren't stamped or logged.
@@ -807,6 +810,7 @@ Asked for on 2026-11-05, before Phase 6's last stage: the Obsidian habits of a Q
        - Native builds: Rust had come from an Intel Homebrew, so everything built for Intel and ran under Rosetta. Rust now comes from rustup (native), at the version in `rust-toolchain.toml`, and the Makefile stops with instructions if it finds an Intel Rust on Apple Silicon. Native, the same vault: todos 73 ms, day view 50 ms, backlinks 11 ms, project view 22 ms, rename of the most linked note (66 notes rewritten) 249 ms; search, unlinked mentions and "who knows" stay around 90 ms, reopening 0.34 s.
        - Another Mac builds it the same way (`make build` there, signed ad hoc without the certificate). An app built on the Mac it runs on isn't quarantined, so it opens without notarization; one copied over from another Mac is, and macOS refuses it until allowed in Privacy & Security.
        - The installed app and `make dev` share the data folder, so the inbox, workspaces, terminal daemon and the CLI's socket: run one at a time (the newer one answers the CLI). Once "Set up Claude Code…" is run from the installed app, the CLI link and the plugin point into the app, so skill edits in the checkout reach Claude only after `make install` (or running setup again from `make dev`).
+     - **One todo list per day** *(built 2026-11-06, from trying the installed app)*: a daily note's own todos show inside its day block rather than as lines above it, and dates in other days' blocks are dates. See §5.11. The add field also lost its focus after each todo (the note reloading under it); it keeps it now.
 
 ### Deferred checks
 Things built but not yet tried for real, to come back to:
@@ -823,6 +827,7 @@ Things built but not yet tried for real, to come back to:
 - MCP server wrapper
 - Real Jira API integration (status and title sync)
 - Graph view, themes, plugin system, other agents (Codex…), multi-repo tickets (one worktree per repo)
+- **A todo board** (asked for 2026-11-06, to come after the one-list-per-day change): a tab with a column per day (Overdue, today, the next days, Later, No date), so a todo due in two days is seen before its day's note. Drag a card to another day to reschedule it; add to a column to make one due that day; the panel's filter. To decide: whether events show on their day (a week calendar, in effect), how many days get columns, and whether each day shows what was done. A month calendar later if the week isn't enough.
 - Workspaces and projects (discussed 2026-11-05; waiting until the user has seen how work is organised at the new job, since one repo per ticket and several projects per ticket may be enough):
   - Attaching an existing workspace to a note or project ("Attach to note…", "Choose workspace…"); today a note's workspace is always a new one, and ⌘T's workspaces belong to no note.
   - Where a code project's own workspace starts: the main checkout rather than the project's vault folder.

@@ -364,7 +364,7 @@ impl Backend {
             }
 
             Request::TodoList { filter } => to_value(self.session()?.todos(&filter)),
-            Request::TodoDay { path } => to_value(self.session()?.todo_day(&path)),
+            Request::TodoDay { path, own } => to_value(self.session()?.todo_day(&path, own)),
             Request::TodoUpdate { id, change } => {
                 let changes = self.session()?.update_task(&id, &change)?;
                 self.emit(changes);

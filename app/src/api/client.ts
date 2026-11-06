@@ -229,7 +229,7 @@ export const api = {
   installPlugin: () => call("setup.installPlugin"),
   useVaultForCli: () => call("setup.useVault"),
   todos: (filter: TodoFilter = { tags: [] }) => call("todo.list", { filter }),
-  todoDay: (path: string) => call("todo.day", { path }),
+  todoDay: (path: string, own?: [number, number]) => call("todo.day", { path, own }),
   updateTodo: (id: string, change: TaskChange) => call("todo.update", { id, change }),
   addTodo: (todo: { path?: string; text: string; due?: string; priority?: number }) =>
     call("todo.add", todo),

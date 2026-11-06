@@ -38,6 +38,13 @@ describe("taskMetaHtml", () => {
     expect(text(done)).toBe("Due Sun, Nov 1 · Done yesterday");
   });
 
+  it("can name dates rather than say today or tomorrow", () => {
+    const html = taskMetaHtml({ due: "2026-11-02", created: "2026-11-03" }, true, now, {
+      words: false,
+    });
+    expect(text(html)).toBe("Overdue Mon, Nov 2 · Created Tue, Nov 3");
+  });
+
   it("shows the year only when it differs", () => {
     expect(text(taskMetaHtml({ due: "2027-01-15" }, true, now))).toBe("Due Jan 15, 2027");
     expect(text(taskMetaHtml({ due: "2026-12-20" }, true, now))).toBe("Due Dec 20");

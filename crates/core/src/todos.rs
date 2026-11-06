@@ -267,26 +267,48 @@ pub struct DayView {
     pub overdue: Vec<Todo>,
     /// Due (or scheduled) on the date.
     pub due: Vec<Todo>,
+    /// The note's own open tasks that are due after the date.
+    pub later: Vec<Todo>,
     /// Undated open tasks from earlier daily notes.
     pub carried: Vec<Todo>,
-    /// Completed on the date.
+    /// Completed on the date, and the note's own done or cancelled tasks.
     pub done: Vec<Todo>,
 }
 
-/// The day view for `date`. Tasks written in `note` itself are left out:
-/// they're already on the page.
-pub fn day(index: &Index, daily: &DailySettings, date: NaiveDate, note: &str) -> DayView {
+/// The day view for `date`. Tasks written in `note` itself are left out
+/// (they're already on the page), except those on `own` lines (zero-based,
+/// inclusive): the ones beside the block, which it shows as its own. Undated
+/// ones count as that day's, and done or cancelled ones stay, under done.
+pub fn day(
+    index: &Index,
+    daily: &DailySettings,
+    date: NaiveDate,
+    note: &str,
+    own: Option<[u32; 2]>,
+) -> DayView {
     let day = date.to_string();
     let mut view = DayView {
         date: day.clone(),
         ..Default::default()
     };
     for todo in all(index, daily) {
-        if todo.path == note || todo.task.status == TaskStatus::Cancelled {
+        let task = &todo.task;
+        if todo.path == note {
+            if !own.is_some_and(|[first, last]| (first..=last).contains(&task.line)) {
+                continue;
+            }
+            match task.due.as_deref() {
+                _ if !todo.is_open() => view.done.push(todo),
+                Some(due) if due < day.as_str() => view.overdue.push(todo),
+                Some(due) if due > day.as_str() => view.later.push(todo),
+                _ => view.due.push(todo),
+            }
             continue;
         }
-        let task = &todo.task;
-        if todo.task.status == TaskStatus::Done {
+        if task.status == TaskStatus::Cancelled {
+            continue;
+        }
+        if task.status == TaskStatus::Done {
             if task.done.as_deref() == Some(day.as_str()) {
                 view.done.push(todo);
             }
@@ -302,6 +324,7 @@ pub fn day(index: &Index, daily: &DailySettings, date: NaiveDate, note: &str) ->
     }
     view.overdue.sort_by(by_urgency);
     view.due.sort_by(by_urgency);
+    view.later.sort_by(by_urgency);
     // Oldest first, so the longest-waiting tasks are noticed.
     view.carried
         .sort_by(|a, b| a.daily.cmp(&b.daily).then(a.task.line.cmp(&b.task.line)));
@@ -402,7 +425,13 @@ mod tests {
     #[test]
     fn day_view_groups_tasks_for_the_notes_date() {
         let (_dir, index) = temp_vault(VAULT);
-        let view = day(&index, &daily(), d("2026-11-03"), "Daily/2026-11-03.md");
+        let view = day(
+            &index,
+            &daily(),
+            d("2026-11-03"),
+            "Daily/2026-11-03.md",
+            None,
+        );
         assert_eq!(texts(&view.overdue), ["Old dated"]);
         assert_eq!(texts(&view.due), ["Ship it", "Plan"]);
         assert_eq!(texts(&view.carried), ["Old undated"]);
@@ -410,8 +439,38 @@ mod tests {
         assert_eq!(texts(&view.done), ["Finished"]);
 
         // An earlier day: nothing was overdue yet, nothing carried from before.
-        let view = day(&index, &daily(), d("2026-11-01"), "Daily/2026-11-01.md");
+        let view = day(
+            &index,
+            &daily(),
+            d("2026-11-01"),
+            "Daily/2026-11-01.md",
+            None,
+        );
         assert!(view.overdue.is_empty() && view.carried.is_empty() && view.done.is_empty());
+    }
+
+    #[test]
+    fn day_view_shows_the_tasks_beside_its_block() {
+        let note = "Daily/2026-11-05.md";
+        let text = "## Todos\n\n- [ ] Undated\n- [ ] Due before 📅 2026-11-04\n- [ ] Due on the day 📅 2026-11-05\n- [ ] Due after 📅 2026-11-09\n- [x] Ticked ✅ 2026-11-01\n- [-] Dropped ❌ 2026-11-05\n\n```todos\nday\n```\n\n## Notes\n- [ ] Elsewhere in the note\n";
+        let mut vault = VAULT.to_vec();
+        vault.push((note, text));
+        let (_dir, index) = temp_vault(&vault);
+        let view = day(&index, &daily(), d("2026-11-05"), note, Some([2, 11]));
+        assert_eq!(texts(&view.overdue), ["Old dated", "Ship it", "Due before"]);
+        assert_eq!(
+            texts(&view.due),
+            ["Due on the day", "Undated"],
+            "undated ones are the day's"
+        );
+        assert_eq!(texts(&view.later), ["Due after"]);
+        assert_eq!(texts(&view.done), ["Ticked", "Dropped"]);
+        assert!(!texts(&view.due).contains(&"Elsewhere in the note"));
+
+        // Without the lines, the note's own tasks stay on the page.
+        let view = day(&index, &daily(), d("2026-11-05"), note, None);
+        assert!(view.later.is_empty() && view.done.is_empty());
+        assert_eq!(texts(&view.overdue), ["Old dated", "Ship it"]);
     }
 
     #[test]

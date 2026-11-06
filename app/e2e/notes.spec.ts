@@ -128,25 +128,28 @@ test("[[ autocomplete inserts a link", async ({ page }) => {
 });
 
 test("task metadata shows under the task, and inline while editing it", async ({ page }) => {
-  await quickOpen(page, "Daily/2026-11-03");
-  const task = editor(page).locator(".cm-line", { hasText: "about the auth migration" });
-  await expect(task.locator(".cm-task-meta")).toHaveText(/^P1 · Due .+ · Created /);
+  await quickOpen(page, "Welcome");
+  const task = editor(page).locator(".cm-line", { hasText: "Try the quick switcher" });
+  await expect(task.locator(".cm-task-meta")).toHaveText(/^(Due|Overdue) .+ · Created /);
   await expect(task).not.toContainText("📅");
   await task.click();
   await expect(task.locator(".cm-task-meta")).toHaveCount(0);
-  await expect(task).toContainText("⏫ 📅 2026-11-05 ➕ 2026-11-03");
+  await expect(task).toContainText("📅 2026-11-05 ➕ 2026-11-03");
   await page.locator(".inline-title").click();
 });
 
 test("checking a task in reading view stamps it done", async ({ page }) => {
-  await quickOpen(page, "Daily/2026-11-03");
+  await quickOpen(page, "Welcome");
   await page.keyboard.press("Meta+e");
   const box = page.getByTestId("reading-view").locator(".task-checkbox").first();
   await expect(box).not.toBeChecked();
   await box.click();
-  await expectFile(VAULT, "Daily/2026-11-03.md", (t) =>
-    /- \[x\] Ask \[\[Jane Doe\]\] about the auth migration .*✅ \d{4}-\d{2}-\d{2}/.test(t),
+  await expectFile(VAULT, "Welcome.md", (t) =>
+    /- \[x\] Try the quick switcher .*✅ \d{4}-\d{2}-\d{2}/.test(t),
   );
+  // Other specs share the vault: open it again.
+  await box.click();
+  await expectFile(VAULT, "Welcome.md", (t) => t.includes("- [ ] Try the quick switcher"));
   await page.keyboard.press("Meta+e");
 });
 

@@ -866,10 +866,11 @@ impl Session {
         todos::list(&self.index(), &daily, filter, Local::now().date_naive())
     }
 
-    /// The `todos` day view for the note at `path`, for that note's date.
-    pub fn todo_day(&self, path: &str) -> todos::DayView {
+    /// The `todos` day view for the note at `path`, for that note's date,
+    /// with its own tasks on the `own` lines (see [`todos::day`]).
+    pub fn todo_day(&self, path: &str, own: Option<[u32; 2]>) -> todos::DayView {
         let daily = DailySettings::read(self.vault.root());
-        todos::day(&self.index(), &daily, self.note_date(path), path)
+        todos::day(&self.index(), &daily, self.note_date(path), path, own)
     }
 
     /// Changes the task with `id` (see [`todos::todo_id`]). Fails with a

@@ -5,7 +5,7 @@ import { api } from "../api/client";
 import { vaultFileUrl } from "../lib/fileUrl";
 import { attachContentHandlers, hydrate } from "../markdown/hydrate";
 import { renderInline, renderMarkdown } from "../markdown/render";
-import { CONTENT_RESIZED } from "../markdown/todos";
+import { CONTENT_RESIZED, setOwn, TODOS_REFRESH } from "../markdown/todos";
 import {
   escapeHtml,
   imageSize,
@@ -240,12 +240,28 @@ export class MarkdownBlockWidget extends WidgetType {
     readonly markdown: string,
     readonly source: string,
     readonly lineOffset: number,
+    /** A day block's own todos: their lines (see `markdown/daySpan.ts`). */
+    readonly own?: [number, number],
   ) {
     super();
   }
 
   eq(other: MarkdownBlockWidget) {
-    return other.markdown === this.markdown && other.source === this.source;
+    return (
+      other.markdown === this.markdown &&
+      other.source === this.source &&
+      other.own?.join() === this.own?.join()
+    );
+  }
+
+  /** Only a day block's todos moved: keep the block (and what's typed in its add field). */
+  updateDOM(dom: HTMLElement) {
+    const todos = dom.querySelector<HTMLElement>(".todos-view");
+    const was = dom.dataset.markdown;
+    if (!todos || was !== this.markdown || dom.dataset.notePath !== this.source) return false;
+    setOwn(todos, this.own);
+    todos.dispatchEvent(new Event(TODOS_REFRESH));
+    return true;
   }
 
   toDOM(view: EditorView) {
@@ -253,6 +269,11 @@ export class MarkdownBlockWidget extends WidgetType {
     div.className = "cm-rendered-block markdown-rendered";
     div.dataset.notePath = this.source;
     div.innerHTML = renderMarkdown(this.markdown, { lineOffset: this.lineOffset });
+    const todos = div.querySelector<HTMLElement>(".todos-block");
+    if (todos) {
+      div.dataset.markdown = this.markdown;
+      setOwn(todos, this.own);
+    }
     hydrateWidget(view, div, this.source);
     attachContentHandlers(div);
     div.addEventListener("mousedown", (e) => {

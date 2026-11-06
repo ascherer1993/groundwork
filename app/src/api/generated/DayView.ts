@@ -14,10 +14,14 @@ overdue: Array<Todo>,
  */
 due: Array<Todo>, 
 /**
+ * The note's own open tasks that are due after the date.
+ */
+later: Array<Todo>, 
+/**
  * Undated open tasks from earlier daily notes.
  */
 carried: Array<Todo>, 
 /**
- * Completed on the date.
+ * Completed on the date, and the note's own done or cancelled tasks.
  */
 done: Array<Todo>, };

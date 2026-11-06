@@ -664,7 +664,8 @@ summary.callout-title {
   padding: 0;
 }
 
-.todo-details .task-meta:not(:empty)::after {
+/* Between the dates and where the todo is from (a day block's own todos have no source). */
+.todo-details .task-meta:not(:empty):has(+ .todo-origin)::after {
   content: " ·";
   opacity: 0.6;
 }

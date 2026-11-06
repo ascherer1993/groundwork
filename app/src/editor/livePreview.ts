@@ -17,6 +17,7 @@ import {
   type WidgetType,
 } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
+import { daySpanAt, isDayBlock } from "../markdown/daySpan";
 import { hasScheme, splitWikilink } from "../markdown/syntax";
 import { hasMeta, parseTaskMeta, taskMetaHtml } from "../markdown/tasks";
 import { notePath, refreshPreview } from "./context";
@@ -46,8 +47,27 @@ const focused = StateField.define<boolean>({
   provide: () => EditorView.focusChangeEffect.of((_, focusing) => setFocused.of(focusing)),
 });
 
-/** Syntax shows only where the cursor is, and only while the editor has focus. */
+/**
+ * A place jumped to (a search hit, a link to a line): the block holding it
+ * shows its source, focused or not, until the selection next moves.
+ */
+export const revealAt = StateEffect.define<number>();
+
+const revealed = StateField.define<number | null>({
+  create: () => null,
+  update: (value, tr) => {
+    for (const e of tr.effects) if (e.is(revealAt)) return e.value;
+    return tr.selection || tr.docChanged ? null : value;
+  },
+});
+
+/**
+ * Syntax shows only where the cursor is, and only while the editor has focus;
+ * blocks also show around a place jumped to.
+ */
 function touches(state: EditorState, from: number, to: number): boolean {
+  const at = state.field(revealed, false);
+  if (at != null && at >= from && at <= to) return true;
   if (!state.field(focused, false)) return false;
   return state.selection.ranges.some((r) => r.from <= to && r.to >= from);
 }
@@ -314,7 +334,24 @@ function buildBlocks(state: EditorState): DecorationSet {
           const lang = info && state.sliceDoc(info.from, info.to).trim();
           if (lang === "mermaid" || lang === "todos" || lang === "tickets") {
             const { from, to } = lineSpan(state, ref);
-            block(from, to, new MarkdownBlockWidget(state.sliceDoc(from, to), source, 0));
+            const text = state.sliceDoc(from, to);
+            if (lang === "todos" && isDayBlock(text)) {
+              // A day block takes over the todos beside it.
+              const { doc } = state;
+              const own = daySpanAt(
+                (i) => doc.line(i + 1).text,
+                doc.lines,
+                doc.lineAt(from).number - 1,
+                doc.lineAt(to).number - 1,
+              );
+              block(
+                doc.line(own[0] + 1).from,
+                doc.line(own[1] + 1).to,
+                new MarkdownBlockWidget(text, source, 0, own),
+              );
+            } else {
+              block(from, to, new MarkdownBlockWidget(text, source, 0));
+            }
           }
           return false;
         }
@@ -342,7 +379,7 @@ const blockField = StateField.define<DecorationSet>({
     if (
       tr.docChanged ||
       tr.selection ||
-      tr.effects.some((e) => e.is(refreshPreview) || e.is(setFocused))
+      tr.effects.some((e) => e.is(refreshPreview) || e.is(setFocused) || e.is(revealAt))
     ) {
       return buildBlocks(tr.state);
     }
@@ -406,4 +443,4 @@ export const structure = ViewPlugin.fromClass(
   { decorations: (v) => v.decorations },
 );
 
-export const blockPreview = [focused, blockField];
+export const blockPreview = [focused, revealed, blockField];

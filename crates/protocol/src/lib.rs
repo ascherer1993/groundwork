@@ -281,8 +281,14 @@ pub enum Request {
         filter: TodoFilter,
     },
     /// → `DayView`: what a daily note's `todos` block shows, for its date.
+    /// `own` is the lines (zero-based, inclusive) of the note's own tasks
+    /// that the block shows, the ones written beside it.
     #[serde(rename = "todo.day")]
-    TodoDay { path: String },
+    TodoDay {
+        path: String,
+        #[ts(optional)]
+        own: Option<[u32; 2]>,
+    },
     /// → `null`: changes a todo where it lives. Conflict if it changed since listing.
     #[serde(rename = "todo.update")]
     TodoUpdate { id: String, change: TaskChange },

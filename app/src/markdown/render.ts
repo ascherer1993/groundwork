@@ -13,6 +13,7 @@ import markdownIt, {
   type Token,
 } from "markdown-it";
 import footnote from "markdown-it-footnote";
+import { findDaySpan } from "./daySpan";
 import { hasMeta, parseTaskMeta, taskMetaHtml } from "./tasks";
 import {
   calloutGroup,
@@ -295,6 +296,36 @@ function matchingClose(tokens: Token[], openIndex: number): Token | undefined {
   return undefined;
 }
 
+/**
+ * A day block takes over the todos beside it (see `daySpan.ts`): their lists
+ * aren't drawn, and the block is told their file lines. Only when the lines
+ * match the file (a whole note; the editor's block widget sets them itself).
+ */
+function dayTodos(md: MarkdownIt) {
+  md.core.ruler.push("day_todos", (state: StateCore) => {
+    const offset = (state.env as Partial<RenderEnv>).lineOffset ?? 0;
+    const span = offset >= 0 ? findDaySpan(state.src) : null;
+    if (!span) return;
+    const [first, last] = span;
+    const inSpan = (t: Token) => !!t.map && t.map[0] >= first && t.map[0] <= last;
+    const kept: Token[] = [];
+    const tokens = state.tokens;
+    for (let i = 0; i < tokens.length; i++) {
+      const t = tokens[i]!;
+      if (t.level === 0 && /^(bullet|ordered)_list_open$/.test(t.type) && inSpan(t)) {
+        const close = t.type.replace("_open", "_close");
+        while (i < tokens.length && !(tokens[i]!.type === close && tokens[i]!.level === 0)) i++;
+        continue;
+      }
+      if (t.type === "fence" && t.info.trim() === "todos" && inSpan(t)) {
+        t.meta = { ...t.meta, own: `${first + offset}-${last + offset}` };
+      }
+      kept.push(t);
+    }
+    state.tokens = kept;
+  });
+}
+
 /** Headings carry their text for `#Heading` scrolling; mermaid, todos and tickets fences become placeholders. */
 function headingsAndFences(md: MarkdownIt) {
   md.core.ruler.push("heading_ids", (state: StateCore) => {
@@ -312,7 +343,8 @@ function headingsAndFences(md: MarkdownIt) {
       return `<div class="mermaid-block" data-source="${encodeURIComponent(token.content)}"></div>`;
     }
     if (token.info.trim() === "todos") {
-      return `<div class="todos-block" data-source="${encodeURIComponent(token.content)}"></div>`;
+      const own = (token.meta as { own?: string } | null)?.own;
+      return `<div class="todos-block" data-source="${encodeURIComponent(token.content)}"${own ? ` data-own="${own}"` : ""}></div>`;
     }
     if (token.info.trim() === "tickets") {
       return `<div class="tickets-block" data-source="${encodeURIComponent(token.content)}"></div>`;
@@ -333,6 +365,7 @@ export function markdown(): MarkdownIt {
     .use(blockIds)
     .use(tasks)
     .use(callouts)
+    .use(dayTodos)
     .use(headingsAndFences)
     .use(vaultLinks)
     .use(footnote)

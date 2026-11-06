@@ -20,6 +20,24 @@ import { hasMeta, parseTaskMeta, type TaskMeta, taskMetaHtml } from "./tasks";
 /** Fired on a live block after it re-renders, so editors can re-measure. */
 export const CONTENT_RESIZED = "groundwork:content-resized";
 
+/** Sent to a day block when its own todos' lines change, to fetch again. */
+export const TODOS_REFRESH = "groundwork:todos-refresh";
+
+/**
+ * Records which lines of the note a day block shows as its own (see
+ * `daySpan.ts`), on the block's element: the block reads them each time it
+ * fetches.
+ */
+export function setOwn(el: HTMLElement, own: [number, number] | undefined) {
+  if (own) el.dataset.own = own.join("-");
+  else delete el.dataset.own;
+}
+
+function ownOf(el: HTMLElement): [number, number] | undefined {
+  const m = el.dataset.own?.match(/^(\d+)-(\d+)$/);
+  return m ? [Number(m[1]), Number(m[2])] : undefined;
+}
+
 export type TodosSpec =
   | { kind: "day" }
   | { kind: "agenda"; filter: TodoFilter }
@@ -85,6 +103,11 @@ function shortDate(iso: string): string {
   return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+function parseDay(iso: string): Date {
+  const [y, m, d] = iso.split("-").map(Number) as [number, number, number];
+  return new Date(y, m - 1, d);
+}
+
 function daysBetween(from: string, to: string): number {
   const at = (iso: string) => {
     const [y, m, d] = iso.split("-").map(Number) as [number, number, number];
@@ -119,17 +142,33 @@ interface Section {
   note?: (todo: Todo) => string | null;
 }
 
-function itemHtml(todo: Todo, section: Section): string {
+/** How a list draws its todos. */
+interface Drawing {
+  /** The note the list is in: its own todos don't name where they're from. */
+  notePath: string;
+  /** A day view's date, when it isn't today: dates are told from it, as dates. */
+  day?: string;
+}
+
+function itemHtml(todo: Todo, section: Section, drawing: Drawing): string {
   const open = todo.status === "todo" || todo.status === "other";
   const checked = todo.status === "done";
   const source = todo.daily ? shortDate(todo.daily) : noteTitle(todo.path);
   const extra = section.note?.(todo);
-  const origin = `<a class="internal-link todo-source" href="#" data-href="${escapeHtml(todo.path)}" data-resolved="${escapeHtml(todo.path)}" data-line="${todo.line}">${todo.daily ? "from " : ""}${escapeHtml(source)}</a>${extra ? ` · ${escapeHtml(extra)}` : ""}`;
+  const origin =
+    todo.path === drawing.notePath
+      ? ""
+      : `<span class="todo-origin"><a class="internal-link todo-source" href="#" data-href="${escapeHtml(todo.path)}" data-resolved="${escapeHtml(todo.path)}" data-line="${todo.line}">${todo.daily ? "from " : ""}${escapeHtml(source)}</a>${extra ? ` · ${escapeHtml(extra)}` : ""}</span>`;
+  const meta = hasMeta(metaOf(todo))
+    ? drawing.day
+      ? taskMetaHtml(metaOf(todo), open, parseDay(drawing.day), { words: false })
+      : taskMetaHtml(metaOf(todo), open)
+    : "";
   return `<li class="todo-item${open ? "" : " is-closed"}" data-id="${escapeHtml(todo.id)}" data-status="${todo.status}">
   <input type="checkbox" class="todo-checkbox" aria-label="Done: ${escapeHtml(todo.text)}"${checked ? " checked" : ""}${todo.status === "cancelled" ? " disabled" : ""}>
   <div class="todo-body">
     <span class="todo-text">${renderInline(todo.text)}</span>
-    <span class="todo-details">${hasMeta(metaOf(todo)) ? taskMetaHtml(metaOf(todo), open) : ""}<span class="todo-origin">${origin}</span></span>
+    <span class="todo-details">${meta}${origin}</span>
   </div>
   <span class="todo-actions">
     <button type="button" class="icon" data-action="reschedule" title="Reschedule" aria-label="Reschedule">${ICON_CALENDAR}</button>
@@ -146,7 +185,12 @@ function itemHtml(todo: Todo, section: Section): string {
 const FIRST_SHOWN = 50;
 const MORE = 200;
 
-function sectionsHtml(sections: Section[], empty: string, limit: (id: string) => number): string {
+function sectionsHtml(
+  sections: Section[],
+  empty: string,
+  limit: (id: string) => number,
+  drawing: Drawing,
+): string {
   const shown = sections.filter((s) => s.todos.length);
   if (!shown.length) return `<p class="todos-empty muted">${escapeHtml(empty)}</p>`;
   return shown
@@ -161,7 +205,7 @@ function sectionsHtml(sections: Section[], empty: string, limit: (id: string) =>
   <h4>${escapeHtml(s.title)} <span class="todos-count">${s.todos.length}</span></h4>
   <ul>${s.todos
     .slice(0, max)
-    .map((t) => itemHtml(t, s))
+    .map((t) => itemHtml(t, s, drawing))
     .join("")}</ul>${more}
 </section>`;
     })
@@ -248,6 +292,26 @@ async function reschedule(todo: Todo) {
 }
 
 /**
+ * A day block whose add field was just used: the note reloads with the new
+ * line, which can take the field's focus away (or redraw the block), so the
+ * block gives it back when nothing else has taken it.
+ */
+let typingIn: { notePath: string; until: number } | null = null;
+
+function refocus(field: EditorView | null, notePath: string) {
+  const active = document.activeElement;
+  if (
+    field &&
+    typingIn?.notePath === notePath &&
+    Date.now() < typingIn.until &&
+    (!active || active === document.body) &&
+    field.dom.isConnected
+  ) {
+    field.focus();
+  }
+}
+
+/**
  * Renders a todo list into `el` and keeps it current as the vault changes.
  * `notePath` is the note holding the block (for day views and adding).
  * Returns a function that stops updating.
@@ -268,6 +332,7 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
       onSubmit: (input) => {
         const { text, due, priority } = parseTodoInput(input);
         if (!text) return;
+        typingIn = { notePath, until: Date.now() + 3000 };
         api
           .addTodo({ path: notePath, text, due: due ?? date ?? undefined, priority })
           .catch((err) => useUi.getState().notify(message(err)));
@@ -283,9 +348,14 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
   const limits = new Map<string, number>();
 
   const paint = async () => {
-    list.innerHTML = sectionsHtml(sections, empty, (id) => limits.get(id) ?? FIRST_SHOWN);
+    const drawing: Drawing = {
+      notePath,
+      day: spec.kind === "day" && date && date !== isoDate(new Date()) ? date : undefined,
+    };
+    list.innerHTML = sectionsHtml(sections, empty, (id) => limits.get(id) ?? FIRST_SHOWN, drawing);
     await hydrate(list, notePath || "");
     el.dispatchEvent(new Event(CONTENT_RESIZED, { bubbles: true }));
+    refocus(field, notePath);
   };
 
   const render = async () => {
@@ -295,12 +365,13 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
     let nextEmpty: string;
     try {
       if (spec.kind === "day") {
-        const day = await api.todoDay(notePath);
+        const day = await api.todoDay(notePath, ownOf(el));
         date = day.date;
-        all = [...day.overdue, ...day.due, ...day.carried, ...day.done];
+        all = [...day.overdue, ...day.due, ...day.later, ...day.carried, ...day.done];
         next = [
           { id: "overdue", title: "Overdue", todos: day.overdue },
           { id: "due", title: "Due", todos: day.due },
+          { id: "later", title: "Later", todos: day.later },
           {
             id: "carried",
             title: "Carried over",
@@ -309,7 +380,7 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
           },
           { id: "done", title: "Done", todos: day.done },
         ];
-        nextEmpty = "Nothing due, overdue or carried over.";
+        nextEmpty = "Nothing to do.";
       } else {
         all = await api.todos(spec.filter);
         next =
@@ -369,8 +440,11 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
     if ((e.target as HTMLElement).closest(".todo-add")) e.stopPropagation();
   };
 
+  const onRefresh = () => void render();
+
   el.addEventListener("click", onClick, true);
   el.addEventListener("keydown", onKey);
+  el.addEventListener(TODOS_REFRESH, onRefresh);
   // Changes come in bursts (a save, an agent at work): one fetch for each.
   let pending: ReturnType<typeof setTimeout> | undefined;
   const unsubscribe = onVaultChange(() => {
@@ -383,6 +457,7 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
     unsubscribe();
     el.removeEventListener("click", onClick, true);
     el.removeEventListener("keydown", onKey);
+    el.removeEventListener(TODOS_REFRESH, onRefresh);
     field?.destroy();
   }
   void render();

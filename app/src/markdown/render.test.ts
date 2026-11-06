@@ -59,7 +59,7 @@ describe("renderMarkdown", () => {
   });
 
   it("renders tasks with file line numbers, metadata on a line below", () => {
-    const d = dom("- [ ] open ⏫ 📅 2026-11-05 ➕ 2026-11-03\n- [x] done ✅ 2026-11-03", 4);
+    const d = dom("- [ ] open ⏫ 📅 2099-11-05 ➕ 2026-11-03\n- [x] done ✅ 2026-11-03", 4);
     const boxes = [...d.querySelectorAll<HTMLInputElement>("input.task-checkbox")];
     expect(boxes.map((b) => [b.dataset.line, b.checked])).toEqual([
       ["4", false],
@@ -94,6 +94,18 @@ describe("renderMarkdown", () => {
     const source = d.querySelector(".mermaid-block")!.getAttribute("data-source")!;
     expect(decodeURIComponent(source)).toContain("A-->B");
     expect(d.querySelector(".katex")).not.toBeNull();
+  });
+
+  it("lets a day block take over the todos beside it", () => {
+    const d = dom(
+      "## Todos\n\n- [ ] Mine\n\n```todos\nday\n```\n\n## Notes\n\n- [ ] Elsewhere\n",
+      3,
+    );
+    const tasks = [...d.querySelectorAll("li")].map((li) => li.textContent?.trim());
+    expect(tasks).toEqual(["Elsewhere"]);
+    expect(d.querySelector(".todos-block")?.getAttribute("data-own")).toBe("5-9");
+    // Not when the lines don't match the file (an embedded section).
+    expect(dom("- [ ] Mine\n```todos\nday\n```", -1e6).querySelectorAll("li")).toHaveLength(1);
   });
 
   it("sanitizes scripts in raw HTML", () => {

@@ -51,6 +51,10 @@ test("a daily note's todos block shows that day", async ({ page }) => {
     "from Nov 28 · 3d",
   );
   await expect(section(page, "done")).toHaveText(["Wrap up the review"]);
+  // Dates are told from the note's day, as dates.
+  await expect(
+    block(page).locator(".todo-item", { hasText: "Send the proposal" }).locator(".task-meta"),
+  ).toHaveText("Overdue Mon, Nov 30");
   // The same block in reading view.
   await page.keyboard.press("Meta+e");
   await expect(section(page, "overdue")).toContainText(["Send the proposal"]);
@@ -101,6 +105,35 @@ test("ticking, rescheduling and adding from the block edit the source notes", as
       `## Todos\n\n- [ ] Call the caterer ⏫ 📅 2026-12-03 ➕ ${TODAY}\n\n\`\`\`todos\nday\n\`\`\``,
     ),
   );
+  // The note's own todos show in the block, not as lines above it.
+  await expect(section(page, "later")).toHaveText(["Call the caterer"]);
+  await expect(
+    block(page).locator(".todo-item", { hasText: "Call the caterer" }).locator(".todo-origin"),
+  ).toHaveCount(0);
+  await expect(editor(page).locator(".cm-line", { hasText: "Call the caterer" })).toHaveCount(0);
+
+  // The add field keeps its place for the next one; an undated one is the day's.
+  const field = block(page).getByRole("textbox", { name: "Add a todo" });
+  await expect(field).toBeFocused();
+  await page.keyboard.type("Order flowers");
+  await page.keyboard.press("Enter");
+  await expect(section(page, "due")).toContainText(["Order flowers"]);
+  await expect(field).toBeFocused();
+  await expectFile(VAULT, "Daily/2026-12-01.md", (t) =>
+    t.includes(`- [ ] Order flowers 📅 2026-12-01 ➕ ${TODAY}\n\n\`\`\`todos`),
+  );
+
+  // Ticking one of its own keeps it in the block, under done.
+  await block(page).getByRole("checkbox", { name: "Done: Order flowers" }).click();
+  await expect(section(page, "done")).toContainText(["Order flowers"]);
+
+  // In reading view too.
+  await page.keyboard.press("Meta+e");
+  await expect(section(page, "later")).toHaveText(["Call the caterer"]);
+  await expect(
+    page.locator(".reading-view li:not(.todo-item)", { hasText: "Call the caterer" }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Meta+e");
 });
 
 test("typing a task: @date and @p complete, ➕ is stamped on leaving the line", async ({

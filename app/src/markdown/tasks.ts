@@ -62,13 +62,16 @@ function parseDate(iso: string): Date {
   return new Date(y, m - 1, d);
 }
 
-/** `today`, `tomorrow`, `Thu, Nov 5`, or `Nov 5, 2027` in another year. */
-function friendly(iso: string, today: Date): string {
+/**
+ * `today`, `tomorrow`, `Thu, Nov 5`, or `Nov 5, 2027` in another year.
+ * Without `words`, always the date.
+ */
+function friendly(iso: string, today: Date, words = true): string {
   const date = parseDate(iso);
   const days = Math.round((date.getTime() - today.getTime()) / DAY);
-  if (days === 0) return "today";
-  if (days === 1) return "tomorrow";
-  if (days === -1) return "yesterday";
+  if (words && days === 0) return "today";
+  if (words && days === 1) return "tomorrow";
+  if (words && days === -1) return "yesterday";
   const sameYear = date.getFullYear() === today.getFullYear();
   return date.toLocaleDateString("en-US", {
     weekday: sameYear && Math.abs(days) < 7 ? "short" : undefined,
@@ -81,9 +84,17 @@ function friendly(iso: string, today: Date): string {
 /**
  * The line shown under a task: priority, then dates in the order they matter.
  * `open` is false for done or cancelled tasks, which never show as overdue.
+ * Dates are told from `now`; with `words: false`, as dates rather than
+ * "today" or "tomorrow" (for a day that isn't today).
  */
-export function taskMetaHtml(meta: TaskMeta, open: boolean, now = new Date()): string {
+export function taskMetaHtml(
+  meta: TaskMeta,
+  open: boolean,
+  now = new Date(),
+  { words = true } = {},
+): string {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const when = (iso: string) => friendly(iso, today, words);
   const parts: string[] = [];
   const part = (text: string, cls = "") =>
     parts.push(`<span class="task-meta-item${cls ? ` ${cls}` : ""}">${escapeHtml(text)}</span>`);
@@ -92,13 +103,13 @@ export function taskMetaHtml(meta: TaskMeta, open: boolean, now = new Date()): s
   if (meta.due) {
     const days = Math.round((parseDate(meta.due).getTime() - today.getTime()) / DAY);
     const state = !open ? "" : days < 0 ? "is-overdue" : days === 0 ? "is-due-today" : "";
-    part(`${open && days < 0 ? "Overdue" : "Due"} ${friendly(meta.due, today)}`, state);
+    part(`${open && days < 0 ? "Overdue" : "Due"} ${when(meta.due)}`, state);
   }
-  if (meta.scheduled) part(`Scheduled ${friendly(meta.scheduled, today)}`);
-  if (meta.start) part(`Starts ${friendly(meta.start, today)}`);
+  if (meta.scheduled) part(`Scheduled ${when(meta.scheduled)}`);
+  if (meta.start) part(`Starts ${when(meta.start)}`);
   if (meta.recurrence) part(`Repeats ${meta.recurrence}`);
-  if (meta.done) part(`Done ${friendly(meta.done, today)}`);
-  if (meta.cancelled) part(`Cancelled ${friendly(meta.cancelled, today)}`);
-  if (meta.created) part(`Created ${friendly(meta.created, today)}`, "task-created");
+  if (meta.done) part(`Done ${when(meta.done)}`);
+  if (meta.cancelled) part(`Cancelled ${when(meta.cancelled)}`);
+  if (meta.created) part(`Created ${when(meta.created)}`, "task-created");
   return `<span class="task-meta">${parts.join('<span class="task-meta-sep"> · </span>')}</span>`;
 }
