@@ -1,7 +1,6 @@
-import fuzzysort from "fuzzysort";
 import { useMemo, useState } from "react";
 import { api } from "../api/client";
-import type { FileSummary } from "../api/generated/FileSummary";
+import { type FileMatch, matchFiles } from "../lib/fileMatch";
 import { useUi } from "../state/ui";
 import { message, useVault } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
@@ -11,12 +10,6 @@ function folderOf(path: string) {
   return i < 0 ? "" : path.slice(0, i);
 }
 
-interface Item {
-  file: FileSummary;
-  /** Set when the match came from an alias. */
-  alias?: string;
-}
-
 /** ⌘O: jump to any file by name or alias; Enter on no match creates a note. */
 export function QuickSwitcher() {
   const files = useVault((s) => s.files);
@@ -24,26 +17,11 @@ export function QuickSwitcher() {
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
 
-  const items: Item[] = useMemo(() => {
-    const q = query.trim();
-    if (!q) return files.slice(0, 50).map((file) => ({ file }));
-    const results = fuzzysort.go(q, files, {
-      keys: ["title", (f: FileSummary) => f.aliases.join("\u0000"), "path"],
-      limit: 50,
-      threshold: 0.2,
-    });
-    return results.map((r) => {
-      const aliasScore = r[1]?.score ?? 0;
-      const titleScore = r[0]?.score ?? 0;
-      const alias =
-        aliasScore > titleScore ? r.obj.aliases.find((a) => fuzzysort.single(q, a)) : undefined;
-      return { file: r.obj, alias };
-    });
-  }, [files, query]);
+  const items = useMemo(() => matchFiles(files, query), [files, query]);
 
   const close = () => setSwitcher(false);
 
-  async function choose(item: Item | undefined, newTab: boolean) {
+  async function choose(item: FileMatch | undefined, newTab: boolean) {
     close();
     const ws = useWorkspace.getState();
     if (item) {

@@ -534,6 +534,7 @@ Every command supports `--json` output, so agents can parse it reliably.
 ### 5.9 Search
 
 - **In the app:** full-text search in the left sidebar (Cmd+Shift+F), plus a tags view. The query syntax: all words must appear; `"phrase"`, `-exclude`, `path:` and `tag:`/`#tag` (which also matches nested tags). Results show matching lines with hits highlighted; title matches rank first.
+  - Checkboxes under the box choose what's searched: **File names** (titles, aliases and paths, matched loosely as the quick switcher does; `path:` narrows them, and `#tag` and `-word` are left out) and **Text in notes**. Both are on at first, at least one always is, and the choice is remembered. Each kind shows under its own heading, names first (six, then "Show all"); Enter opens the first name, else the first text match. Terminals are a third kind for later (§Phase 8, UI tidy-up).
   - *For now* each query reads the notes from disk, as unlinked mentions do. That's fast for personal vaults. A SQLite FTS5 index (with HTML text) can replace it later without changing the API.
 - **qmd for smart search:** Groundwork registers the vault as a qmd collection and runs `qmd update` when files change. Agents can use qmd directly, or call `groundwork search --smart`.
   - qmd is the user's own install (`npm install -g @tobilu/qmd`), with its index in `~/.cache/qmd`. Groundwork never installs it. An app opened from the Finder has a bare PATH, so it's looked for on the login shell's PATH, then in the usual install folders (each nvm and fnm Node, newest first; Volta, Bun, Homebrew), then on the interactive shell's PATH. Where it was found is remembered in the data folder (`qmd-path`), since looking takes a few seconds. It runs with its own folder first on the PATH, so it gets the Node it was installed with (nvm installs are per Node version). `GROUNDWORK_QMD` names a qmd to run directly (tests use the fake `fixtures/bin/qmd`).
@@ -816,7 +817,7 @@ Asked for on 2026-11-05, before Phase 6's last stage: the Obsidian habits of a Q
      - **The todo board** *(built 2026-11-06)*: a week of events and todos by day. See §5.11. Dragging is tested by sending the drag events (Playwright's WebKit doesn't drag); a real drag in the app is for the checkpoint.
      - **UI tidy-up** (2026-11-06, from the user's review of the installed app), in stages:
        1. *(built)* Controls moved beside what they act on (§Phase 4, "Where controls go"): the vault menu, the Files toolbar, the links panel in each tab, and icons no longer shared (Workspaces has its own; the todo board's is columns, not the calendar Today uses).
-       2. Search with checkboxes for what to search (Files by name and alias, Text in notes), results under a heading for each; Smart stays a mode of its own.
+       2. *(built)* Search with checkboxes for what to search (file names, text in notes), results under a heading for each (§5.9); Smart stays a mode of its own.
        3. Later: terminals in search (their scrollback, from `groundworkd`), and a side panel for terminals.
      - **One todo list per day** *(built 2026-11-06, from trying the installed app)*: a daily note's own todos show inside its day block rather than as lines above it, and dates in other days' blocks are dates. See §5.11. The add field also lost its focus after each todo (the note reloading under it); it keeps it now.
 

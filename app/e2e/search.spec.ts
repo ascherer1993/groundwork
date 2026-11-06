@@ -27,6 +27,41 @@ test("⌘⇧F searches note text and opens the matching line", async ({ page }) 
   await expect(page.getByText("No matches.")).toBeVisible();
 });
 
+test("search finds files by name and text in notes, as the checkboxes say", async ({ page }) => {
+  await page.keyboard.press("Meta+Shift+f");
+  const box = page.getByRole("searchbox", { name: "Search notes" });
+  await box.fill("kickoff");
+  const names = page.getByRole("list", { name: "Matching files" });
+  await expect(names.getByRole("button").first()).toHaveText(
+    "2026-11-02 KickoffProjects/Acme/Meetings",
+  );
+  const text = page.getByRole("list", { name: "Search results" });
+  await expect(text.locator(".search-result").first()).toBeVisible();
+
+  // Names only: no text results, and names can't be unticked too.
+  const kinds = page.getByRole("group", { name: "Search in" });
+  await kinds.getByRole("checkbox", { name: "Text in notes" }).uncheck();
+  await expect(text.locator(".search-result")).toHaveCount(0);
+  await expect(kinds.getByRole("checkbox", { name: "File names" })).toBeDisabled();
+  // A path narrows the names; a tag alone isn't a name.
+  await box.fill("path:contacts doe");
+  await expect(names.getByRole("button")).toHaveText(["Jane DoeContacts"]);
+  await box.fill("#waiting");
+  await expect(names).toHaveCount(0);
+
+  // Enter opens the first name.
+  await box.fill("kickoff");
+  await box.press("Enter");
+  await expect(page.getByLabel("Note title")).toHaveValue("2026-11-02 Kickoff");
+
+  // Text only, as before.
+  await kinds.getByRole("checkbox", { name: "Text in notes" }).check();
+  await kinds.getByRole("checkbox", { name: "File names" }).uncheck();
+  await expect(names).toHaveCount(0);
+  await expect(text.locator(".search-result").first()).toBeVisible();
+  await kinds.getByRole("checkbox", { name: "File names" }).check();
+});
+
 test("tags list nested tags and search by tag", async ({ page }) => {
   await page.getByRole("tab", { name: "Tags" }).click();
   const tags = page.getByRole("list", { name: "Tags" });

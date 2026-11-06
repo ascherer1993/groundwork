@@ -943,6 +943,74 @@ button.danger-button {
   white-space: pre-line;
 }
 
+.search-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin: 0 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.search-kinds label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.search-kinds input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* A kind of result, like the links panel's sections. */
+.search-heading {
+  display: flex;
+  margin: 6px 6px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.search-heading .count {
+  margin-left: auto;
+  font-weight: 500;
+}
+
+.search-names {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.search-name {
+  display: block;
+  width: 100%;
+  padding: 3px 6px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-name:hover {
+  background: var(--bg-hover);
+}
+
+.search-alias {
+  margin-left: 6px;
+  color: var(--text-muted);
+}
+
+.search-more {
+  margin: 2px 6px 0;
+  font-size: 12px;
+}
+
 .search-help,
 .search-summary {
   margin: 2px 6px;
