@@ -1425,9 +1425,22 @@ button.terminals-name:hover {
   position: relative;
 }
 
-/* Its colour, down the left edge. */
-.area-item[data-color] > .area-head > .area-row {
-  box-shadow: inset 3px 0 0 var(--ws-color);
+/* Its colour, down the left edge of the workspace and its terminals. */
+.area-item {
+  position: relative;
+}
+
+.area-item[data-color]::before {
+  content: "";
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  left: 0;
+  z-index: 1;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--ws-color);
+  pointer-events: none;
 }
 
 /* Where a dragged workspace would go. */
