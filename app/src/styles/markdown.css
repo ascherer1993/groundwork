@@ -615,6 +615,10 @@ summary.callout-title {
   padding: 0;
 }
 
+.todos-section .todos-more {
+  margin: -4px 0 10px 4px;
+}
+
 .todo-item {
   display: flex;
   align-items: flex-start;

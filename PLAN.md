@@ -793,6 +793,14 @@ Asked for on 2026-11-05, before Phase 6's last stage: the Obsidian habits of a Q
   1. **Smart search** *(built)*: qmd (set up from Settings or the CLI, kept up to date as files change), `search --smart` and a Smart toggle in the search panel, and "who knows about X" (`groundwork who`). See §5.9. The skill says when to use each, and to ask before setting qmd up. Its output format was checked against qmd 2.8.3 (installed 2026-11-05); trying it on the real vault is in Deferred checks.
   2. **Command bar** *(built)*: the global hotkey and its floating panel. See §5.10. The global shortcut and the bar's window only exist in the desktop app; e2e tests the same bar in the browser, so the window itself (showing over other apps, focus, going back to the app you were in, resizing as you type) is for the checkpoint.
   3. **Polish**: the performance pass and the signed `.app`.
+     - **Performance pass** *(done 2026-11-05)*. `scripts/make-big-vault` makes a made-up vault shaped like a real one (projects, people, events, three years of daily notes, nested folders; links, tags, frontmatter and todos throughout), and `make perf` times every request the app makes against 10,000 notes (50 MB, 51,000 todos; `crates/backend/examples/perf.rs`). On an M-series Mac, release build, before → after:
+       - Todos panel and a daily note's todos block: 2.8 s → 0.14 s and 0.09 s. Finding each note's date compiled a regex per note; formats are now compiled once (`moment.rs`).
+       - Opening the vault: 2.1 s → 0.57 s the first time, 0.96 → 0.34 s after. Notes are read and parsed across the cores (`rayon`), as are search (0.26 → 0.08 s), unlinked mentions (0.22 → 0.08 s) and rename's link survey.
+       - Backlinks of a much-linked note: 355 → 19 ms. Only links whose last path part names the target are resolved (a test checks it against resolving every link).
+       - `context.get` (every note switch), project and ticket lists: 63 ms → under 1 ms. The session keeps the config, checking its files' times; the watcher now reports `.groundwork.yml` and `.groundwork/config.yml` so a new project is seen, and a folder coming or going reads it again (a minute at most otherwise).
+       - The file tree: 102 → 62 ms (no `stat` per entry).
+       - In the UI (WebKit, the same vault): the Todos panel took 17 s to draw 30,000 open todos, and redrew on every save. Long sections now show 50, with "Show more" (200 at a time), and bursts of changes redraw once. 17 s → 0.9 s; search, opening notes, backlinks, the quick switcher and typing were already quick (under 0.4 s; typing about 3.5 ms a key).
+       - Found on the way: a terminal tab closed by `groundwork done` in a background workspace could be closed twice (its exit arriving before it unmounted), which threw in dockview.
 
 ### Deferred checks
 Things built but not yet tried for real, to come back to:

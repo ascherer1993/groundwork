@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { FIXTURE_VAULT as VAULT } from "./fixtures";
@@ -139,4 +139,25 @@ test("the todos view lists open todos and filters them", async ({ page }) => {
   await expect(view.locator(".todo-text")).toHaveText(["Call the caterer"]);
   await page.getByRole("searchbox", { name: "Filter todos" }).fill("path:Daily/2026-11-28 venue");
   await expect(view.locator(".todo-text")).toHaveText(["Book the venue"]);
+});
+
+test("long lists show in pages", async ({ page }) => {
+  const many = Array.from({ length: 260 }, (_, i) => `- [ ] Bulk task ${i + 1} #bulk`).join("\n");
+  writeFileSync(join(VAULT, "Many todos.md"), `# Many todos\n\n${many}\n`);
+  await page.getByRole("tab", { name: "Todos" }).click();
+  const view = page.getByRole("region", { name: "Todos" });
+  await page.getByRole("searchbox", { name: "Filter todos" }).fill("#bulk");
+  const undated = view.locator('.todos-section[data-section="undated"]');
+  await expect(undated.locator(".todos-count")).toHaveText("260");
+  await expect(undated.locator(".todo-item")).toHaveCount(50);
+  await undated.getByRole("button", { name: "Show 200 more of 210" }).click();
+  await expect(undated.locator(".todo-item")).toHaveCount(250);
+  await undated.getByRole("button", { name: "Show 10 more of 10" }).click();
+  await expect(undated.locator(".todo-item")).toHaveCount(260);
+  await expect(undated.getByRole("button", { name: /^Show/ })).toHaveCount(0);
+  // Ticking one keeps what's shown.
+  await undated.getByRole("checkbox", { name: "Done: Bulk task 1 #bulk" }).click();
+  await expect(undated.locator(".todos-count")).toHaveText("259");
+  await expect(undated.locator(".todo-item")).toHaveCount(259);
+  rmSync(join(VAULT, "Many todos.md"));
 });

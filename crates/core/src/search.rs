@@ -6,6 +6,7 @@
 
 use std::collections::BTreeMap;
 
+use rayon::prelude::*;
 use regex::Regex;
 use serde::Serialize;
 use ts_rs::TS;
@@ -131,51 +132,53 @@ pub fn search(index: &Index, query: &str, limit: usize) -> Vec<SearchResult> {
     let terms: Vec<Regex> = q.terms.iter().map(|t| pattern(t)).collect();
     let excluded: Vec<Regex> = q.excluded.iter().map(|t| pattern(t)).collect();
 
-    let mut scored = Vec::new();
-    for (path, note) in index.notes() {
-        let lower_path = path.to_lowercase();
-        if !q.paths.iter().all(|p| lower_path.contains(p.as_str())) {
-            continue;
-        }
-        let has_tag = |wanted: &String| {
-            note.tags.iter().any(|t| {
-                let t = t.to_lowercase();
-                t == *wanted || t.starts_with(&format!("{wanted}/"))
-            })
-        };
-        if !q.tags.iter().all(has_tag) {
-            continue;
-        }
-        let title = link_name(path, NodeKind::Note).to_string();
-        let Some(text) = index.read_text(path) else {
-            continue;
-        };
-        if !terms
-            .iter()
-            .all(|t| t.is_match(&text) || t.is_match(&title))
-        {
-            continue;
-        }
-        if excluded
-            .iter()
-            .any(|t| t.is_match(&text) || t.is_match(&title))
-        {
-            continue;
-        }
+    // Each note is read from disk: across the cores.
+    let notes: Vec<_> = index.notes().collect();
+    let mut scored: Vec<(usize, SearchResult)> = notes
+        .par_iter()
+        .filter_map(|&(path, note)| {
+            let lower_path = path.to_lowercase();
+            if !q.paths.iter().all(|p| lower_path.contains(p.as_str())) {
+                return None;
+            }
+            let has_tag = |wanted: &String| {
+                note.tags.iter().any(|t| {
+                    let t = t.to_lowercase();
+                    t == *wanted || t.starts_with(&format!("{wanted}/"))
+                })
+            };
+            if !q.tags.iter().all(has_tag) {
+                return None;
+            }
+            let title = link_name(path, NodeKind::Note).to_string();
+            let text = index.read_text(path)?;
+            if !terms
+                .iter()
+                .all(|t| t.is_match(&text) || t.is_match(&title))
+            {
+                return None;
+            }
+            if excluded
+                .iter()
+                .any(|t| t.is_match(&text) || t.is_match(&title))
+            {
+                return None;
+            }
 
-        let title_hits: usize = terms.iter().map(|t| t.find_iter(&title).count()).sum();
-        let (hits, lines) = matching_lines(&text, &terms);
-        let score = title_hits * 10 + hits;
-        scored.push((
-            score,
-            SearchResult {
-                path: path.to_string(),
-                title,
-                hits: hits as u32,
-                lines,
-            },
-        ));
-    }
+            let title_hits: usize = terms.iter().map(|t| t.find_iter(&title).count()).sum();
+            let (hits, lines) = matching_lines(&text, &terms);
+            let score = title_hits * 10 + hits;
+            Some((
+                score,
+                SearchResult {
+                    path: path.to_string(),
+                    title,
+                    hits: hits as u32,
+                    lines,
+                },
+            ))
+        })
+        .collect();
     scored.sort_by(|(a, ra), (b, rb)| b.cmp(a).then_with(|| ra.path.cmp(&rb.path)));
     scored.into_iter().take(limit).map(|(_, r)| r).collect()
 }

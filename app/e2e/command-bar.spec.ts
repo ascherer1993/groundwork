@@ -89,6 +89,9 @@ test("the command bar starts Claude on the whole vault, and logs how it went", a
   await expect(bar).toBeHidden();
 
   // The command log has both, newest first: the one-off closed its tab.
+  // (Once the fake claude has finished both; the log loads as it opens.)
+  const logFile = join(VAULT, ".groundwork/command-log.jsonl");
+  await expect.poll(() => readFileSync(logFile, "utf8").split('"event":"done"').length - 1).toBe(2);
   await page.keyboard.press("Meta+p");
   await page.keyboard.type("command log");
   await page.keyboard.press("Enter");

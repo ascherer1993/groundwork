@@ -27,7 +27,11 @@ export function TerminalPanel({ api: panel, params }: IDockviewPanelProps<Termin
         title.current = t;
         panel.setTitle(terminalTitle(t, cwd.current));
       },
-      onExit: () => panel.close(),
+      // Unless the tab is already gone: closing it ends the session, whose
+      // exit can arrive before a tab in a background workspace unmounts.
+      onExit: () => {
+        if (panel.group?.panels.some((p) => p.id === panel.id)) panel.close();
+      },
       onReplaced: (id) => {
         session.current = id;
         panel.updateParameters({ terminal: id, cwd: cwd.current });

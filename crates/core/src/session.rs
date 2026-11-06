@@ -8,13 +8,15 @@ use std::fs;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, RwLock, RwLockReadGuard};
-use std::time::{Duration, Instant, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::{Local, NaiveDate};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::activity::{ActivityKind, ActivityLog, ActivitySource, machine_id};
+use crate::config::{self as config_file, Config};
 use crate::daily::DailySettings;
 use crate::index::{FileEntry, Index, NewFileLocation, Upsert, hash, link_name};
 use crate::pages;
@@ -103,6 +105,16 @@ struct UndoOp {
     edits: Vec<UndoEdit>,
 }
 
+struct CachedConfig {
+    config: Config,
+    sources: Vec<(PathBuf, Option<SystemTime>)>,
+    read: Instant,
+}
+
+/// The longest a config is kept without reading it again, in case the
+/// watcher missed a new project folder.
+const CONFIG_KEPT: Duration = Duration::from_secs(60);
+
 pub struct Session {
     vault: Vault,
     index: RwLock<Index>,
@@ -116,6 +128,8 @@ pub struct Session {
     source: ActivitySource,
     /// Whether this session keeps the change-detection snapshot.
     snapshots: bool,
+    /// The config last read, its files as they were then, and when.
+    config: Mutex<Option<CachedConfig>>,
     /// Task events found while reindexing, logged by `log_changes`.
     pending_tasks: Mutex<Vec<(String, ActivityKind, Task)>>,
 }
@@ -155,6 +169,7 @@ impl Session {
             source,
             snapshots,
             pending_tasks: Mutex::new(Vec::new()),
+            config: Mutex::new(None),
         };
         Ok(session)
     }
@@ -163,6 +178,32 @@ impl Session {
     pub fn with_source(mut self, source: ActivitySource) -> Self {
         self.source = source;
         self
+    }
+
+    /// The vault's config (`config.rs`). Kept between calls while its files
+    /// are as they were; a project folder coming or going (`forget_config`)
+    /// or a minute passing reads it again.
+    pub fn config(&self) -> Result<Config> {
+        let root = self.vault.root();
+        let mut cached = self.config.lock().unwrap();
+        if let Some(c) = cached.as_ref()
+            && c.read.elapsed() < CONFIG_KEPT
+            && c.config.sources(root) == c.sources
+        {
+            return Ok(c.config.clone());
+        }
+        let config = Config::load(root)?;
+        *cached = Some(CachedConfig {
+            sources: config.sources(root),
+            config: config.clone(),
+            read: Instant::now(),
+        });
+        Ok(config)
+    }
+
+    /// Reads the config afresh next time.
+    pub fn forget_config(&self) {
+        self.config.lock().unwrap().take();
     }
 
     pub fn vault(&self) -> &Vault {
@@ -546,9 +587,10 @@ impl Session {
             hash: Option<String>,
             links: Vec<(parse::Link, String)>,
         }
-        let before: Vec<Before> = index
-            .notes()
-            .map(|(source, note)| Before {
+        let notes: Vec<_> = index.notes().collect();
+        let before: Vec<Before> = notes
+            .par_iter()
+            .map(|&(source, note)| Before {
                 source: source.to_string(),
                 hash: index.get(source).and_then(|f| f.hash.clone()),
                 links: note
@@ -945,11 +987,17 @@ impl Session {
         for path in paths {
             if path == ".obsidian/app.json" {
                 self.index.write().unwrap().reload_settings();
+            } else if config_file::is_config_file(path) {
+                self.forget_config();
             } else {
                 refs.push(path);
             }
         }
         let mut changes = self.reindex(&refs, true);
+        // A folder that came or went (or moved) may be a project.
+        if changes.iter().any(|c| c.kind != ChangeKind::Modified) {
+            self.forget_config();
+        }
         self.log_changes(&changes, ActivitySource::External);
         // Folders that came or went with no files in them change only the
         // file tree, which still needs to hear about them. (A folder with

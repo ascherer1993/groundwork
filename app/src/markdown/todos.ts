@@ -138,16 +138,33 @@ function itemHtml(todo: Todo, section: Section): string {
 </li>`;
 }
 
-function sectionsHtml(sections: Section[], empty: string): string {
+/**
+ * How many of a section's todos show at first, and how many more each
+ * "Show more" adds: a big vault has thousands, and drawing them all stalls
+ * the app.
+ */
+const FIRST_SHOWN = 50;
+const MORE = 200;
+
+function sectionsHtml(sections: Section[], empty: string, limit: (id: string) => number): string {
   const shown = sections.filter((s) => s.todos.length);
   if (!shown.length) return `<p class="todos-empty muted">${escapeHtml(empty)}</p>`;
   return shown
-    .map(
-      (s) => `<section class="todos-section" data-section="${s.id}">
+    .map((s) => {
+      const max = limit(s.id);
+      const hidden = s.todos.length - max;
+      const more =
+        hidden > 0
+          ? `<button type="button" class="link-button todos-more" data-action="more" data-section="${s.id}">Show ${Math.min(hidden, MORE)} more of ${hidden}</button>`
+          : "";
+      return `<section class="todos-section" data-section="${s.id}">
   <h4>${escapeHtml(s.title)} <span class="todos-count">${s.todos.length}</span></h4>
-  <ul>${s.todos.map((t) => itemHtml(t, s)).join("")}</ul>
-</section>`,
-    )
+  <ul>${s.todos
+    .slice(0, max)
+    .map((t) => itemHtml(t, s))
+    .join("")}</ul>${more}
+</section>`;
+    })
     .join("");
 }
 
@@ -260,37 +277,46 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
   let todosById = new Map<string, Todo>();
   let date: string | null = null;
   let generation = 0;
+  // What was fetched last, drawn up to each section's limit.
+  let sections: Section[] = [];
+  let empty = "";
+  const limits = new Map<string, number>();
+
+  const paint = async () => {
+    list.innerHTML = sectionsHtml(sections, empty, (id) => limits.get(id) ?? FIRST_SHOWN);
+    await hydrate(list, notePath || "");
+    el.dispatchEvent(new Event(CONTENT_RESIZED, { bubbles: true }));
+  };
 
   const render = async () => {
     const mine = ++generation;
-    let html: string;
     let all: Todo[];
+    let next: Section[];
+    let nextEmpty: string;
     try {
       if (spec.kind === "day") {
         const day = await api.todoDay(notePath);
         date = day.date;
         all = [...day.overdue, ...day.due, ...day.carried, ...day.done];
-        html = sectionsHtml(
-          [
-            { id: "overdue", title: "Overdue", todos: day.overdue },
-            { id: "due", title: "Due", todos: day.due },
-            {
-              id: "carried",
-              title: "Carried over",
-              todos: day.carried,
-              note: (t) => (t.daily ? `${daysBetween(t.daily, day.date)}d` : null),
-            },
-            { id: "done", title: "Done", todos: day.done },
-          ],
-          "Nothing due, overdue or carried over.",
-        );
+        next = [
+          { id: "overdue", title: "Overdue", todos: day.overdue },
+          { id: "due", title: "Due", todos: day.due },
+          {
+            id: "carried",
+            title: "Carried over",
+            todos: day.carried,
+            note: (t) => (t.daily ? `${daysBetween(t.daily, day.date)}d` : null),
+          },
+          { id: "done", title: "Done", todos: day.done },
+        ];
+        nextEmpty = "Nothing due, overdue or carried over.";
       } else {
         all = await api.todos(spec.filter);
-        const sections =
+        next =
           spec.kind === "agenda"
             ? agendaSections(all)
             : [{ id: "list", title: spec.title ?? "Todos", todos: all }];
-        html = sectionsHtml(sections, "No todos.");
+        nextEmpty = "No todos.";
       }
     } catch (err) {
       if (mine === generation) list.innerHTML = `<p class="error">${escapeHtml(message(err))}</p>`;
@@ -298,13 +324,22 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
     }
     if (mine !== generation) return;
     todosById = new Map(all.map((t) => [t.id, t]));
-    list.innerHTML = html;
-    await hydrate(list, notePath || "");
-    el.dispatchEvent(new Event(CONTENT_RESIZED, { bubbles: true }));
+    sections = next;
+    empty = nextEmpty;
+    await paint();
   };
 
   const onClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
+    const more = target.closest<HTMLElement>("[data-action=more]");
+    if (more) {
+      e.stopPropagation();
+      e.preventDefault();
+      const id = more.dataset.section!;
+      limits.set(id, (limits.get(id) ?? FIRST_SHOWN) + MORE);
+      void paint();
+      return;
+    }
     const item = target.closest<HTMLElement>(".todo-item");
     const todo = item && todosById.get(item.dataset.id!);
     if (!todo) return;
@@ -336,11 +371,15 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
 
   el.addEventListener("click", onClick, true);
   el.addEventListener("keydown", onKey);
+  // Changes come in bursts (a save, an agent at work): one fetch for each.
+  let pending: ReturnType<typeof setTimeout> | undefined;
   const unsubscribe = onVaultChange(() => {
     if (!el.isConnected) return stop();
-    void render();
+    clearTimeout(pending);
+    pending = setTimeout(() => void render(), 250);
   });
   function stop() {
+    clearTimeout(pending);
     unsubscribe();
     el.removeEventListener("click", onClick, true);
     el.removeEventListener("keydown", onKey);

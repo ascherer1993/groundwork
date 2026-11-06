@@ -5,7 +5,8 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -175,8 +176,9 @@ pub struct Project {
     pub actions: Vec<ActionDef>,
 }
 
-/// Everything configured for a vault, read fresh each time it's needed
-/// (it's small, and edits in Obsidian or by Claude then apply at once).
+/// Everything configured for a vault. Finding the projects walks the vault,
+/// so the session keeps the last one read (`Session::config`), checking its
+/// files haven't changed each time.
 #[derive(Debug, Clone, Default)]
 pub struct Config {
     pub trackers: Vec<Tracker>,
@@ -210,6 +212,26 @@ impl Config {
             repos,
             projects,
         })
+    }
+
+    /// The files it was read from, with when each last changed (`None`:
+    /// not there), so a copy kept can tell it's out of date. A new project
+    /// folder isn't among them: the watcher reports those.
+    pub fn sources(&self, root: &Path) -> Vec<(PathBuf, Option<SystemTime>)> {
+        let modified = |path: PathBuf| {
+            let time = fs::metadata(&path).and_then(|m| m.modified()).ok();
+            (path, time)
+        };
+        [".groundwork/config.yml", ".groundwork/repos.yml"]
+            .into_iter()
+            .map(|f| root.join(f))
+            .chain(
+                self.projects
+                    .iter()
+                    .map(|p| root.join(&p.folder).join(".groundwork.yml")),
+            )
+            .map(modified)
+            .collect()
     }
 
     pub fn repo(&self, id: &str) -> Result<&Repo> {
@@ -267,6 +289,14 @@ impl Config {
             },
         }
     }
+}
+
+/// Whether a vault path is one of the files the config is read from.
+pub fn is_config_file(path: &str) -> bool {
+    path == ".groundwork/config.yml"
+        || path == ".groundwork/repos.yml"
+        || path == ".groundwork.yml"
+        || path.ends_with("/.groundwork.yml")
 }
 
 fn read_yaml<T: serde::de::DeserializeOwned>(root: &Path, rel: &str) -> Result<Option<T>> {

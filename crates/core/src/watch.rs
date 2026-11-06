@@ -7,16 +7,17 @@ use std::time::Duration;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
 
-use crate::pages;
 use crate::tree::is_hidden;
 use crate::{CoreError, Result};
+use crate::{config, pages};
 
 pub struct VaultWatcher {
     _debouncer: Debouncer<RecommendedWatcher, RecommendedCache>,
 }
 
 /// Calls `on_change` with batches of changed vault-relative paths. Hidden
-/// paths are dropped (except `.obsidian/app.json`, which holds link settings),
+/// paths are dropped (except `.obsidian/app.json`, which holds link settings,
+/// and Groundwork's config files),
 /// and anything inside a `.page` bundle is reported as the bundle itself.
 /// Page state files are reported as they are (see [`pages::page_for_state_path`]).
 pub fn watch(
@@ -63,7 +64,10 @@ fn vault_path(root: &Path, path: &Path) -> Option<String> {
         return None;
     }
     let joined = parts.join("/");
-    if joined == ".obsidian/app.json" || pages::page_for_state_path(&joined).is_some() {
+    if joined == ".obsidian/app.json"
+        || config::is_config_file(&joined)
+        || pages::page_for_state_path(&joined).is_some()
+    {
         return Some(joined);
     }
     if parts.iter().any(|p| is_hidden(p)) {
@@ -105,6 +109,16 @@ mod tests {
             Some(".obsidian/app.json")
         );
         assert_eq!(p("/v/.obsidian/workspace.json"), None);
+        // Groundwork's config: the session reads it again.
+        assert_eq!(
+            p("/v/Projects/X/.groundwork.yml").as_deref(),
+            Some("Projects/X/.groundwork.yml")
+        );
+        assert_eq!(
+            p("/v/.groundwork/config.yml").as_deref(),
+            Some(".groundwork/config.yml")
+        );
+        assert_eq!(p("/v/.groundwork/activity/m/2026-11.jsonl"), None);
         assert_eq!(p("/v/A/.B.md.groundwork-tmp"), None);
         assert_eq!(p("/v"), None);
         assert_eq!(p("/elsewhere/A.md"), None);

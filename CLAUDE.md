@@ -29,6 +29,7 @@ A macOS notes app (Tauri v2 + React) over an Obsidian-compatible vault, adding H
 - `make dev`: run the desktop app. It runs inside a `Groundwork Dev.app` bundle in `target/debug` (`scripts/dev-app`) so macOS shows its notifications.
 - `make browser`: run the same UI in a browser at http://localhost:1420.
 - `make test`, `make e2e`, `make lint`, `make fmt`.
+- `make perf`: times the backend's requests on a made-up vault of 10,000 notes (`scripts/make-big-vault`, in `$TMPDIR` by default). Run it after changing anything that walks the vault.
 
 Before calling a change done, run `make lint test e2e`. For UI changes, also take screenshots in browser mode with Playwright and check both light and dark themes.
 

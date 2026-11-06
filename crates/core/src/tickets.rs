@@ -413,10 +413,6 @@ fn expand(text: &str, vars: &HashMap<String, String>) -> Option<String> {
 }
 
 impl Session {
-    pub fn config(&self) -> Result<Config> {
-        Config::load(self.vault().root())
-    }
-
     pub fn repo_list(&self) -> Result<Vec<RepoInfo>> {
         let config = self.config()?;
         let locations = self.repos().all();
@@ -500,6 +496,7 @@ impl Session {
             ));
         }
         std::fs::write(dir.join(".groundwork.yml"), yml)?;
+        self.forget_config();
         let info = self
             .project_list()?
             .into_iter()
@@ -1746,6 +1743,51 @@ mod tests {
             code: vec!["acme-platform:web".into()],
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn the_config_is_kept_until_it_changes() {
+        let t = Setup::new();
+        let vault = t.dir.path().join("vault");
+        assert_eq!(t.session.config().unwrap().projects.len(), 1);
+        // Its files changing is seen without being told.
+        fs::write(
+            vault.join("Projects/Acme/.groundwork.yml"),
+            "name: Acme Co
+",
+        )
+        .unwrap();
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
+        fs::File::options()
+            .write(true)
+            .open(vault.join("Projects/Acme/.groundwork.yml"))
+            .unwrap()
+            .set_modified(later)
+            .unwrap();
+        assert_eq!(t.session.config().unwrap().projects[0].name, "Acme Co");
+        // A project folder going too.
+        fs::rename(vault.join("Projects/Acme"), vault.join("Projects/Gone")).unwrap();
+        assert_eq!(
+            t.session.config().unwrap().projects[0].folder,
+            "Projects/Gone"
+        );
+        // A new one made outside comes through the watcher (`apply_external`).
+        fs::create_dir(vault.join("Trips")).unwrap();
+        fs::write(
+            vault.join("Trips/.groundwork.yml"),
+            "name: Trips
+",
+        )
+        .unwrap();
+        assert_eq!(t.session.config().unwrap().projects.len(), 1, "kept");
+        t.session.apply_external(&["Trips/.groundwork.yml".into()]);
+        assert_eq!(t.session.config().unwrap().projects.len(), 2);
+        // And a folder arriving with a project in it.
+        fs::create_dir_all(vault.join("Moved in")).unwrap();
+        fs::write(vault.join("Moved in/.groundwork.yml"), "").unwrap();
+        fs::write(vault.join("Moved in/Plan.md"), "# Plan\n").unwrap();
+        t.session.apply_external(&["Moved in".into()]);
+        assert_eq!(t.session.config().unwrap().projects.len(), 3);
     }
 
     #[test]

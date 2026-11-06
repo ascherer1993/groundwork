@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""Makes a large made-up vault, for trying Groundwork at scale.
+
+Usage: scripts/make-big-vault <folder> [--notes 10000] [--seed 1]
+
+It's shaped like a real one: projects (each with a .groundwork.yml, an
+overview, meetings and work notes), people, events, a few years of daily
+notes with todos, and loose notes in nested folders. Notes link to each
+other and to people, carry tags and frontmatter, and vary in length. The
+same seed makes the same vault.
+"""
+
+import argparse
+import datetime
+import os
+import random
+import sys
+
+WORDS = (
+    "the a and to of in for on with that this we it is be as at by from or "
+    "auth login session token api service deploy release migration database "
+    "schema index cache latency incident review design plan roadmap budget "
+    "vendor contract customer feedback onboarding metrics dashboard alert "
+    "pipeline build test flaky retry queue worker timeout config secret "
+    "rollout feature flag experiment launch decision follow up owner risk"
+).split()
+FIRST = "Alex Blair Casey Dana Eli Frankie Gray Harper Indy Jules Kai Lane Morgan Noor Oak Parker Quinn Remy Sage Tatum".split()
+LAST = "Ahmed Brown Chen Diaz Evans Fox Garcia Hill Ito Jones Kim Lopez Moore Ng Ortiz Patel Quist Rossi Silva Tran".split()
+PROJECTS = "Atlas Beacon Cobalt Delta Ember Falcon Granite Harbor Iris Juniper".split()
+TAGS = "waiting idea decision risk followup acme/legal infra/db infra/ci people/1on1 reading".split()
+
+
+def sentence(rng, n=None):
+    n = n or rng.randint(6, 18)
+    words = [rng.choice(WORDS) for _ in range(n)]
+    return " ".join(words).capitalize() + "."
+
+
+def paragraph(rng, links):
+    parts = []
+    for _ in range(rng.randint(2, 6)):
+        s = sentence(rng)
+        if links and rng.random() < 0.35:
+            s = s[:-1] + f" [[{rng.choice(links)}]]."
+        if rng.random() < 0.08:
+            s += f" #{rng.choice(TAGS)}"
+        parts.append(s)
+    return " ".join(parts)
+
+
+def todo(rng, day, links):
+    done = rng.random() < 0.4
+    text = sentence(rng, rng.randint(3, 8))[:-1]
+    if links and rng.random() < 0.3:
+        text += f" with [[{rng.choice(links)}]]"
+    extra = ""
+    if rng.random() < 0.3:
+        due = day + datetime.timedelta(days=rng.randint(-10, 20))
+        extra += f" 📅 {due.isoformat()}"
+    if rng.random() < 0.15:
+        extra += rng.choice([" ⏫", " 🔼", " 🔽"])
+    extra += f" ➕ {day.isoformat()}"
+    if done:
+        extra += f" ✅ {(day + datetime.timedelta(days=rng.randint(0, 5))).isoformat()}"
+    return f"- [{'x' if done else ' '}] {text}{extra}"
+
+
+def body(rng, title, links, day, size):
+    lines = [f"# {title}", ""]
+    for section in range(size):
+        if section and rng.random() < 0.5:
+            lines += [f"## {sentence(rng, 3)[:-1]}", ""]
+        lines += [paragraph(rng, links), ""]
+        if rng.random() < 0.3:
+            lines += [todo(rng, day, links) for _ in range(rng.randint(1, 4))] + [""]
+    return "\n".join(lines)
+
+
+def write(root, path, text):
+    full = os.path.join(root, path)
+    os.makedirs(os.path.dirname(full), exist_ok=True)
+    with open(full, "w") as f:
+        f.write(text)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("folder")
+    parser.add_argument("--notes", type=int, default=10000)
+    parser.add_argument("--seed", type=int, default=1)
+    args = parser.parse_args()
+    root = args.folder
+    if os.path.exists(root) and os.listdir(root):
+        sys.exit(f"{root} isn't empty")
+    rng = random.Random(args.seed)
+    n = args.notes
+    start = datetime.date(2024, 1, 1)
+
+    os.makedirs(os.path.join(root, ".obsidian"), exist_ok=True)
+    write(root, ".obsidian/app.json", "{}\n")
+    write(root, ".groundwork/config.yml", "pages:\n  allow_network: false\n")
+
+    people = sorted({f"{rng.choice(FIRST)} {rng.choice(LAST)}" for _ in range(max(20, n // 25))})
+    days = [start + datetime.timedelta(days=i) for i in range(min(n // 8, 1000))]
+    budget = n - len(people) - len(days)
+    per_project = budget * 6 // 10 // len(PROJECTS)
+    loose = budget - per_project * len(PROJECTS)
+
+    # Names of everything, decided up front so notes can link anywhere.
+    notes = []  # (path, title, kind)
+    for p in people:
+        notes.append((f"Contacts/{p}.md", p, "person"))
+    for d in days:
+        notes.append((f"Daily/{d.year}/{d.isoformat()}.md", d.isoformat(), "daily"))
+    for proj in PROJECTS:
+        notes.append((f"Projects/{proj}/{proj}.md", proj, "overview"))
+        for i in range(per_project - 1):
+            day = rng.choice(days)
+            kind = rng.choice(["meeting", "meeting", "work", "note", "event"])
+            if kind == "meeting":
+                title = f"{day.isoformat()} {sentence(rng, 2)[:-1]} {i}"
+                notes.append((f"Projects/{proj}/Meetings/{title}.md", title, kind))
+            elif kind == "work":
+                title = f"{proj.upper()[:4]}-{100 + i} {sentence(rng, 3)[:-1]}"
+                notes.append((f"Projects/{proj}/Work/{title}.md", title, kind))
+            elif kind == "event":
+                title = f"{day.isoformat()} {sentence(rng, 2)[:-1]} {i}"
+                notes.append((f"Events/{day.year}/{title}.md", title, kind))
+            else:
+                title = f"{sentence(rng, 3)[:-1]} {proj} {i}"
+                notes.append((f"Projects/{proj}/Notes/{title}.md", title, kind))
+    for i in range(loose):
+        depth = rng.randint(1, 3)
+        folder = "/".join(f"{rng.choice(WORDS).capitalize()}" for _ in range(depth))
+        title = f"{sentence(rng, 4)[:-1]} {i}"
+        notes.append((f"Areas/{folder}/{title}.md", title, "note"))
+
+    titles = [t for _, t, _ in notes]
+    for path, title, kind in notes:
+        links = [rng.choice(titles) for _ in range(rng.randint(2, 12))] + [
+            rng.choice(people) for _ in range(rng.randint(0, 3))
+        ]
+        day = rng.choice(days)
+        size = rng.choice([1, 2, 3, 3, 4, 6, 10, 25])
+        if kind == "person":
+            proj = rng.choice(PROJECTS)
+            front = f"---\ntype: person\ncompany: {proj} Inc\nrole: Engineer\nprojects: [\"[[{proj}]]\"]\n---\n"
+            text = front + body(rng, title, links, day, 1)
+        elif kind == "daily":
+            day = datetime.date.fromisoformat(title)
+            text = f"---\ncreated: {title}T08:30\n---\n" + body(rng, title, links, day, 2)
+            text += "\n## Todos\n\n" + "\n".join(todo(rng, day, links) for _ in range(rng.randint(2, 8)))
+            text += "\n\n```todos\nday\n```\n"
+        elif kind == "overview":
+            write(root, f"Projects/{title}/.groundwork.yml", f"name: {title}\noverview: {title}.md\nwork_folder: Work\n")
+            text = "---\ntype: project\n---\n" + body(rng, title, links, day, 3)
+        elif kind == "event":
+            proj = path.split("/")[1] if path.startswith("Projects/") else rng.choice(PROJECTS)
+            who = ", ".join(f'"[[{rng.choice(people)}]]"' for _ in range(rng.randint(1, 4)))
+            text = (
+                f"---\ntype: event\ndate: {title[:10]}\npeople: [{who}]\nprojects: [\"[[{rng.choice(PROJECTS)}]]\"]\n---\n"
+                + body(rng, title, links, day, size)
+            )
+        else:
+            tags = ", ".join(rng.sample(TAGS, rng.randint(0, 3)))
+            front = f"---\ntags: [{tags}]\n---\n" if tags else ""
+            text = front + body(rng, title, links, day, size)
+        write(root, path, text)
+
+    total = sum(len(files) for _, _, files in os.walk(root))
+    print(f"Made {len(notes)} notes ({total} files) in {root}")
+
+
+if __name__ == "__main__":
+    main()

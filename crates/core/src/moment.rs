@@ -1,6 +1,9 @@
 //! Dates in moment.js format strings, as Obsidian uses them (daily notes,
 //! templates). Covers the date and time tokens; week numbers come later.
 
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex};
+
 use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
 use regex::Regex;
 
@@ -161,7 +164,15 @@ pub fn format_datetime(dt: NaiveDateTime, format: &str) -> String {
 
 /// Reads a date written in `format`. Returns `None` unless the whole text
 /// matches and names a real date (weekday names must agree with it).
-pub fn parse(text: &str, format: &str) -> Option<NaiveDate> {
+/// A format's tokens and the pattern that reads it.
+type Compiled = Arc<(Vec<Token>, Regex)>;
+
+/// A format, compiled once: the todo views ask about every note in the vault.
+fn compiled(format: &str) -> Option<Compiled> {
+    static CACHE: LazyLock<Mutex<HashMap<String, Compiled>>> = LazyLock::new(Default::default);
+    if let Some(found) = CACHE.lock().unwrap().get(format) {
+        return Some(found.clone());
+    }
     let tokens = tokenize(format);
     let mut pattern = String::from("^");
     for token in &tokens {
@@ -184,11 +195,22 @@ pub fn parse(text: &str, format: &str) -> Option<NaiveDate> {
         });
     }
     pattern.push('$');
-    let caps = Regex::new(&pattern).ok()?.captures(text)?;
+    let made = Arc::new((tokens, Regex::new(&pattern).ok()?));
+    CACHE
+        .lock()
+        .unwrap()
+        .insert(format.to_string(), made.clone());
+    Some(made)
+}
+
+pub fn parse(text: &str, format: &str) -> Option<NaiveDate> {
+    let compiled = compiled(format)?;
+    let (tokens, regex) = &*compiled;
+    let caps = regex.captures(text)?;
 
     let (mut year, mut month, mut day) = (None, None, None);
     let mut groups = caps.iter().skip(1).flatten().map(|m| m.as_str());
-    for token in &tokens {
+    for token in tokens {
         if matches!(token, Token::Literal(_)) {
             continue;
         }

@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::fs;
 use std::path::Path;
 
@@ -82,10 +81,20 @@ fn read_children(dir: &Path, rel: &str) -> Result<Vec<TreeNode>> {
             continue;
         }
         // Follows symlinks, so a linked folder shows up as a folder.
-        let Ok(meta) = fs::metadata(entry.path()) else {
+        // The entry knows its type; only a symlink needs following (and is
+        // left out if it leads nowhere).
+        let Ok(file_type) = entry.file_type() else {
             continue;
         };
-        let kind = classify(&name, meta.is_dir());
+        let is_dir = if file_type.is_symlink() {
+            let Ok(meta) = fs::metadata(entry.path()) else {
+                continue;
+            };
+            meta.is_dir()
+        } else {
+            file_type.is_dir()
+        };
+        let kind = classify(&name, is_dir);
         let path = if rel.is_empty() {
             name.clone()
         } else {
@@ -102,18 +111,15 @@ fn read_children(dir: &Path, rel: &str) -> Result<Vec<TreeNode>> {
             children,
         });
     }
-    nodes.sort_by(compare);
+    // Folders first, then everything else, each group by case-insensitive name.
+    nodes.sort_by_cached_key(|n| {
+        (
+            n.kind != NodeKind::Folder,
+            n.name.to_lowercase(),
+            n.name.clone(),
+        )
+    });
     Ok(nodes)
-}
-
-/// Folders first, then everything else, each group by case-insensitive name.
-fn compare(a: &TreeNode, b: &TreeNode) -> Ordering {
-    let a_folder = a.kind == NodeKind::Folder;
-    let b_folder = b.kind == NodeKind::Folder;
-    b_folder
-        .cmp(&a_folder)
-        .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-        .then_with(|| a.name.cmp(&b.name))
 }
 
 #[cfg(test)]

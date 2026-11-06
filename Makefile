@@ -1,4 +1,4 @@
-.PHONY: setup dev browser build cli test e2e lint fmt bindings
+.PHONY: setup dev browser build cli test e2e lint fmt bindings perf
 
 setup: ## Install JS dependencies and the Playwright browser
 	cd app && npm ci && npx playwright install webkit
@@ -29,6 +29,13 @@ test: ## Rust + frontend unit tests
 
 e2e: ## Playwright tests in browser mode (WebKit)
 	cd app && npm run e2e
+
+# A made-up vault of 10,000 notes (scripts/make-big-vault), made the first time.
+PERF_VAULT ?= $(TMPDIR)groundwork-big-vault
+
+perf: ## Time the backend's requests on a big made-up vault
+	@test -d "$(PERF_VAULT)" || scripts/make-big-vault "$(PERF_VAULT)" --notes 10000
+	GROUNDWORK_QMD=/nonexistent cargo run -q --release -p groundwork-backend --example perf -- "$(PERF_VAULT)"
 
 lint: ## Everything CI would check
 	cargo fmt --all --check

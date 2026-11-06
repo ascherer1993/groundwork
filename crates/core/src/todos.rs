@@ -241,9 +241,17 @@ pub fn list(
     filter: &TodoFilter,
     today: NaiveDate,
 ) -> Vec<Todo> {
+    // A note's tags only matter when asked for.
+    let note_tags = |path: &str| {
+        if filter.tags.is_empty() {
+            Vec::new()
+        } else {
+            frontmatter_tags(index, path)
+        }
+    };
     let mut todos: Vec<Todo> = all(index, daily)
         .into_iter()
-        .filter(|t| filter.matches(t, &frontmatter_tags(index, &t.path), today))
+        .filter(|t| filter.matches(t, &note_tags(&t.path), today))
         .collect();
     todos.sort_by(by_urgency);
     todos

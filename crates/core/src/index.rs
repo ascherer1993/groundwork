@@ -15,6 +15,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use rayon::prelude::*;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -163,10 +164,13 @@ impl Index {
         };
         let mut paths = Vec::new();
         collect(root, "", &mut paths)?;
-        for (path, kind) in paths {
-            if let Some(entry) = index.load(&path, kind)? {
-                index.insert(entry);
-            }
+        // Reading and parsing is most of opening a vault: across the cores.
+        let entries: Vec<Option<FileEntry>> = paths
+            .par_iter()
+            .map(|(path, kind)| index.load(path, *kind))
+            .collect::<Result<_>>()?;
+        for entry in entries.into_iter().flatten() {
+            index.insert(entry);
         }
         Ok(index)
     }
@@ -479,13 +483,27 @@ impl Index {
         }
     }
 
+    /// Whether a link written as `linkpath` could resolve to `target`: the
+    /// last part of its path names it. Much cheaper than resolving, so
+    /// looking for links to one file resolves only these.
+    fn may_name(linkpath: &str, target_name: &str) -> bool {
+        let lp = linkpath.trim().replace('\\', "/").to_lowercase();
+        let lp = lp.strip_suffix(".md").unwrap_or(&lp);
+        lp.rsplit('/').next().unwrap_or(lp) == target_name
+    }
+
     /// Every note and page linking to `target`, with the line each link is on.
     pub fn backlinks(&self, target: &str) -> Vec<Backlinks> {
-        let mut out = self.note_backlinks(target);
+        let Some(kind) = self.files.get(target).map(|f| f.kind) else {
+            return Vec::new();
+        };
+        let name = link_name(target, kind).to_lowercase();
+        let mut out = self.note_backlinks(target, &name);
         for (source, entry) in &self.files {
             let refs: Vec<&Link> = entry
                 .page_links
                 .iter()
+                .filter(|l| Self::may_name(&l.target, &name))
                 .filter(|l| self.resolve_page_link(l, source).as_deref() == Some(target))
                 .collect();
             if refs.is_empty() {
@@ -510,13 +528,13 @@ impl Index {
         out
     }
 
-    fn note_backlinks(&self, target: &str) -> Vec<Backlinks> {
+    fn note_backlinks(&self, target: &str, name: &str) -> Vec<Backlinks> {
         let mut out = Vec::new();
         for (source, note) in self.notes() {
             let refs: Vec<&Link> = note
                 .links
                 .iter()
-                .filter(|l| !(source == target && l.target.is_empty()))
+                .filter(|l| Self::may_name(&l.target, name))
                 .filter(|l| self.resolve_link(l, source).as_deref() == Some(target))
                 .collect();
             if refs.is_empty() {
@@ -566,37 +584,39 @@ impl Index {
             return Vec::new();
         };
 
-        let mut out = Vec::new();
-        for (source, note) in self.notes() {
-            if source == target {
-                continue;
-            }
-            let Some(text) = self.read_text(source) else {
-                continue;
-            };
-            let lines = parse::LineIndex::new(&text);
-            let mut at = 0;
-            while let Some(caps) = pattern.captures_at(&text, at) {
-                let m = caps.get(1).unwrap();
-                at = m.end();
-                let range = m.range();
-                if note
-                    .excluded
-                    .iter()
-                    .any(|e| range.start < e.end && e.start < range.end)
-                {
-                    continue;
+        // Each note is read from disk: across the cores.
+        let notes: Vec<_> = self.notes().filter(|(s, _)| *s != target).collect();
+        notes
+            .par_iter()
+            .flat_map_iter(|&(source, note)| {
+                let mut found = Vec::new();
+                let Some(text) = self.read_text(source) else {
+                    return found;
+                };
+                let lines = parse::LineIndex::new(&text);
+                let mut at = 0;
+                while let Some(caps) = pattern.captures_at(&text, at) {
+                    let m = caps.get(1).unwrap();
+                    at = m.end();
+                    let range = m.range();
+                    if note
+                        .excluded
+                        .iter()
+                        .any(|e| range.start < e.end && e.start < range.end)
+                    {
+                        continue;
+                    }
+                    found.push(Mention {
+                        source: source.to_string(),
+                        line: lines.line_of(range.start),
+                        text: m.as_str().to_string(),
+                        context: line_context(&text, range.start),
+                        range,
+                    });
                 }
-                out.push(Mention {
-                    source: source.to_string(),
-                    line: lines.line_of(range.start),
-                    text: m.as_str().to_string(),
-                    context: line_context(&text, range.start),
-                    range,
-                });
-            }
-        }
-        out
+                found
+            })
+            .collect()
     }
 
     // ---- Writing links -------------------------------------------------
@@ -1086,6 +1106,57 @@ pub(crate) mod tests {
             index.link_path("A/Unique Note.md", "B/Dup.md", w),
             "A/Unique Note"
         );
+    }
+
+    #[test]
+    fn backlinks_find_every_way_of_linking() {
+        let (_dir, index) = temp_vault(&[
+            ("People/My Note.md", "Self: [[#Top]] and [[My Note]]"),
+            ("pic.png", ""),
+            (
+                "A.md",
+                "[[My Note]] [[my note]] [[People/My Note]] [[My Note.md]] [[My Note#Top]] \
+                 ![[My Note]] [[My Note|alias]] [[ My Note ]] [[pic.png]] [[Other]]",
+            ),
+            (
+                "People/Sub/B.md",
+                "[[../My Note]] [x](../My%20Note.md) [y](/People/My%20Note.md)",
+            ),
+            (
+                "C.md",
+                "[z](People/My%20Note.md) [[People\\My Note]] [[Notes/My Note]]",
+            ),
+            ("Notes/My Note.md", "a different note with the same name"),
+        ]);
+        // The same as resolving every link in the vault.
+        for target in ["People/My Note.md", "Notes/My Note.md", "pic.png", "A.md"] {
+            let mut slow: Vec<(String, u32, usize)> = index
+                .notes()
+                .flat_map(|(source, note)| {
+                    note.links
+                        .iter()
+                        .filter(|l| !(source == target && l.target.is_empty()))
+                        .filter(|l| index.resolve_link(l, source).as_deref() == Some(target))
+                        .map(|l| (source.to_string(), l.line, l.range.start))
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+            let mut fast: Vec<(String, u32, usize)> = index
+                .backlinks(target)
+                .into_iter()
+                .flat_map(|b| {
+                    b.links
+                        .into_iter()
+                        .map(move |l| (b.source.clone(), l.line, l.range.start))
+                })
+                .collect();
+            slow.sort();
+            fast.sort();
+            assert_eq!(fast, slow, "{target}");
+        }
+        // A, B, C and the note itself (`[[My Note]]`; `[[#Top]]` doesn't count).
+        assert_eq!(index.backlinks("People/My Note.md").len(), 4);
+        assert!(index.backlinks("Nowhere.md").is_empty());
     }
 
     #[test]
