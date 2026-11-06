@@ -6,15 +6,30 @@ import { expect, type Page } from "@playwright/test";
 export async function openVault(page: Page, vault: string) {
   await page.goto("/");
   const pathInput = page.getByLabel("Vault path");
-  const switchButton = page.getByRole("button", { name: "Switch vault" });
-  await expect(pathInput.or(switchButton)).toBeVisible();
-  if (await switchButton.isVisible()) {
-    if ((await page.locator(".vault-name").getAttribute("title")) === vault) return;
-    await switchButton.click();
+  const vaultMenu = page.locator(".vault-name");
+  await expect(pathInput.or(vaultMenu)).toBeVisible();
+  if (await vaultMenu.isVisible()) {
+    if ((await vaultMenu.getAttribute("title")) === vault) return;
+    await switchVault(page);
   }
   await pathInput.fill(vault);
   await page.getByRole("button", { name: "Open", exact: true }).click();
   await expect(page.getByRole("tree", { name: "Files" })).toBeVisible();
+}
+
+/** Back to the welcome screen, through the menu on the vault's name. */
+export async function switchVault(page: Page) {
+  await page.locator(".vault-name").click();
+  await page.getByRole("menuitem", { name: "Switch vault…" }).click();
+}
+
+/** Opens the links panel beside the active tab. */
+export async function showLinks(page: Page) {
+  const toggle = page.locator(".dv-active-group .file-header").getByRole("button", {
+    name: "Links panel",
+  });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
 }
 
 /** Opens a file through the quick switcher. */

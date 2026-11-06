@@ -293,7 +293,7 @@ function commands(): Command[] {
     {
       id: "toggle-right",
       label: "Toggle links panel",
-      run: () => ui.toggleRightPanel(),
+      run: () => ws.toggleLinks(),
     },
     {
       id: "reveal-tree",

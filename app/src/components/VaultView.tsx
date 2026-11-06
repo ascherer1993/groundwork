@@ -1,15 +1,15 @@
 import {
-  ArrowLeftRight,
   CalendarDays,
+  ChevronDown,
+  ChevronsDownUp,
   Columns2,
   FilePlus,
   Files,
   FileText,
   FolderPlus,
   Hash,
+  Layers,
   ListTodo,
-  PanelRight,
-  Search,
   Settings,
   SquareTerminal,
   TextSearch,
@@ -32,7 +32,6 @@ import { useWorkspace, type View } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
 import { FileTree } from "./FileTree";
 import { InboxButton } from "./Inbox";
-import { LinksPanel } from "./LinksPanel";
 import { SearchPanel } from "./SearchPanel";
 import { checkSetupOnce } from "./SetupDialog";
 import { TagsPanel } from "./TagsPanel";
@@ -80,10 +79,9 @@ function ViewButton({ id, label, title, icon: Icon }: (typeof MAIN_VIEWS)[number
 
 /**
  * Across the top of the window (under the title bar on macOS, which is
- * transparent): the view, the links panel, settings. Drags the window.
+ * transparent): the view, the inbox, settings. Drags the window.
  */
-function TopBar({ notesShown, rightOpen }: { notesShown: boolean; rightOpen: boolean }) {
-  const linksKey = useKeyLabel("toggle-right");
+function TopBar() {
   const settingsKey = useKeyLabel("settings");
   return (
     <header className={`topbar${isTauri() ? " desktop" : ""}`} data-tauri-drag-region>
@@ -95,17 +93,6 @@ function TopBar({ notesShown, rightOpen }: { notesShown: boolean; rightOpen: boo
       </div>
       <span className="topbar-fill" data-tauri-drag-region />
       <InboxButton />
-      {notesShown && (
-        <button
-          className="icon"
-          aria-label="Toggle links panel"
-          title={withKey("Toggle links panel", linksKey)}
-          aria-pressed={rightOpen}
-          onClick={() => useUi.getState().toggleRightPanel()}
-        >
-          <PanelRight size={14} />
-        </button>
-      )}
       <button
         className="icon"
         aria-label="Settings"
@@ -118,12 +105,78 @@ function TopBar({ notesShown, rightOpen }: { notesShown: boolean; rightOpen: boo
   );
 }
 
+/** The vault's name, opening a menu of what applies to the whole vault. */
+function VaultMenu() {
+  const vault = useVault((s) => s.vault);
+  return (
+    <button
+      className="vault-name"
+      title={vault?.path}
+      aria-haspopup="menu"
+      onClick={(e) => {
+        const box = e.currentTarget.getBoundingClientRect();
+        useUi
+          .getState()
+          .showMenu(box.left, box.bottom + 2, [
+            { label: "Reveal in Finder", action: () => void api.reveal("").catch(notifyError) },
+            "separator",
+            { label: "Switch vault…", action: () => void useVault.getState().closeVault() },
+          ]);
+      }}
+    >
+      <span className="vault-name-text">{vault?.name}</span>
+      <ChevronDown size={12} aria-hidden="true" />
+    </button>
+  );
+}
+
+function notifyError(err: unknown) {
+  useUi.getState().notify(message(err));
+}
+
+/** Above the file tree: what makes and tidies files. */
+function FilesToolbar() {
+  const newNote = useWorkspace((s) => s.newNote);
+  const newNoteKey = useKeyLabel("new-note");
+  const anyOpen = useVault((s) => s.expanded.size > 0);
+  return (
+    <div className="panel-toolbar" role="toolbar" aria-label="Files">
+      <button
+        className="icon"
+        aria-label="New note"
+        title={withKey("New note", newNoteKey)}
+        onClick={() => void newNote()}
+      >
+        <FilePlus size={14} />
+      </button>
+      <button
+        className="icon"
+        aria-label="New folder"
+        title="New folder"
+        onClick={() => void newFolder()}
+      >
+        <FolderPlus size={14} />
+      </button>
+      <span className="panel-toolbar-fill" />
+      <button
+        className="icon"
+        aria-label="Collapse all"
+        title="Collapse all"
+        disabled={!anyOpen}
+        onClick={() => useVault.setState({ expanded: new Set() })}
+      >
+        <ChevronsDownUp size={14} />
+      </button>
+    </div>
+  );
+}
+
 const VIEWS: { id: SidebarView; label: string; icon: typeof Files }[] = [
   { id: "files", label: "Files", icon: Files },
   { id: "search", label: "Search", icon: TextSearch },
   { id: "tags", label: "Tags", icon: Hash },
   { id: "todos", label: "Todos", icon: ListTodo },
-  { id: "workspaces", label: "Workspaces", icon: SquareTerminal },
+  { id: "workspaces", label: "Workspaces", icon: Layers },
   { id: "tickets", label: "Tickets", icon: Ticket },
 ];
 
@@ -155,15 +208,9 @@ export function VaultView() {
   const sidebarView = useUi((s) => s.sidebarView);
   const vault = useVault((s) => s.vault);
   const tree = useVault((s) => s.tree);
-  const closeVault = useVault((s) => s.closeVault);
-  const newNote = useWorkspace((s) => s.newNote);
-  // The links panel is about notes, so it isn't shown beside terminals alone.
+  // The sidebar's tabs are about notes, so terminals alone show workspaces.
   const notesShown = useWorkspace((s) => s.view !== "terminal");
-  const rightOpen = useUi((s) => s.rightPanelOpen) && notesShown;
-  const setSwitcher = useUi((s) => s.setSwitcher);
-  const switcherKey = useKeyLabel("switcher");
   const dailyKey = useKeyLabel("daily-today");
-  const newNoteKey = useKeyLabel("new-note");
 
   useEffect(checkSetupOnce, []);
   useEffect(() => {
@@ -178,21 +225,11 @@ export function VaultView() {
 
   return (
     <div className="window">
-      <TopBar notesShown={notesShown} rightOpen={rightOpen} />
-      <div className={`vault${rightOpen ? " with-right" : ""}`}>
+      <TopBar />
+      <div className="vault">
         <aside className="sidebar">
           <header className="sidebar-header">
-            <span className="vault-name" title={vault?.path}>
-              {vault?.name}
-            </span>
-            <button
-              className="icon"
-              aria-label="Quick switcher"
-              title={withKey("Quick switcher", switcherKey)}
-              onClick={() => setSwitcher(true)}
-            >
-              <Search size={14} />
-            </button>
+            <VaultMenu />
             <button
               className="icon"
               aria-label="Today’s daily note"
@@ -201,30 +238,6 @@ export function VaultView() {
             >
               <CalendarDays size={14} />
             </button>
-            <button
-              className="icon"
-              aria-label="New note"
-              title={withKey("New note", newNoteKey)}
-              onClick={() => void newNote()}
-            >
-              <FilePlus size={14} />
-            </button>
-            <button
-              className="icon"
-              aria-label="New folder"
-              title="New folder"
-              onClick={() => void newFolder()}
-            >
-              <FolderPlus size={14} />
-            </button>
-            <button
-              className="icon"
-              aria-label="Switch vault"
-              title="Switch vault"
-              onClick={() => void closeVault()}
-            >
-              <ArrowLeftRight size={14} />
-            </button>
           </header>
           {notesShown ? (
             <>
@@ -232,6 +245,7 @@ export function VaultView() {
               <div className="sidebar-body" role="tabpanel">
                 {sidebarView === "files" && tree && (
                   <nav aria-label="File tree">
+                    <FilesToolbar />
                     <FileTree root={tree} />
                   </nav>
                 )}
@@ -252,11 +266,6 @@ export function VaultView() {
         <main className="content">
           <Workspace key={vault?.path} />
         </main>
-        {rightOpen && (
-          <aside className="right-panel" aria-label="Links">
-            <LinksPanel />
-          </aside>
-        )}
       </div>
     </div>
   );

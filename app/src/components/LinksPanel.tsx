@@ -36,17 +36,21 @@ function title(path: string) {
   return name.toLowerCase().endsWith(".md") ? displayName(name, "note").base : name;
 }
 
+/** Whether a tab showing `path` has links to show. */
+export function hasLinks(path: string): boolean {
+  return !!projectOfView(path) || !isViewPath(path);
+}
+
 /**
- * Backlinks, unlinked mentions and outgoing links of the active note. Other
- * files (pages, images) get their backlinks.
+ * Backlinks, unlinked mentions and outgoing links of the note a tab shows,
+ * beside it. Other files (pages, images) get their backlinks.
  */
-export function LinksPanel() {
-  const active = useWorkspace((s) => s.activePath);
+export function LinksPanel({ path: shown }: { path: string }) {
   // A project's view shows its overview note's links.
-  const project = projectOfView(active);
+  const project = projectOfView(shown);
   const overview = useTickets((s) => s.projects.find((p) => p.id === project)?.overview ?? null);
   // Other views (the todo board) have no links.
-  const path = project ? overview : isViewPath(active) ? null : active;
+  const path = project ? overview : isViewPath(shown) ? null : shown;
   const revision = useVault((s) => s.revision);
   const [data, setData] = useState<Data | null>(null);
 
@@ -71,7 +75,7 @@ export function LinksPanel() {
     };
   }, [path, revision]);
 
-  if (!path) return <p className="panel-empty muted">No file open.</p>;
+  if (!path) return <p className="panel-empty muted">No links here.</p>;
   // Still loading: stay blank rather than flash a wrong message.
   if (!data || data.path !== path) return null;
 

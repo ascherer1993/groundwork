@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { FIXTURE_VAULT as VAULT } from "./fixtures";
-import { expectFile, openVault, quickOpen } from "./helpers";
+import { expectFile, openVault, quickOpen, showLinks } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -168,6 +168,7 @@ test("embeds are live and size themselves; pages reload when edited", async ({ p
 
 test("a page's backlinks show in the links panel", async ({ page }) => {
   await quickOpen(page, "login-flow");
+  await showLinks(page);
   const backlinks = page.getByTestId("backlinks");
   await expect(backlinks.locator(".link-source")).toHaveText(["Acme", "Demo review"]);
   await expect(page.getByTestId("outgoing")).toHaveCount(0);

@@ -1,4 +1,4 @@
-import { CalendarDays } from "lucide-react";
+import { Columns3 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { TodoFilter } from "../api/generated/TodoFilter";
 import { TODO_BOARD } from "../lib/paths";
@@ -56,7 +56,7 @@ export function TodosPanel() {
           title="Open the todo board (a week by day)"
           onClick={(e) => useWorkspace.getState().open(TODO_BOARD, { newTab: e.metaKey })}
         >
-          <CalendarDays size={15} />
+          <Columns3 size={15} />
         </button>
       </div>
       <div ref={list} aria-label="Todos" role="region" />

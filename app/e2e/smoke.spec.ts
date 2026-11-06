@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { FIXTURE_VAULT } from "./fixtures";
-import { openVault } from "./helpers";
+import { openVault, switchVault } from "./helpers";
 
 // Tests share one backend, and later tests start from the state earlier ones leave.
 test.describe.configure({ mode: "serial" });
@@ -28,6 +28,17 @@ test("open a vault, browse the tree, read a note", async ({ page }) => {
     page.frameLocator(".page-frame").getByRole("heading", { name: "Login flow" }),
   ).toBeVisible();
 
+  // The Files toolbar folds the tree back up.
+  await page
+    .getByRole("toolbar", { name: "Files" })
+    .getByRole("button", { name: "Collapse all" })
+    .click();
+  await expect(tree.getByRole("treeitem", { name: "Projects", exact: true })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await expect(bundle).toHaveCount(0);
+
   // The backend keeps the vault open across reloads.
   await page.reload();
   await expect(tree.getByRole("treeitem", { name: "Welcome" })).toBeVisible();
@@ -35,7 +46,7 @@ test("open a vault, browse the tree, read a note", async ({ page }) => {
 
 test("switching vaults lists it under Recent", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Switch vault" }).click();
+  await switchVault(page);
   await expect(page.getByRole("heading", { name: "Recent" })).toBeVisible();
   // Every test file opens its own copy, all named `vault`; the latest is first.
   await page

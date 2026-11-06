@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, rmdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { FIXTURE_VAULT as VAULT } from "./fixtures";
-import { editor, expectFile, openVault, quickOpen, readNote } from "./helpers";
+import { editor, expectFile, openVault, quickOpen, readNote, showLinks } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -163,7 +163,10 @@ test("external edits reload into the open note", async ({ page }) => {
 
 test("backlinks panel lists linking notes and links mentions", async ({ page }) => {
   await quickOpen(page, "Jane Doe");
-  const backlinks = page.getByTestId("backlinks");
+  // Closed until asked for, then beside the note.
+  await expect(page.getByTestId("backlinks")).toHaveCount(0);
+  await showLinks(page);
+  const backlinks = page.locator(".dv-active-group .links-aside").getByTestId("backlinks");
   await expect(backlinks.getByRole("button", { name: "Welcome", exact: true })).toBeVisible();
   await expect(backlinks.getByRole("button", { name: "Acme", exact: true })).toBeVisible();
 
@@ -175,6 +178,16 @@ test("backlinks panel lists linking notes and links mentions", async ({ page }) 
   await row.getByRole("button", { name: "Link" }).click();
   await expectFile(VAULT, "Mention.md", (t) => t === "We should ask [[Jane Doe]].\n");
   await expect(backlinks.getByRole("button", { name: "Mention", exact: true })).toBeVisible();
+
+  // It stays open as the tab moves on, and follows it.
+  await backlinks.getByRole("button", { name: "Mention", exact: true }).click();
+  await expect(page.getByLabel("Note title")).toHaveValue("Mention");
+  await expect(
+    page.getByTestId("outgoing").getByRole("button", { name: "Jane Doe" }),
+  ).toBeVisible();
+  // ⇧⌘B closes it.
+  await page.keyboard.press("Meta+Shift+b");
+  await expect(page.getByTestId("backlinks")).toHaveCount(0);
 });
 
 test("renaming from the title updates links, and undo restores them", async ({ page }) => {

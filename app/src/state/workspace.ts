@@ -38,6 +38,8 @@ export interface PanelParams {
   focus?: FocusTarget;
   /** Focus the inline title (for freshly created notes). */
   editTitle?: boolean;
+  /** The links panel beside the file is open (closed by default). */
+  links?: boolean;
 }
 
 /** A terminal tab's params. */
@@ -128,6 +130,8 @@ interface WorkspaceState {
   ): Promise<void>;
   setMode(panelId: string, mode: ViewMode): void;
   toggleReading(): void;
+  /** Opens or closes the links panel beside a tab (the active one by default). */
+  toggleLinks(panelId?: string): void;
   back(panelId?: string): void;
   forward(panelId?: string): void;
   closeActive(): void;
@@ -485,6 +489,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       return;
     }
     get().setMode(panel.id, params.mode === "reading" ? "live" : "reading");
+  },
+
+  toggleLinks(panelId) {
+    const panel = panelId ? get().docks[NOTES]?.getPanel(panelId) : activeFile();
+    if (!panel) return;
+    const params = paramsOf(panel);
+    update(panel, { ...params, links: !params.links, focus: undefined, editTitle: false });
   },
 
   back(panelId) {

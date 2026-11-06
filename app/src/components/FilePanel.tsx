@@ -1,4 +1,12 @@
-import { AppWindow, ArrowLeft, ArrowRight, BookOpen, Code, PencilLine } from "lucide-react";
+import {
+  AppWindow,
+  ArrowLeft,
+  ArrowRight,
+  BookOpen,
+  Code,
+  PanelRight,
+  PencilLine,
+} from "lucide-react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
@@ -6,9 +14,10 @@ import type { FileContent } from "../api/generated/FileContent";
 import { vaultFileUrl } from "../lib/fileUrl";
 import { isPagePath, projectOfView, TODO_BOARD } from "../lib/paths";
 import { isImage } from "../markdown/syntax";
-import { useKeyLabel } from "../state/keys";
+import { useKeyLabel, withKey } from "../state/keys";
 import { message, useVault } from "../state/vault";
 import { type PanelParams, useWorkspace, type ViewMode } from "../state/workspace";
+import { hasLinks, LinksPanel } from "./LinksPanel";
 import { NoteView } from "./NoteView";
 import { PageView } from "./PageView";
 import { ProjectView } from "./ProjectView";
@@ -30,9 +39,9 @@ function isNote(path: string) {
   return path.toLowerCase().endsWith(".md");
 }
 
-/** One tab: header (history, breadcrumbs, mode) and the file's view. */
+/** One tab: header (history, breadcrumbs, mode, links) and the file's view, with its links beside it. */
 export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParams>) {
-  const { path, mode, back, forward, focus, editTitle } = params;
+  const { path, mode, back, forward, focus, editTitle, links } = params;
   const goBack = useWorkspace((s) => s.back);
   const goForward = useWorkspace((s) => s.forward);
   const setMode = useWorkspace((s) => s.setMode);
@@ -40,6 +49,9 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
   const page = isPagePath(path);
   const modes = note ? MODES : page ? PAGE_MODES : null;
   const toggleKey = useKeyLabel("toggle-reading");
+  const linksKey = useKeyLabel("toggle-right");
+  const toggleLinks = useWorkspace((s) => s.toggleLinks);
+  const linkable = hasLinks(path);
   const current = page && mode !== "source" ? "reading" : mode;
   const project = projectOfView(path);
   const [viewTitle, setViewTitle] = useState<string | null>(null);
@@ -103,18 +115,36 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
             ))}
           </div>
         )}
+        {linkable && (
+          <button
+            className={`icon${links ? " active" : ""}`}
+            aria-label="Links panel"
+            aria-pressed={!!links}
+            title={withKey("Links panel", linksKey)}
+            onClick={() => toggleLinks(panel.id)}
+          >
+            <PanelRight size={14} />
+          </button>
+        )}
       </header>
-      <div className="file-body">
-        {project ? (
-          <ProjectView id={project} setTitle={setTitle} />
-        ) : path === TODO_BOARD ? (
-          <TodoBoard />
-        ) : note ? (
-          <NoteView path={path} mode={mode} focus={focus} editTitle={editTitle} />
-        ) : page && mode !== "source" ? (
-          <PageView path={path} />
-        ) : (
-          <OtherFile path={path} />
+      <div className="file-main">
+        <div className="file-body">
+          {project ? (
+            <ProjectView id={project} setTitle={setTitle} />
+          ) : path === TODO_BOARD ? (
+            <TodoBoard />
+          ) : note ? (
+            <NoteView path={path} mode={mode} focus={focus} editTitle={editTitle} />
+          ) : page && mode !== "source" ? (
+            <PageView path={path} />
+          ) : (
+            <OtherFile path={path} />
+          )}
+        </div>
+        {links && linkable && (
+          <aside className="links-aside" aria-label="Links">
+            <LinksPanel path={path} />
+          </aside>
         )}
       </div>
     </article>

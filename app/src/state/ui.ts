@@ -70,7 +70,6 @@ interface UiState {
   switcherOpen: boolean;
   sidebarView: SidebarView;
   search: { query: string; /** Bumped to focus the search box. */ nonce: number };
-  rightPanelOpen: boolean;
   menu: { x: number; y: number; items: MenuEntry[] } | null;
   toast: Toast | null;
   dialog: Dialog | null;
@@ -91,7 +90,6 @@ interface UiState {
   settingsOpen: boolean;
   setSettingsOpen(open: boolean): void;
   closeSetup(): void;
-  toggleRightPanel(): void;
   showMenu(x: number, y: number, items: MenuEntry[]): void;
   closeMenu(): void;
   notify(message: string, action?: Toast["action"]): void;
@@ -108,7 +106,6 @@ export const useUi = create<UiState>((set) => ({
   switcherOpen: false,
   sidebarView: "files",
   search: { query: "", nonce: 0 },
-  rightPanelOpen: true,
   menu: null,
   toast: null,
   dialog: null,
@@ -131,7 +128,6 @@ export const useUi = create<UiState>((set) => ({
   closeSetup: () => set({ setupOpen: false }),
   setSettingsOpen: (settingsOpen) =>
     set(settingsOpen ? { settingsOpen, palette: null, switcherOpen: false } : { settingsOpen }),
-  toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
   showMenu: (x, y, items) => set({ menu: { x, y, items } }),
   closeMenu: () => set({ menu: null }),
   notify: (message, action) => set({ toast: { id: ++toastId, message, action } }),
