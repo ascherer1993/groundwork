@@ -5,7 +5,16 @@ setup: ## Install JS dependencies and the Playwright browser (Rust comes from ru
 
 # `make dev` runs the app through scripts/dev-app, which starts it inside a
 # "Groundwork Dev.app" bundle so macOS shows its notifications.
-HOST := $(shell rustc -vV | sed -n 's/^host: //p')
+HOST := $(shell rustc -vV 2>/dev/null | sed -n 's/^host: //p')
+ifeq ($(HOST),)
+ifneq ($(MAKECMDGOALS),setup)
+ifneq ($(wildcard $(HOME)/.cargo/bin/cargo),)
+$(error Rust is installed but not on this terminal's PATH: run "exec zsh" (or open a new terminal))
+else
+$(error No Rust found. Install it with rustup (https://rustup.rs), then open a new terminal)
+endif
+endif
+endif
 
 # An Intel Rust (Homebrew's, on a Mac whose Homebrew is the Intel one) builds
 # an Intel app that runs under Rosetta. Rust from rustup is native.
