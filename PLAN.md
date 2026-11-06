@@ -823,6 +823,11 @@ Things built but not yet tried for real, to come back to:
 - MCP server wrapper
 - Real Jira API integration (status and title sync)
 - Graph view, themes, plugin system, other agents (Codex…), multi-repo tickets (one worktree per repo)
+- Workspaces and projects (discussed 2026-11-05; waiting until the user has seen how work is organised at the new job, since one repo per ticket and several projects per ticket may be enough):
+  - Attaching an existing workspace to a note or project ("Attach to note…", "Choose workspace…"); today a note's workspace is always a new one, and ⌘T's workspaces belong to no note.
+  - Where a code project's own workspace starts: the main checkout rather than the project's vault folder.
+  - Badges for a ticket's other projects in the Workspaces view (§5.5 describes them; the view only uses the home project).
+  - Nested projects don't roll up: a parent project doesn't see its sub-projects' notes unless they list it in `projects:`.
 - A CSV viewer you can edit (a table, not text). Until then, only notes are editable in the app; pages, CSVs and other files open read-only. Pages can't write vault files either: data a page lets you change lives in its state (the fixture's `login-flow.page` shows the pattern).
 - Search over HTML pages; ghostty-web terminal renderer; other platforms
 
