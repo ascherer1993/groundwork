@@ -11,7 +11,7 @@ import { api } from "../api/client";
 import type { FileChange } from "../api/generated/FileChange";
 import type { TabInfo } from "../api/generated/TabInfo";
 import type { TerminalInfo } from "../api/generated/TerminalInfo";
-import { displayName, isPagePath, projectOfView } from "../lib/paths";
+import { displayName, isPagePath, projectOfView, TODO_BOARD } from "../lib/paths";
 import { splitTarget } from "../markdown/syntax";
 import { message, newNoteFolder, onVaultChange, useVault } from "./vault";
 import { useUi } from "./ui";
@@ -163,6 +163,7 @@ function titleOf(path: string): string {
   // A view names itself once it's loaded (`ProjectView`).
   const project = projectOfView(path);
   if (project) return project;
+  if (path === TODO_BOARD) return "Todo board";
   const name = path.slice(path.lastIndexOf("/") + 1);
   const ext = name.toLowerCase().endsWith(".md") ? "" : null;
   return ext === null ? name : displayName(name, "note").base;

@@ -23,6 +23,7 @@ import type { StrayWorktree } from "./generated/StrayWorktree";
 import type { Ticket } from "./generated/Ticket";
 import type { TicketFilter } from "./generated/TicketFilter";
 import type { CreatedNote } from "./generated/CreatedNote";
+import type { Board } from "./generated/Board";
 import type { DayView } from "./generated/DayView";
 import type { Backlinks } from "./generated/Backlinks";
 import type { FileContent } from "./generated/FileContent";
@@ -94,6 +95,7 @@ interface Results {
   "search.query": SearchResult[];
   "todo.list": Todo[];
   "todo.day": DayView;
+  "todo.board": Board;
   "todo.update": null;
   "todo.add": string;
   "file.rename": RenameOutcome;
@@ -230,6 +232,9 @@ export const api = {
   useVaultForCli: () => call("setup.useVault"),
   todos: (filter: TodoFilter = { tags: [] }) => call("todo.list", { filter }),
   todoDay: (path: string, own?: [number, number]) => call("todo.day", { path, own }),
+  /** `days` days from `from` (`YYYY-MM-DD`). */
+  todoBoard: (from: string, days: number, filter?: TodoFilter) =>
+    call("todo.board", { from, days, filter }),
   updateTodo: (id: string, change: TaskChange) => call("todo.update", { id, change }),
   addTodo: (todo: { path?: string; text: string; due?: string; priority?: number }) =>
     call("todo.add", todo),

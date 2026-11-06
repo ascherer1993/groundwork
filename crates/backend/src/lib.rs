@@ -365,6 +365,15 @@ impl Backend {
 
             Request::TodoList { filter } => to_value(self.session()?.todos(&filter)),
             Request::TodoDay { path, own } => to_value(self.session()?.todo_day(&path, own)),
+            Request::TodoBoard { from, days, filter } => {
+                let from = from.parse().map_err(|_| {
+                    ApiError::new(ErrorCode::BadRequest, format!("not a date: {from}"))
+                })?;
+                to_value(
+                    self.session()?
+                        .todo_board(from, days, &filter.unwrap_or_default()),
+                )
+            }
             Request::TodoUpdate { id, change } => {
                 let changes = self.session()?.update_task(&id, &change)?;
                 self.emit(changes);

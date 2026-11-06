@@ -190,6 +190,51 @@ impl Session {
     }
 }
 
+/// Every event dated `from` to `to` (`YYYY-MM-DD`, inclusive), outside
+/// `templates`, by date and time (untimed first), with the people it links to.
+pub(crate) fn events_between(
+    index: &Index,
+    templates: &str,
+    from: &str,
+    to: &str,
+) -> Vec<ProjectEvent> {
+    let mut events: Vec<ProjectEvent> = index
+        .notes()
+        .filter(|(path, note)| {
+            !path.starts_with(templates) && is_event(path, note.frontmatter.as_ref())
+        })
+        .filter_map(|(path, note)| {
+            let fm = note.frontmatter.as_ref();
+            let date = event_date(path, fm)?;
+            (from <= date.as_str() && date.as_str() <= to).then(|| ProjectEvent {
+                path: path.to_string(),
+                title: event_title(path),
+                date: Some(date),
+                time: fm_str(fm, "time"),
+                people: linked_people(index, path),
+            })
+        })
+        .collect();
+    events.sort_by(|a, b| (&a.date, &a.time, &a.title).cmp(&(&b.date, &b.time, &b.title)));
+    events
+}
+
+/// The people a note links to, by name, each once.
+fn linked_people(index: &Index, path: &str) -> Vec<String> {
+    let people: BTreeSet<String> = index
+        .outgoing(path)
+        .into_iter()
+        .filter_map(|l| l.resolved)
+        .filter(|r| {
+            r != path
+                && index
+                    .note(r)
+                    .is_some_and(|n| is_person(r, n.frontmatter.as_ref()))
+        })
+        .collect();
+    people.iter().map(|p| file_stem(p).to_string()).collect()
+}
+
 /// The people a note links to (in its text or frontmatter), each once.
 fn person_links(
     index: &Index,

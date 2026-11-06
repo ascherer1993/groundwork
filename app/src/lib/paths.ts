@@ -26,7 +26,8 @@ export function ancestors(path: string): string[] {
 
 /**
  * Tabs that show a view rather than a file have a path of their own, so they
- * take part in a tab's history like files: `project:<id>` is a project view.
+ * take part in a tab's history like files: `project:<id>` is a project view,
+ * `todos:board` the todo board.
  */
 const PROJECT_VIEW = "project:";
 
@@ -39,7 +40,9 @@ export function projectOfView(path: string | null | undefined): string | null {
   return path?.startsWith(PROJECT_VIEW) ? path.slice(PROJECT_VIEW.length) : null;
 }
 
+export const TODO_BOARD = "todos:board";
+
 /** A view's path, not a file's. */
 export function isViewPath(path: string | null | undefined): boolean {
-  return projectOfView(path) !== null;
+  return projectOfView(path) !== null || path === TODO_BOARD;
 }

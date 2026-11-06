@@ -1,9 +1,12 @@
+import { CalendarDays } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { TodoFilter } from "../api/generated/TodoFilter";
+import { TODO_BOARD } from "../lib/paths";
 import { mountTodos } from "../markdown/todos";
+import { useWorkspace } from "../state/workspace";
 
 /** `#tag`, `path:…` and `p1` narrow the list; other words match the text. */
-function filterOf(query: string): TodoFilter {
+export function filterOf(query: string): TodoFilter {
   const filter: TodoFilter = { tags: [] };
   const words: string[] = [];
   for (const word of query.trim().split(/\s+/).filter(Boolean)) {
@@ -36,15 +39,26 @@ export function TodosPanel() {
 
   return (
     <div className="todos-panel">
-      <input
-        className="search-input"
-        type="search"
-        aria-label="Filter todos"
-        placeholder="Filter…  #tag  path:Projects  p1"
-        spellCheck={false}
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
+      <div className="todos-panel-head">
+        <input
+          className="search-input"
+          type="search"
+          aria-label="Filter todos"
+          placeholder="Filter…  #tag  path:Projects  p1"
+          spellCheck={false}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <button
+          type="button"
+          className="icon"
+          aria-label="Open the todo board"
+          title="Open the todo board (a week by day)"
+          onClick={(e) => useWorkspace.getState().open(TODO_BOARD, { newTab: e.metaKey })}
+        >
+          <CalendarDays size={15} />
+        </button>
+      </div>
       <div ref={list} aria-label="Todos" role="region" />
     </div>
   );

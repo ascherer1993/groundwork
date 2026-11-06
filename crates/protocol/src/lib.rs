@@ -289,6 +289,16 @@ pub enum Request {
         #[ts(optional)]
         own: Option<[u32; 2]>,
     },
+    /// → `Board`: `days` days from `from` (`YYYY-MM-DD`): each day's events,
+    /// todos due and todos done; overdue ones on today. `filter` narrows the
+    /// todos, like `todo.list`'s, less its status and due date.
+    #[serde(rename = "todo.board")]
+    TodoBoard {
+        from: String,
+        days: u32,
+        #[ts(optional)]
+        filter: Option<TodoFilter>,
+    },
     /// → `null`: changes a todo where it lives. Conflict if it changed since listing.
     #[serde(rename = "todo.update")]
     TodoUpdate { id: String, change: TaskChange },

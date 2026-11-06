@@ -57,6 +57,7 @@ export const KEY_COMMANDS: KeyCommand[] = [
   { id: "undo-file", label: "Undo the last file change", group: "General", key: "Cmd+Z" },
   { id: "new-note", label: "New note", group: "Notes", key: "Cmd+N" },
   { id: "project-view", label: "Open a project’s view…", group: "Notes", key: null },
+  { id: "todo-board", label: "Open the todo board", group: "Notes", key: "Shift+Cmd+T" },
   { id: "daily-today", label: "Open today’s daily note", group: "Notes", key: "Shift+Cmd+D" },
   { id: "toggle-reading", label: "Toggle reading view", group: "Notes", key: "Cmd+E" },
   { id: "split-right", label: "Split right", group: "Notes", key: "Cmd+\\" },

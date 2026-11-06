@@ -2202,6 +2202,232 @@ button.link-button:hover:not(:disabled) {
   color: var(--text-faint);
 }
 
+/* Todo board */
+
+.todo-board {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100%;
+  overflow: auto;
+  padding: 20px 20px 24px;
+}
+
+.board-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.board-head h1 {
+  margin: 0;
+  font-size: 22px;
+  color: var(--text-heading);
+}
+
+.board-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.board-filter {
+  flex: 0 1 260px;
+  min-width: 140px;
+  margin-left: auto;
+}
+
+.board-days {
+  display: grid;
+  /* All seven fit beside both sidebars on a laptop (about 900px); narrower scrolls. */
+  grid-template-columns: repeat(7, minmax(112px, 1fr));
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+  overflow-x: auto;
+}
+
+.board-day {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 260px;
+  padding: 8px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.board-day.is-past {
+  background: var(--bg-sidebar);
+}
+
+.board-day.is-today {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.board-day.is-drop-target {
+  background: var(--accent-soft);
+}
+
+.board-day-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.board-weekday {
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.board-date {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-heading);
+}
+
+.board-day.is-today .board-weekday,
+.board-day.is-today .board-date {
+  color: var(--accent);
+}
+
+.board-events,
+.board-todos {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.board-event {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.board-event:hover {
+  background: var(--selection);
+}
+
+.board-event svg {
+  flex: none;
+  align-self: center;
+  color: var(--accent);
+}
+
+.board-event-time {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.board-event-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.board-todo {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 5px;
+  font-size: 13px;
+}
+
+.board-todo[draggable="true"] {
+  cursor: grab;
+}
+
+.board-todo:hover {
+  background: var(--bg-hover);
+}
+
+.board-todo-body {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.board-todo.is-closed .todo-text {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.board-todo .todo-text a.internal-link {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.board-todo .todo-source {
+  padding: 0;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.board-todo .todo-source:hover {
+  color: var(--link);
+  text-decoration: underline;
+}
+
+.board-empty {
+  margin: 0 4px;
+  font-size: 12px;
+}
+
+.board-add {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.board-add:hover,
+.board-add:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.board-add-field {
+  margin-top: auto;
+  font-size: 13px;
+}
+
+.todos-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.todos-panel-head .search-input {
+  flex: 1;
+  min-width: 0;
+}
+
 /* Project view */
 
 .project-view {

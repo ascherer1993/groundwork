@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import type { Backlinks } from "../api/generated/Backlinks";
 import type { Mention } from "../api/generated/Mention";
 import type { OutgoingLink } from "../api/generated/OutgoingLink";
-import { displayName, projectOfView } from "../lib/paths";
+import { displayName, isViewPath, projectOfView } from "../lib/paths";
 import { useTickets } from "../state/tickets";
 import { useUi } from "../state/ui";
 import { message, useVault } from "../state/vault";
@@ -45,7 +45,8 @@ export function LinksPanel() {
   // A project's view shows its overview note's links.
   const project = projectOfView(active);
   const overview = useTickets((s) => s.projects.find((p) => p.id === project)?.overview ?? null);
-  const path = project ? overview : active;
+  // Other views (the todo board) have no links.
+  const path = project ? overview : isViewPath(active) ? null : active;
   const revision = useVault((s) => s.revision);
   const [data, setData] = useState<Data | null>(null);
 

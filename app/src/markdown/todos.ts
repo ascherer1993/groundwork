@@ -131,6 +131,11 @@ function noteTitle(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/i, "");
 }
 
+/** Where a todo lives, for a link to it: "from Nov 3" (a daily note's) or the note's name. */
+export function todoSource(todo: Todo): string {
+  return todo.daily ? `from ${shortDate(todo.daily)}` : noteTitle(todo.path);
+}
+
 const ICON_CALENDAR = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>`;
 const ICON_X = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>`;
 

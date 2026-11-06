@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { FileContent } from "../api/generated/FileContent";
 import { vaultFileUrl } from "../lib/fileUrl";
-import { isPagePath, projectOfView } from "../lib/paths";
+import { isPagePath, projectOfView, TODO_BOARD } from "../lib/paths";
 import { isImage } from "../markdown/syntax";
 import { useKeyLabel } from "../state/keys";
 import { message, useVault } from "../state/vault";
@@ -12,6 +12,7 @@ import { type PanelParams, useWorkspace, type ViewMode } from "../state/workspac
 import { NoteView } from "./NoteView";
 import { PageView } from "./PageView";
 import { ProjectView } from "./ProjectView";
+import { TodoBoard } from "./TodoBoard";
 
 const MODES: { mode: ViewMode; label: string; Icon: typeof BookOpen }[] = [
   { mode: "live", label: "Live preview", Icon: PencilLine },
@@ -70,7 +71,12 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
           <ArrowRight size={14} />
         </button>
         <nav className="crumbs" aria-label="Path">
-          {(project ? ["Project", viewTitle ?? project] : path.split("/")).map((part, i, parts) => (
+          {(project
+            ? ["Project", viewTitle ?? project]
+            : path === TODO_BOARD
+              ? ["Todo board"]
+              : path.split("/")
+          ).map((part, i, parts) => (
             <span key={i} className={i === parts.length - 1 ? "crumb current" : "crumb"}>
               {i === parts.length - 1 && note ? part.replace(/\.md$/i, "") : part}
             </span>
@@ -101,6 +107,8 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
       <div className="file-body">
         {project ? (
           <ProjectView id={project} setTitle={setTitle} />
+        ) : path === TODO_BOARD ? (
+          <TodoBoard />
         ) : note ? (
           <NoteView path={path} mode={mode} focus={focus} editTitle={editTitle} />
         ) : page && mode !== "source" ? (

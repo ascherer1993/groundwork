@@ -6,7 +6,7 @@ import { editorFor } from "../editor/active";
 import { insertRendered } from "../editor/templates";
 import { EDITOR_COMMANDS } from "../editor/commands";
 import { EditorView } from "@codemirror/view";
-import { isViewPath } from "./paths";
+import { isViewPath, TODO_BOARD } from "./paths";
 import { formDialog, type PaletteItem, promptDialog, useUi } from "../state/ui";
 import { message, newNoteFolder, useVault } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
@@ -177,6 +177,7 @@ function commands(): Command[] {
     { id: "files", label: "Show files", run: () => ui.setSidebarView("files") },
     { id: "tags", label: "Show tags", run: () => ui.setSidebarView("tags") },
     { id: "todos", label: "Show todos", run: () => ui.setSidebarView("todos") },
+    { id: "todo-board", label: "Open the todo board", run: () => ws.open(TODO_BOARD) },
     { id: "daily-today", label: "Open today’s daily note", run: openToday },
     {
       id: "toggle-reading",
