@@ -836,6 +836,11 @@ input {
   color: var(--text);
 }
 
+/* Todos run long: room for one with a date and a priority. */
+.dialog:has(.dialog-todo) {
+  width: min(560px, calc(100vw - 32px));
+}
+
 .switcher-hint {
   margin-left: auto;
   color: var(--text-faint);

@@ -61,6 +61,9 @@ export function todoField(
         EditorView.updateListener.of((u) => {
           if (u.docChanged) opts.onChange?.(u.state.doc.toString());
         }),
+        // Long todos wrap onto more lines rather than scrolling sideways
+        // (where a scroll bar would cover the text).
+        EditorView.lineWrapping,
         placeholder(opts.placeholder),
         popupTheme,
         EditorView.contentAttributes.of({ "aria-label": opts.label, role: "textbox" }),
@@ -79,7 +82,8 @@ export function todoField(
             caretColor: "var(--accent)",
             fontFamily: "var(--font-ui)",
           },
-          "&.cm-editor .cm-line": { padding: "0" },
+          // Room for the 📅 and priority emoji, so they don't push the line taller.
+          "&.cm-editor .cm-line": { padding: "0", lineHeight: "1.5" },
           "&.cm-editor .cm-placeholder": { color: "var(--text-faint)" },
         }),
       ],
