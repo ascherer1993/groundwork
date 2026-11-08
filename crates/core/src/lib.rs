@@ -27,6 +27,7 @@ pub mod search;
 pub mod session;
 pub mod settings;
 pub mod setup;
+pub mod subnotes;
 pub mod template;
 #[cfg(test)]
 mod test_vault;

@@ -1,5 +1,12 @@
-import { ChevronDown, ExternalLink, GitBranch, LayoutList } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  ChevronDown,
+  CornerLeftUp,
+  ExternalLink,
+  FileText,
+  GitBranch,
+  LayoutList,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { Action } from "../api/generated/Action";
 import type { GitState } from "../api/generated/GitState";
@@ -10,7 +17,10 @@ import {
   runAction,
   useTickets,
 } from "../state/tickets";
+import { subnoteFamily } from "../lib/subnotes";
 import { useUi } from "../state/ui";
+import { useVault } from "../state/vault";
+import { useWorkspace } from "../state/workspace";
 
 function gitSummary(git: GitState): { text: string; warn: boolean } {
   const parts: string[] = [];
@@ -23,7 +33,8 @@ function gitSummary(git: GitState): { text: string; warn: boolean } {
 
 /**
  * Above a ticket's note: its key, status and git state, actions, and close
- * or restore. Above a project's overview note: its project view.
+ * or restore. Above a project's overview note: its project view. Above a
+ * subnote, the note it's under; above a note with subnotes, its subnotes.
  */
 export function NoteBar({ path }: { path: string }) {
   const ticket = useTickets((s) => s.tickets.find((t) => t.path === path));
@@ -31,6 +42,10 @@ export function NoteBar({ path }: { path: string }) {
   const [git, setGit] = useState<GitState | null>(null);
   const [actions, setActions] = useState<Action[]>([]);
   const active = !!ticket && ticket.status !== "closed";
+  const tree = useVault((s) => s.tree);
+  const family = useMemo(() => subnoteFamily(tree, path), [tree, path]);
+  const openNote = (target: string, e: React.MouseEvent) =>
+    useWorkspace.getState().open(target, { newTab: e.metaKey || e.ctrlKey });
 
   const isTicket = !!ticket;
   const worktreePath = ticket?.worktreePath;
@@ -60,7 +75,7 @@ export function NoteBar({ path }: { path: string }) {
     };
   }, [path, isTicket, worktreePath, active]);
 
-  if (!ticket && !project) return null;
+  if (!ticket && !project && !family.parent && !family.subnotes.length) return null;
   const quick = actions.filter((a) => a.id === "open-ticket" || a.id === "open-vscode");
   const summary = git?.exists ? gitSummary(git) : null;
 
@@ -74,7 +89,21 @@ export function NoteBar({ path }: { path: string }) {
   };
 
   return (
-    <div className="note-bar" role="toolbar" aria-label={ticket ? "Ticket" : "Project"}>
+    <div
+      className="note-bar"
+      role="toolbar"
+      aria-label={ticket ? "Ticket" : project ? "Project" : "Subnotes"}
+    >
+      {family.parent && (
+        <button
+          type="button"
+          className="note-bar-button subnote-parent"
+          title="The note this is a subnote of"
+          onClick={(e) => openNote(family.parent!.node.path, e)}
+        >
+          <CornerLeftUp size={12} /> {family.parent.node.name.replace(/\.md$/i, "")}
+        </button>
+      )}
       {ticket && (
         <>
           {ticket.key && <span className="ticket-key">{ticket.key}</span>}
@@ -97,6 +126,17 @@ export function NoteBar({ path }: { path: string }) {
         </>
       )}
       <span className="note-bar-spacer" />
+      {family.subnotes.map((sub) => (
+        <button
+          key={sub.node.path}
+          type="button"
+          className="note-bar-button"
+          title={`Subnote: ${sub.node.name.replace(/\.md$/i, "")}`}
+          onClick={(e) => openNote(sub.node.path, e)}
+        >
+          <FileText size={12} /> {sub.key}
+        </button>
+      ))}
       {project && (
         <button
           type="button"

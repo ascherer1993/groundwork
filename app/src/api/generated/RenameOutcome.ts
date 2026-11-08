@@ -8,4 +8,8 @@ updatedNotes: Array<string>, updatedLinks: number,
 /**
  * Notes that changed on disk mid-rename and were left alone.
  */
-skippedNotes: Array<string>, };
+skippedNotes: Array<string>, 
+/**
+ * Where the note's subnotes went: they move with it.
+ */
+subnotes: Array<string>, };

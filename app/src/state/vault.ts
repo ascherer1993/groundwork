@@ -6,6 +6,7 @@ import type { LinkSettings } from "../api/generated/LinkSettings";
 import type { RecentVault } from "../api/generated/RecentVault";
 import type { TreeNode } from "../api/generated/TreeNode";
 import type { VaultInfo } from "../api/generated/VaultInfo";
+import { subnoteFamily } from "../lib/subnotes";
 
 type Status = "loading" | "welcome" | "vault";
 
@@ -24,6 +25,8 @@ interface VaultState {
   revision: number;
   /** Folder paths expanded in the file tree. */
   expanded: Set<string>;
+  /** Notes whose subnotes are folded away in the file tree (shown by default). */
+  folded: Set<string>;
 
   init(): Promise<void>;
   openVault(path: string): Promise<void>;
@@ -31,6 +34,7 @@ interface VaultState {
   forgetVault(path: string): Promise<void>;
   refresh(): Promise<void>;
   toggleFolder(path: string, open?: boolean): void;
+  toggleSubnotes(path: string): void;
   revealInTree(path: string): void;
 }
 
@@ -61,6 +65,7 @@ export const useVault = create<VaultState>((set, get) => ({
   },
   revision: 0,
   expanded: new Set(),
+  folded: new Set(),
 
   async init() {
     try {
@@ -86,7 +91,7 @@ export const useVault = create<VaultState>((set, get) => ({
   async openVault(path) {
     try {
       const vault = await api.openVault(path);
-      set({ vault, status: "vault", error: null, expanded: new Set() });
+      set({ vault, status: "vault", error: null, expanded: new Set(), folded: new Set() });
       await get().refresh();
     } catch (err) {
       set({ error: message(err), recent: await api.recentVaults().catch(() => get().recent) });
@@ -130,11 +135,23 @@ export const useVault = create<VaultState>((set, get) => ({
     set({ expanded });
   },
 
+  toggleSubnotes(path) {
+    const folded = new Set(get().folded);
+    if (!folded.delete(path)) folded.add(path);
+    set({ folded });
+  },
+
   revealInTree(path) {
     const parts = path.split("/");
     const expanded = new Set(get().expanded);
     for (let i = 1; i < parts.length; i++) expanded.add(parts.slice(0, i).join("/"));
-    set({ expanded });
+    // A subnote shows when the notes it's under are unfolded.
+    const folded = new Set(get().folded);
+    for (let p = subnoteFamily(get().tree, path).parent; p;) {
+      folded.delete(p.node.path);
+      p = subnoteFamily(get().tree, p.node.path).parent;
+    }
+    set({ expanded, folded });
   },
 }));
 

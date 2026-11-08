@@ -21,6 +21,7 @@ import { hasLinks, LinksPanel } from "./LinksPanel";
 import { NoteView } from "./NoteView";
 import { PageView } from "./PageView";
 import { ProjectView } from "./ProjectView";
+import { ResizeHandle } from "./ResizeHandle";
 import { TodoBoard } from "./TodoBoard";
 
 const MODES: { mode: ViewMode; label: string; Icon: typeof BookOpen }[] = [
@@ -142,9 +143,12 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
           )}
         </div>
         {links && linkable && (
-          <aside className="links-aside" aria-label="Links">
-            <LinksPanel path={path} />
-          </aside>
+          <>
+            <ResizeHandle panel="links" className="links-resize" />
+            <aside className="links-aside" aria-label="Links">
+              <LinksPanel path={path} />
+            </aside>
+          </>
         )}
       </div>
     </article>

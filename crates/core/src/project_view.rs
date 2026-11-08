@@ -12,6 +12,7 @@ use serde_json::Value;
 use ts_rs::TS;
 
 use crate::index::Index;
+use crate::subnotes;
 use crate::template::TemplateSettings;
 use crate::tickets::{ProjectInfo, file_stem, fm_str, note_projects_in};
 use crate::{CoreError, Result, Session};
@@ -67,11 +68,13 @@ fn folder_of(path: &str) -> &str {
     path.rsplit_once('/').map_or("", |(f, _)| f)
 }
 
-fn is_event(path: &str, fm: Option<&Value>) -> bool {
+/// A note's own `type` makes it an event; so does its folder, unless it's a
+/// subnote (a meeting's transcript is part of the meeting, not another one).
+fn is_event(index: &Index, path: &str, fm: Option<&Value>) -> bool {
     let folder = folder_of(path).rsplit('/').next().unwrap_or("");
     matches!(note_type(fm).as_str(), "event" | "meeting")
-        || path.starts_with("Events/")
-        || folder.eq_ignore_ascii_case("meetings")
+        || ((path.starts_with("Events/") || folder.eq_ignore_ascii_case("meetings"))
+            && subnotes::parent_of(index, path).is_none())
 }
 
 pub(crate) fn is_person(path: &str, fm: Option<&Value>) -> bool {
@@ -151,7 +154,7 @@ impl Session {
         let mut events = Vec::new();
         for (path, fm) in members {
             let linked = person_links(&index, path, &people);
-            let event = is_event(path, fm).then(|| ProjectEvent {
+            let event = is_event(&index, path, fm).then(|| ProjectEvent {
                 path: path.to_string(),
                 title: event_title(path),
                 date: event_date(path, fm),
@@ -201,7 +204,7 @@ pub(crate) fn events_between(
     let mut events: Vec<ProjectEvent> = index
         .notes()
         .filter(|(path, note)| {
-            !path.starts_with(templates) && is_event(path, note.frontmatter.as_ref())
+            !path.starts_with(templates) && is_event(index, path, note.frontmatter.as_ref())
         })
         .filter_map(|(path, note)| {
             let fm = note.frontmatter.as_ref();

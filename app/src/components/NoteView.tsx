@@ -294,7 +294,9 @@ export async function renameWithUndo(from: string, to: string): Promise<boolean>
       ? ` (${outcome.skippedNotes.length} skipped: changed during rename)`
       : "";
     const verb = folderOf(from) === folderOf(to) ? "Renamed" : "Moved";
-    ui.notify(`${verb} “${titleOf(from)}”${detail}${skipped}`, {
+    const subs = outcome.subnotes.length;
+    const withSubs = subs ? ` with its ${subs === 1 ? "subnote" : `${subs} subnotes`}` : "";
+    ui.notify(`${verb} “${titleOf(from)}”${withSubs}${detail}${skipped}`, {
       label: "Undo",
       run: () => void undoLast(),
     });

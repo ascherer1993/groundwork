@@ -71,16 +71,19 @@ test("a project's view lists its events, with search, filters and sort", async (
     .click();
   await expect(page.locator(".notes-side .dv-tab.dv-active-tab")).toContainText("Kickoff");
 
-  // The tree lists it in the project's folder, right under the overview note.
+  // The tree lists it in the project's folder, as a subnote of the overview note.
   const tree = page.getByRole("tree", { name: "Files" });
   const acme = tree.getByRole("treeitem", { name: "Acme", exact: true }).first();
-  await expect
-    .poll(() =>
-      acme
-        .locator(":scope > ul > li")
-        .evaluateAll((items) => items.map((i) => i.getAttribute("aria-label"))),
-    )
-    .toEqual(["demos", "Meetings", "Work", "Acme", "Acme project view"]);
+  const labels = (item: typeof acme) =>
+    item
+      .locator(":scope > ul > li")
+      .evaluateAll((items) => items.map((i) => i.getAttribute("aria-label")));
+  await expect.poll(() => labels(acme)).toEqual(["demos", "Meetings", "Work", "Acme"]);
+  const overview = acme.getByRole("treeitem", { name: "Acme", exact: true });
+  await expect.poll(() => labels(overview)).toEqual(["Acme project view"]);
+  await expect(tree.getByRole("treeitem", { name: "Acme project view" })).toHaveText(
+    "project view",
+  );
   await tree.getByRole("treeitem", { name: "Acme project view" }).click();
   await expect(view(page).getByRole("heading", { name: "Acme" })).toBeVisible();
   await expect(tree.getByRole("treeitem", { name: "Acme project view" })).toHaveAttribute(

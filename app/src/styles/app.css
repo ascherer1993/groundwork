@@ -195,8 +195,10 @@ input {
 }
 
 .sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
@@ -343,6 +345,25 @@ input {
   color: var(--text-faint);
 }
 
+/* Subnotes (`Note.transcript`), listed under their note by their key alone. */
+.subnote-key {
+  color: var(--text-muted);
+}
+
+.tree-row.selected .subnote-key {
+  color: var(--text);
+}
+
+/* A note's chevron folds its subnotes. */
+.chevron[role="button"] {
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.chevron[role="button"]:hover {
+  color: var(--text);
+}
+
 /* Workspace (dockview) */
 
 .content {
@@ -483,7 +504,7 @@ input {
 .links-aside {
   flex: none;
   width: var(--right-width);
-  max-width: 45%;
+  max-width: 60%;
   overflow: auto;
   padding: 10px 6px 16px;
   border-left: 1px solid var(--border);
@@ -1279,6 +1300,40 @@ button.danger-button {
 
 .side-divider:hover {
   background: linear-gradient(var(--accent), var(--accent)) center / 1px 100% no-repeat;
+}
+
+/* The edge of a side panel, dragged to resize it (ResizeHandle). */
+.resize-handle {
+  z-index: 3;
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.resize-handle:hover,
+.resize-handle:focus-visible,
+.resizing .resize-handle {
+  outline: none;
+  background: linear-gradient(var(--accent), var(--accent)) center / 2px 100% no-repeat;
+}
+
+.sidebar-resize {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+}
+
+/* Between the note and its links panel, over the panel's border. */
+.links-resize {
+  flex: none;
+  margin: 0 -4px 0 -3px;
+}
+
+/* While dragging: no text selection, and the resize cursor everywhere. */
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .area {

@@ -16,6 +16,7 @@ import type { NodeKind } from "../api/generated/NodeKind";
 import type { TreeNode } from "../api/generated/TreeNode";
 import type { ProjectInfo } from "../api/generated/ProjectInfo";
 import { displayName, projectViewPath } from "../lib/paths";
+import { allSubnotes, type Grouped, groupSubnotes } from "../lib/subnotes";
 import { openNoteWorkspace } from "../lib/commands";
 import { createProject, openProjectView, projectAt, ticketAt, useTickets } from "../state/tickets";
 import { confirmDialog, formDialog, type MenuEntry, promptDialog, useUi } from "../state/ui";
@@ -63,7 +64,25 @@ async function moveInto(from: string, folder: string) {
   await renameWithUndo(from, to);
 }
 
-function menuFor(node: TreeNode): MenuEntry[] {
+/** Makes `<note>.<key>.md` beside a note and opens it. */
+async function newSubnote(node: TreeNode) {
+  const key = await promptDialog({
+    title: "New subnote",
+    message: `Listed under “${displayName(node.name, node.kind).base}” and moved with it.`,
+    value: "notes",
+    confirmLabel: "Create",
+  });
+  const clean = key?.trim();
+  if (!clean) return;
+  const path = node.path.replace(/\.md$/i, `.${clean}.md`);
+  await run(async () => {
+    await api.createFile(path, "");
+    useVault.getState().revealInTree(path);
+    useWorkspace.getState().open(path, { offset: 0 });
+  });
+}
+
+function menuFor(node: TreeNode, subnotes: TreeNode[] = []): MenuEntry[] {
   const ws = useWorkspace.getState();
   const ui = useUi.getState();
   const vault = useVault.getState().vault;
@@ -122,6 +141,7 @@ function menuFor(node: TreeNode): MenuEntry[] {
       { label: "Open to the right", action: () => ws.open(node.path, { split: "right" }) },
     );
     if (node.kind === "note") {
+      entries.push({ label: "New subnote…", action: () => void newSubnote(node) });
       entries.push({ label: "Open workspace", action: () => void openNoteWorkspace(node.path) });
       if (!ticketAt(node.path)) {
         entries.push({
@@ -155,11 +175,17 @@ function menuFor(node: TreeNode): MenuEntry[] {
           title: `Delete “${displayName(node.name, node.kind).base}”?`,
           message: isFolder
             ? "The folder and everything in it will be moved to the Trash."
-            : "It will be moved to the Trash.",
+            : subnotes.length
+              ? `It and its ${subnotes.length === 1 ? "subnote" : `${subnotes.length} subnotes`} will be moved to the Trash.`
+              : "It will be moved to the Trash.",
           confirmLabel: "Delete",
           danger: true,
         }).then(async (ok) => {
-          if (ok) await run(() => api.deleteFile(node.path));
+          if (!ok) return;
+          await run(async () => {
+            for (const sub of subnotes) await api.deleteFile(sub.path);
+            await api.deleteFile(node.path);
+          });
         }),
     });
   }
@@ -191,8 +217,8 @@ export function FileTree({ root }: { root: TreeNode }) {
         if (from) void moveInto(from, "");
       }}
     >
-      {root.children?.map((node) => (
-        <TreeItem key={node.path} node={node} depth={0} />
+      {groupSubnotes(root.children ?? []).map((g) => (
+        <TreeItem key={g.node.path} node={g.node} depth={0} subnotes={g.subnotes} />
       ))}
     </ul>
   );
@@ -242,29 +268,37 @@ function RenameInput({ node }: { node: TreeNode }) {
 }
 
 /**
- * A project folder's entries with its view among them: right under its
- * overview note, else first after its folders.
+ * A folder's entries, subnotes under their notes. A project's view is a
+ * subnote of its overview note; without one it comes first after the folders.
  */
-function withProjectView(
+function entriesOf(
   children: TreeNode[],
   project: ProjectInfo | undefined,
-): (TreeNode | ProjectInfo)[] {
-  if (!project) return children;
-  const overview = children.findIndex((c) => c.path === project.overview);
-  const firstFile = children.findIndex((c) => c.kind !== "folder");
-  const at = overview >= 0 ? overview + 1 : firstFile >= 0 ? firstFile : children.length;
-  return [...children.slice(0, at), project, ...children.slice(at)];
+): (Grouped | ProjectInfo)[] {
+  const groups = groupSubnotes(children);
+  if (!project || groups.some((g) => g.node.path === project.overview)) return groups;
+  const firstFile = groups.findIndex((g) => g.node.kind !== "folder");
+  const at = firstFile >= 0 ? firstFile : groups.length;
+  return [...groups.slice(0, at), project, ...groups.slice(at)];
 }
 
-/** A project's view, listed in its folder like a file. */
-function ProjectViewItem({ project, depth }: { project: ProjectInfo; depth: number }) {
+/** A project's view, listed under its overview note like a subnote. */
+function ProjectViewItem({
+  project,
+  depth,
+  subnote,
+}: {
+  project: ProjectInfo;
+  depth: number;
+  subnote?: boolean;
+}) {
   const path = projectViewPath(project.id);
   const selected = useWorkspace((s) => s.activePath === path);
   const ws = useWorkspace.getState;
   return (
     <li role="treeitem" aria-selected={selected} aria-label={`${project.name} project view`}>
       <button
-        className={`tree-row${selected ? " selected" : ""}`}
+        className={`tree-row${selected ? " selected" : ""}${subnote ? " subnote" : ""}`}
         style={{ paddingLeft: 8 + depth * 14 }}
         title="This project’s events, people and tickets"
         onClick={(e) => openProjectView(project.id, { newTab: e.metaKey || e.ctrlKey })}
@@ -285,28 +319,50 @@ function ProjectViewItem({ project, depth }: { project: ProjectInfo; depth: numb
       >
         <span className="chevron" />
         <LayoutList size={14} className="kind-icon kind-project" />
-        <span className="tree-label">
-          {project.name}
-          <span className="ext"> project view</span>
-        </span>
+        {subnote ? (
+          <span className="tree-label subnote-key">project view</span>
+        ) : (
+          <span className="tree-label">
+            {project.name}
+            <span className="ext"> project view</span>
+          </span>
+        )}
       </button>
     </li>
   );
 }
 
-function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
-  const expanded = useVault((s) => s.expanded.has(node.path));
+function TreeItem({
+  node,
+  depth,
+  subkey,
+  subnotes = [],
+  projectView,
+}: {
+  node: TreeNode;
+  depth: number;
+  /** As a subnote: its key under the note above ("transcript"). */
+  subkey?: string;
+  subnotes?: Grouped[];
+  /** A project's overview note lists the project's view under it. */
+  projectView?: ProjectInfo;
+}) {
+  const isFolder = node.kind === "folder";
+  const hasSubnotes = subnotes.length > 0 || !!projectView;
+  const expanded = useVault((s) =>
+    isFolder ? s.expanded.has(node.path) : hasSubnotes && !s.folded.has(node.path),
+  );
   const toggleFolder = useVault((s) => s.toggleFolder);
   const selected = useWorkspace((s) => s.activePath === node.path);
   const open = useWorkspace((s) => s.open);
   const renaming = useUi((s) => s.renaming === node.path);
   const [dropping, setDropping] = useState(false);
-  const isFolder = node.kind === "folder";
   const { base, ext } = displayName(node.name, node.kind);
   const project = useTickets((s) =>
     isFolder ? s.projects.find((p) => p.folder === node.path) : undefined,
   );
   const isProject = !!project;
+  const projectFor = (path: string) => (project?.overview === path ? project : undefined);
   const Icon = isProject
     ? FolderKanban
     : node.kind === "folder"
@@ -337,7 +393,7 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
   return (
     <li
       role="treeitem"
-      aria-expanded={isFolder ? expanded : undefined}
+      aria-expanded={isFolder || hasSubnotes ? expanded : undefined}
       aria-selected={selected}
       aria-label={base}
     >
@@ -349,7 +405,7 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
         </div>
       ) : (
         <button
-          className={`tree-row${selected ? " selected" : ""}${dropping ? " drop-target" : ""}`}
+          className={`tree-row${selected ? " selected" : ""}${dropping ? " drop-target" : ""}${subkey ? " subnote" : ""}`}
           style={{ paddingLeft: 8 + depth * 14 }}
           draggable
           onDragStart={(e) => {
@@ -368,39 +424,82 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
           onContextMenu={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            useUi.getState().showMenu(e.clientX, e.clientY, menuFor(node));
+            const subs = allSubnotes({ node, subnotes });
+            useUi.getState().showMenu(e.clientX, e.clientY, menuFor(node, subs));
           }}
           onKeyDown={(e) => {
             if (e.key === "F2" || (e.key === "Enter" && e.shiftKey)) {
               e.preventDefault();
               useUi.getState().setRenaming(node.path);
             }
+            // → shows a note's subnotes, ← hides them.
+            const fold =
+              (e.key === "ArrowLeft" && expanded) || (e.key === "ArrowRight" && !expanded);
+            if (!isFolder && hasSubnotes && fold) {
+              e.preventDefault();
+              useVault.getState().toggleSubnotes(node.path);
+            }
           }}
           title={node.path}
         >
-          <span className={`chevron${expanded ? " open" : ""}`}>
-            {isFolder && <ChevronRight size={12} />}
-          </span>
+          {hasSubnotes ? (
+            // A note's own chevron folds its subnotes; the rest of the row opens it.
+            <span
+              className={`chevron${expanded ? " open" : ""}`}
+              role="button"
+              aria-label={expanded ? "Hide subnotes" : "Show subnotes"}
+              onClick={(e) => {
+                e.stopPropagation();
+                useVault.getState().toggleSubnotes(node.path);
+              }}
+            >
+              <ChevronRight size={12} />
+            </span>
+          ) : (
+            <span className={`chevron${expanded ? " open" : ""}`}>
+              {isFolder && <ChevronRight size={12} />}
+            </span>
+          )}
           <Icon
             size={14}
             className={`kind-icon kind-${node.kind}${isProject ? " kind-project" : ""}`}
             aria-label={isProject ? "Project" : undefined}
           />
-          <span className="tree-label">
-            {base}
+          <span className={`tree-label${subkey ? " subnote-key" : ""}`}>
+            {subkey ?? base}
             {ext && <span className="ext">{ext}</span>}
           </span>
         </button>
       )}
       {isFolder && expanded && node.children && node.children.length > 0 && (
         <ul role="group">
-          {withProjectView(node.children, project).map((child) =>
+          {entriesOf(node.children, project).map((child) =>
             "id" in child ? (
               <ProjectViewItem key="project-view" project={child} depth={depth + 1} />
             ) : (
-              <TreeItem key={child.path} node={child} depth={depth + 1} />
+              <TreeItem
+                key={child.node.path}
+                node={child.node}
+                depth={depth + 1}
+                subnotes={child.subnotes}
+                projectView={projectFor(child.node.path)}
+              />
             ),
           )}
+        </ul>
+      )}
+      {!isFolder && expanded && (
+        <ul role="group" className="subnotes">
+          {projectView && <ProjectViewItem project={projectView} depth={depth + 1} subnote />}
+          {subnotes.map((sub) => (
+            <TreeItem
+              key={sub.node.path}
+              node={sub.node}
+              depth={depth + 1}
+              subkey={sub.key}
+              subnotes={sub.subnotes}
+            />
+          ))}
         </ul>
       )}
     </li>

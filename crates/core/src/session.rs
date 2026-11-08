@@ -21,6 +21,7 @@ use crate::daily::DailySettings;
 use crate::index::{FileEntry, Index, NewFileLocation, Upsert, hash, link_name};
 use crate::pages;
 use crate::parse::{self, LinkKind, Task};
+use crate::subnotes;
 use crate::template::{self, Rendered, TemplateSettings};
 use crate::todos::{self, TaskChange};
 use crate::tree::{NodeKind, classify, is_hidden};
@@ -84,6 +85,8 @@ pub struct RenameOutcome {
     pub updated_links: u32,
     /// Notes that changed on disk mid-rename and were left alone.
     pub skipped_notes: Vec<String>,
+    /// Where the note's subnotes went: they move with it.
+    pub subnotes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,9 +103,13 @@ struct UndoOp {
     /// The path that was moved (a file, bundle or folder).
     from: String,
     to: String,
-    /// Index entries moved with it (one for a file; every descendant for a folder).
+    /// Index entries moved with it (one for a file; every descendant for a
+    /// folder; a note's subnotes too).
     entries: Vec<(String, String)>,
     edits: Vec<UndoEdit>,
+    /// A note's subnotes, moved beside it.
+    #[serde(default)]
+    subnotes: Vec<(String, String)>,
 }
 
 struct CachedConfig {
@@ -564,13 +571,27 @@ impl Session {
         let mut index = self.index.write().unwrap();
         index.refresh_stale()?;
 
+        // A note's subnotes go with it, keeping their keys.
+        let subnotes: Vec<(String, String)> = subnotes::subnotes_of(&index, from)
+            .into_iter()
+            .filter_map(|sub| subnotes::moved_subnote(&sub, from, to).map(|new| (sub, new)))
+            .collect();
+        for (old, new) in &subnotes {
+            validate_new_path(new)?;
+            let case_only = old.to_lowercase() == new.to_lowercase();
+            if self.vault.root().join(new).exists() && !case_only {
+                return Err(CoreError::AlreadyExists(new.clone()));
+            }
+        }
+
         // Which index entries move, and where to.
         let prefix = format!("{from}/");
-        let entries: Vec<(String, String)> = index
+        let mut entries: Vec<(String, String)> = index
             .paths()
             .filter(|p| *p == from || p.starts_with(&prefix))
             .map(|p| (p.to_string(), format!("{to}{}", &p[from.len()..])))
             .collect();
+        entries.extend(subnotes.iter().cloned());
         let mapping: HashMap<&str, &str> = entries
             .iter()
             .map(|(a, b)| (a.as_str(), b.as_str()))
@@ -603,6 +624,9 @@ impl Session {
 
         self.ensure_parent(to)?;
         fs::rename(&from_full, &to_full)?;
+        for (old, new) in &subnotes {
+            fs::rename(self.vault.root().join(old), self.vault.root().join(new))?;
+        }
         for (old, new) in &entries {
             pages::move_state(self.vault.root(), old, new);
         }
@@ -627,6 +651,7 @@ impl Session {
             updated_notes: Vec::new(),
             updated_links: 0,
             skipped_notes: Vec::new(),
+            subnotes: subnotes.iter().map(|(_, new)| new.clone()).collect(),
         };
         let mut edits = Vec::new();
         for b in before {
@@ -705,6 +730,7 @@ impl Session {
             to: to.to_string(),
             entries,
             edits,
+            subnotes,
         });
         Ok((outcome, changes))
     }
@@ -742,12 +768,15 @@ impl Session {
                 changed.join(", ")
             )));
         }
-        let case_only = op.from.to_lowercase() == op.to.to_lowercase();
-        if !root.join(&op.to).exists() || (root.join(&op.from).exists() && !case_only) {
-            return Err(CoreError::Conflict(format!(
-                "can't undo: {} or {} has moved since",
-                op.from, op.to
-            )));
+        let moves =
+            std::iter::once((&op.from, &op.to)).chain(op.subnotes.iter().map(|(a, b)| (a, b)));
+        for (from, to) in moves {
+            let case_only = from.to_lowercase() == to.to_lowercase();
+            if !root.join(to).exists() || (root.join(from).exists() && !case_only) {
+                return Err(CoreError::Conflict(format!(
+                    "can't undo: {from} or {to} has moved since"
+                )));
+            }
         }
 
         for edit in &op.edits {
@@ -755,6 +784,9 @@ impl Session {
         }
         self.ensure_parent(&op.from)?;
         fs::rename(root.join(&op.to), root.join(&op.from))?;
+        for (old, new) in &op.subnotes {
+            fs::rename(root.join(new), root.join(old))?;
+        }
         for (old, new) in &op.entries {
             pages::move_state(root, new, old);
         }
@@ -774,6 +806,9 @@ impl Session {
             .map(|(old, new)| FileChange::moved(new, old))
             .collect();
         let _ = index.upsert(&op.from);
+        for (old, _) in &op.subnotes {
+            let _ = index.upsert(old);
+        }
         for edit in &op.edits {
             let path = reverse
                 .get(edit.path.as_str())
@@ -1619,6 +1654,132 @@ mod tests {
         fs::write(v.dir.path().join("A.md"), "[[New]] edited").unwrap();
         assert!(matches!(v.session.undo(), Err(CoreError::Conflict(_))));
         assert!(v.exists("New.md"));
+    }
+
+    #[test]
+    fn renaming_a_note_takes_its_subnotes() {
+        let v = TestVault::new(&[
+            ("Meetings/Standup.md", "See [[Standup.transcript]]."),
+            ("Meetings/Standup.transcript.md", "Back to [[Standup]]."),
+            ("Meetings/Standup.transcript.raw.md", ""),
+            ("Meetings/Standups.md", ""),
+            ("Meetings/Standup 2.md", ""),
+            ("Meetings/Standup.2.md", ""),
+            ("Elsewhere/Standup.other.md", ""),
+            (
+                "Links.md",
+                "[[Standup.transcript]] and [[Standup.transcript.raw|raw]]",
+            ),
+        ]);
+        let (outcome, changes) = v
+            .session
+            .rename("Meetings/Standup.md", "Archive/Kickoff.md")
+            .unwrap();
+        assert_eq!(
+            outcome.subnotes,
+            [
+                "Archive/Kickoff.transcript.md",
+                "Archive/Kickoff.transcript.raw.md"
+            ]
+        );
+        assert!(v.exists("Archive/Kickoff.md"));
+        assert!(v.exists("Archive/Kickoff.transcript.md"));
+        assert!(v.exists("Archive/Kickoff.transcript.raw.md"));
+        assert!(!v.exists("Meetings/Standup.transcript.md"));
+        // Look-alikes that aren't subnotes stay put.
+        for stays in [
+            "Meetings/Standups.md",
+            "Meetings/Standup 2.md",
+            "Meetings/Standup.2.md",
+            "Elsewhere/Standup.other.md",
+        ] {
+            assert!(v.exists(stays), "{stays}");
+        }
+        assert_eq!(v.read("Archive/Kickoff.md"), "See [[Kickoff.transcript]].");
+        assert_eq!(
+            v.read("Archive/Kickoff.transcript.md"),
+            "Back to [[Kickoff]]."
+        );
+        assert_eq!(
+            v.read("Links.md"),
+            "[[Kickoff.transcript]] and [[Kickoff.transcript.raw|raw]]"
+        );
+        let moved: Vec<_> = changes
+            .iter()
+            .filter(|c| c.kind == ChangeKind::Moved)
+            .map(|c| c.path.as_str())
+            .collect();
+        assert_eq!(moved.len(), 3);
+        assert!(
+            v.session
+                .index()
+                .get("Archive/Kickoff.transcript.md")
+                .is_some()
+        );
+        assert!(
+            v.session
+                .index()
+                .get("Meetings/Standup.transcript.md")
+                .is_none()
+        );
+
+        v.session.undo().unwrap();
+        assert!(v.exists("Meetings/Standup.md"));
+        assert!(v.exists("Meetings/Standup.transcript.md"));
+        assert!(v.exists("Meetings/Standup.transcript.raw.md"));
+        assert!(!v.exists("Archive/Kickoff.transcript.md"));
+        assert_eq!(
+            v.read("Links.md"),
+            "[[Standup.transcript]] and [[Standup.transcript.raw|raw]]"
+        );
+        assert!(
+            v.session
+                .index()
+                .get("Meetings/Standup.transcript.md")
+                .is_some()
+        );
+        assert!(
+            v.session
+                .index()
+                .get("Archive/Kickoff.transcript.md")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn renaming_a_note_refuses_when_a_subnote_would_clash() {
+        let v = TestVault::new(&[
+            ("Standup.md", ""),
+            ("Standup.transcript.md", ""),
+            ("Kickoff.transcript.md", "already here"),
+        ]);
+        let err = v.session.rename("Standup.md", "Kickoff.md").unwrap_err();
+        assert!(matches!(err, CoreError::AlreadyExists(p) if p == "Kickoff.transcript.md"));
+        // Nothing moved.
+        assert!(v.exists("Standup.md") && v.exists("Standup.transcript.md"));
+        assert!(!v.exists("Kickoff.md"));
+        assert_eq!(v.read("Kickoff.transcript.md"), "already here");
+    }
+
+    #[test]
+    fn renaming_a_subnote_moves_only_it() {
+        let v = TestVault::new(&[("Standup.md", ""), ("Standup.transcript.md", "")]);
+        let (outcome, _) = v
+            .session
+            .rename("Standup.transcript.md", "Standup.notes.md")
+            .unwrap();
+        assert!(outcome.subnotes.is_empty());
+        assert!(v.exists("Standup.md") && v.exists("Standup.notes.md"));
+    }
+
+    #[test]
+    fn undo_of_an_older_rename_still_works() {
+        // Undo records written before subnotes existed have no `subnotes`.
+        let op: UndoOp = serde_json::from_str(
+            r#"{"label":"x","created":"","from":"a.md","to":"b.md","entries":[],"edits":[]}"#,
+        )
+        .unwrap();
+        assert!(op.subnotes.is_empty());
     }
 
     #[test]

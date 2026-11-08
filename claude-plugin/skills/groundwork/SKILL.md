@@ -172,6 +172,7 @@ projects: ["[[Acme]]"]
 - Make them with `groundwork add` (the user's Quick add, ⇧⌘A in the app). It names the note, uses the user's template, and sets `projects:` from `--project`. Pass the project whenever you know it.
 - Older meeting notes may live in a project's folder with `type: meeting`. They count as events of that project; leave them where they are.
 - Link people from events and notes as `[[Jane Doe]]`, and list who attended in the event's `people:`.
+- Something that belongs to a note, like a meeting's transcript or raw notes, is a **subnote**: a Markdown note beside it named `<note name>.<key>.md`, such as `Events/2026-11-12 Vendor call.transcript.md`. The key starts with a letter. The app lists it under the note and moves it when the note is renamed. Don't give a subnote `type: event`; it's part of the event, not another one. Link to it from the note if that helps: `[[2026-11-12 Vendor call.transcript]]`.
 - `groundwork project show <project>` lists a project's events (newest first) and people: members (their `projects:` names it) and anyone its notes link to, with how many notes mention them. Use it to answer "who's on X" or "when did we last meet about X". The user sees the same in the app's project view.
 
 ## Daily notes

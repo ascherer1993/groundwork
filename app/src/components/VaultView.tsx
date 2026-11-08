@@ -32,6 +32,7 @@ import { useWorkspace, type View } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
 import { FileTree } from "./FileTree";
 import { InboxButton } from "./Inbox";
+import { ResizeHandle } from "./ResizeHandle";
 import { SearchPanel } from "./SearchPanel";
 import { checkSetupOnce } from "./SetupDialog";
 import { TagsPanel } from "./TagsPanel";
@@ -262,6 +263,7 @@ export function VaultView() {
               <WorkspacesPanel />
             </div>
           )}
+          <ResizeHandle panel="sidebar" className="sidebar-resize" />
         </aside>
         <main className="content">
           <Workspace key={vault?.path} />
