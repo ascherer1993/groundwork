@@ -26,7 +26,9 @@ test("a project's view lists its events, with search, filters and sort", async (
     .getByRole("button", { name: "Project view" })
     .click();
   await expect(view(page).getByRole("heading", { name: "Acme" })).toBeVisible();
-  await expect(page.locator(".notes-side .dv-tab.dv-active-tab")).toHaveText("Acme");
+  const tab = page.locator(".notes-side .dv-tab.dv-active-tab");
+  await expect(tab.locator(".note-tab-main")).toHaveText("Project view");
+  await expect(tab.locator(".note-tab-under")).toHaveText("Acme");
   await expect(page.locator(".notes-side .crumbs")).toHaveText("ProjectAcme");
   await view(page)
     .getByRole("tab", { name: /Events/ })
@@ -90,6 +92,10 @@ test("a project's view lists its events, with search, filters and sort", async (
     "aria-selected",
     "true",
   );
+  // Its tab says it's the view, not the Acme note.
+  await expect(
+    page.locator(".notes-side .dv-tab.dv-active-tab").locator(".note-tab-main"),
+  ).toHaveText("Project view");
 });
 
 test("a project's people are its members and the people its notes mention", async ({ page }) => {

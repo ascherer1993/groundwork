@@ -408,6 +408,30 @@ input {
   padding: 0 10px;
 }
 
+/* A subnote's or project view's tab: its own name, and what it belongs to. */
+.note-tab-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.note-tab-main,
+.note-tab-under {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note-tab-under {
+  font-size: 10.5px;
+  color: var(--accent);
+}
+
+.dv-tab:not(.dv-active-tab) .note-tab-under {
+  opacity: 0.75;
+}
+
 .watermark {
   display: flex;
   flex-direction: column;

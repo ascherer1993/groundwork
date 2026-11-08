@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TreeNode } from "../api/generated/TreeNode";
-import { allSubnotes, groupSubnotes, subkey, subnoteFamily } from "./subnotes";
+import { allSubnotes, groupSubnotes, subkey, subnoteFamily, subnoteLabel } from "./subnotes";
 
 function note(path: string): TreeNode {
   return { name: path.slice(path.lastIndexOf("/") + 1), path, kind: "note" };
@@ -68,5 +68,44 @@ describe("groupSubnotes", () => {
     expect(standup.parent).toBeNull();
     expect(standup.subnotes.map((g) => g.key)).toEqual(["summary.draft", "transcript"]);
     expect(subnoteFamily(root, "Nowhere/x.md")).toEqual({ parent: null, subnotes: [] });
+  });
+});
+
+describe("subnoteLabel", () => {
+  const root: TreeNode = {
+    name: "",
+    path: "",
+    kind: "folder",
+    children: [
+      {
+        name: "M",
+        path: "M",
+        kind: "folder",
+        children: [
+          note("M/Standup.md"),
+          note("M/Standup.transcript.md"),
+          note("M/Standup.transcript.raw.md"),
+          note("M/Release 1.md"),
+          note("M/Release 1.2.md"),
+        ],
+      },
+    ],
+  };
+
+  it("is the key, under the notes it belongs to", () => {
+    expect(subnoteLabel(root, "M/Standup.transcript.md")).toEqual({
+      key: "transcript",
+      under: "Standup",
+    });
+    expect(subnoteLabel(root, "M/Standup.transcript.raw.md")).toEqual({
+      key: "raw",
+      under: "Standup › transcript",
+    });
+  });
+
+  it("is null for notes that aren't subnotes", () => {
+    expect(subnoteLabel(root, "M/Standup.md")).toBeNull();
+    expect(subnoteLabel(root, "M/Release 1.2.md")).toBeNull();
+    expect(subnoteLabel(null, "M/Standup.transcript.md")).toBeNull();
   });
 });

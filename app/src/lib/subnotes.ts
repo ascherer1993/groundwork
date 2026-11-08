@@ -104,3 +104,24 @@ export function subnoteFamily(
 export function allSubnotes(g: Grouped): TreeNode[] {
   return g.subnotes.flatMap((s) => [s.node, ...allSubnotes(s)]);
 }
+
+const stemOf = (name: string) => name.replace(/\.md$/i, "");
+
+/**
+ * How a subnote names itself in a tab: its key, and the note it belongs to
+ * ("Standup.transcript.raw" → "raw", under "Standup › transcript").
+ */
+export function subnoteLabel(
+  root: TreeNode | null,
+  path: string,
+): { key: string; under: string } | null {
+  const { parent } = subnoteFamily(root, path);
+  if (!parent) return null;
+  const stem = stemOf(path.slice(path.lastIndexOf("/") + 1));
+  const parentStem = stemOf(parent.node.name);
+  const above = subnoteLabel(root, parent.node.path);
+  return {
+    key: stem.slice(parentStem.length + 1),
+    under: above ? `${above.under} › ${above.key}` : parentStem,
+  };
+}

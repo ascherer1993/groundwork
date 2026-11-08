@@ -41,8 +41,14 @@ test("subnotes sit under their note, and go where it goes", async ({ page }) => 
   await bar.getByRole("button", { name: "transcript" }).click();
   await expect(page.getByLabel("Note title")).toHaveValue("Standup.transcript");
   await expect(transcript.locator("> button")).toHaveClass(/selected/);
+  // Its tab names it by its key, with its note underneath.
+  const tab = page.locator(".notes-side .dv-tab.dv-active-tab");
+  await expect(tab.locator(".note-tab-main")).toHaveText("transcript");
+  await expect(tab.locator(".note-tab-under")).toHaveText("Standup");
   await bar.getByRole("button", { name: "Standup", exact: true }).click();
   await expect(page.getByLabel("Note title")).toHaveValue("Standup");
+  await expect(tab).toHaveText("Standup");
+  await expect(tab.locator(".note-tab-under")).toHaveCount(0);
 
   // A new subnote, from the note's menu.
   await row(page, "Standup").click({ button: "right" });

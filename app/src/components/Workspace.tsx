@@ -8,14 +8,26 @@ import {
   themeLight,
 } from "dockview-react";
 import "dockview-react/dist/styles/dockview.css";
-import { ChevronDown, FilePlus, Lock, LockOpen, Plus, Search, SquareTerminal } from "lucide-react";
-import { createContext, useEffect, useRef, useState } from "react";
+import {
+  ChevronDown,
+  FilePlus,
+  Lock,
+  LockOpen,
+  Plus,
+  Search,
+  SquareTerminal,
+  X,
+} from "lucide-react";
+import { createContext, useEffect, useMemo, useRef, useState } from "react";
 import { switchWorkspace } from "../lib/commands";
+import { projectOfView } from "../lib/paths";
+import { subnoteLabel } from "../lib/subnotes";
 import { renameTab, showTerminalMenu } from "../state/claude";
 import { NOTES, useWorkspace } from "../state/workspace";
 import { useWorkspaces } from "../state/workspaces";
 import { useKeyLabel } from "../state/keys";
 import { useUi } from "../state/ui";
+import { useVault } from "../state/vault";
 import { FilePanel } from "./FilePanel";
 import { TerminalPanel } from "./TerminalPanel";
 
@@ -46,6 +58,74 @@ function TerminalTab(props: IDockviewPanelHeaderProps) {
         if (id) void renameTab(id);
       }}
     />
+  );
+}
+
+/** Re-renders when the panel's title or params change, and returns them. */
+function usePanel(props: IDockviewPanelHeaderProps) {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const changed = () => bump((n) => n + 1);
+    const a = props.api.onDidTitleChange(changed);
+    const b = props.api.onDidParametersChange(changed);
+    return () => {
+      a.dispose();
+      b.dispose();
+    };
+  }, [props.api]);
+  const params = props.containerApi.getPanel(props.api.id)?.params as { path?: string } | undefined;
+  return { title: props.api.title ?? "", path: params?.path ?? "" };
+}
+
+/**
+ * A note's tab. A subnote shows its own name with the note it belongs to
+ * underneath, and a project's view says it's the view, so neither looks like
+ * the note it sits under.
+ */
+function NoteTab(props: IDockviewPanelHeaderProps) {
+  const { title, path } = usePanel(props);
+  const tree = useVault((s) => s.tree);
+  const label = useMemo(() => {
+    if (projectOfView(path) !== null) return { main: "Project view", under: title };
+    const sub = subnoteLabel(tree, path);
+    return sub ? { main: sub.key, under: sub.under } : null;
+  }, [tree, path, title]);
+  const middle = useRef(false);
+  const close = (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    props.api.close();
+  };
+  if (!label) return <DockviewDefaultTab {...props} />;
+  return (
+    <div
+      className="dv-default-tab note-tab"
+      title={path}
+      onPointerDown={(e) => {
+        middle.current = e.button === 1;
+      }}
+      onPointerUp={(e) => {
+        // A middle click closes it, as on dockview's own tab.
+        if (middle.current && e.button === 1) close(e);
+        middle.current = false;
+      }}
+      onPointerLeave={() => {
+        middle.current = false;
+      }}
+    >
+      <span className="dv-default-tab-content note-tab-text">
+        <span className="note-tab-main">{label.main}</span>
+        <span className="note-tab-under">{label.under}</span>
+      </span>
+      <button
+        type="button"
+        className="dv-default-tab-action"
+        aria-label="Close tab"
+        onPointerDown={(e) => e.preventDefault()}
+        onClick={close}
+      >
+        <X size={12} strokeWidth={2} />
+      </button>
+    </div>
   );
 }
 
@@ -95,8 +175,7 @@ function Area({ area, layout, shown }: { area: string; layout?: unknown; shown: 
           className="workspace"
           theme={{ ...themeLight, name: "groundwork", className: "dockview-theme-groundwork" }}
           components={components}
-          // dockview's React tab, which also closes on a middle click.
-          defaultTabComponent={area === NOTES ? DockviewDefaultTab : TerminalTab}
+          defaultTabComponent={area === NOTES ? NoteTab : TerminalTab}
           watermarkComponent={area === NOTES ? NotesWatermark : TerminalsWatermark}
           onReady={(e: DockviewReadyEvent) => setDock(e.api)}
         />
