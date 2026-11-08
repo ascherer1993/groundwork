@@ -6,6 +6,7 @@ import { attachContentHandlers, hydrate } from "../markdown/hydrate";
 import { renderMarkdown } from "../markdown/render";
 import { escapeHtml, extractSubpath, splitFrontmatter } from "../markdown/syntax";
 import { startFromBar, useCommandBar } from "../state/commandBar";
+import { todoField } from "../editor/todoField";
 import { useUi } from "../state/ui";
 import { CommandBar } from "./CommandBar";
 import { CommandLog } from "./CommandLog";
@@ -173,7 +174,8 @@ function DialogForm({
         role="dialog"
         aria-label={dialog.title}
         onMouseDown={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.key === "Escape" && finish(null)}
+        // A todo field's suggestions take Escape first.
+        onKeyDown={(e) => e.key === "Escape" && !e.defaultPrevented && finish(null)}
         onSubmit={(e) => {
           e.preventDefault();
           finish(values);
@@ -184,31 +186,40 @@ function DialogForm({
         {fields.map((field, i) => {
           const set = (value: string) =>
             setValues((v) => v.map((old, j) => (j === i ? value : old)));
-          const input = field.options ? (
-            <select
-              autoFocus={i === 0}
-              aria-label={field.label}
-              value={values[i]}
-              onChange={(e) => set(e.target.value)}
-            >
-              {field.options.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              autoFocus={i === 0}
-              aria-label={field.label}
-              type={field.type ?? "text"}
-              placeholder={field.placeholder}
-              value={values[i]}
-              spellCheck={false}
-              onChange={(e) => set(e.target.value)}
-              onFocus={(e) => field.type !== "date" && e.target.select()}
-            />
-          );
+          const input =
+            field.type === "todo" ? (
+              <TodoInput
+                label={field.label}
+                placeholder={field.placeholder}
+                value={values[i] ?? ""}
+                autoFocus={i === 0}
+                onChange={set}
+              />
+            ) : field.options ? (
+              <select
+                autoFocus={i === 0}
+                aria-label={field.label}
+                value={values[i]}
+                onChange={(e) => set(e.target.value)}
+              >
+                {field.options.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                autoFocus={i === 0}
+                aria-label={field.label}
+                type={field.type ?? "text"}
+                placeholder={field.placeholder}
+                value={values[i]}
+                spellCheck={false}
+                onChange={(e) => set(e.target.value)}
+                onFocus={(e) => field.type !== "date" && e.target.select()}
+              />
+            );
           // A single prompt is titled by the dialog; several get their own labels.
           return fields.length === 1 ? (
             <div key={i} className="dialog-field">
@@ -236,6 +247,39 @@ function DialogForm({
       </form>
     </div>
   );
+}
+
+/** A dialog's todo field: one line with `@date` and `!priority` suggestions. */
+function TodoInput(props: {
+  label: string;
+  placeholder?: string;
+  value: string;
+  autoFocus: boolean;
+  onChange(value: string): void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const latest = useRef(props);
+  useLayoutEffect(() => {
+    latest.current = props;
+  });
+  useEffect(() => {
+    const parent = ref.current!;
+    const view = todoField(parent, {
+      label: latest.current.label,
+      placeholder: latest.current.placeholder ?? "@date  !priority",
+      value: latest.current.value,
+      keep: true,
+      onChange: (text) => latest.current.onChange(text),
+      // Enter with no suggestion open submits the dialog.
+      onSubmit: () => parent.closest("form")?.requestSubmit(),
+    });
+    if (latest.current.autoFocus) {
+      view.focus();
+      view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
+    }
+    return () => view.destroy();
+  }, []);
+  return <div ref={ref} className="dialog-todo" />;
 }
 
 /** A floating preview of a linked note, from ⌘-hovering a link (`lib/linkPreview.ts`). */

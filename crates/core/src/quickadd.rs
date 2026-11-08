@@ -12,6 +12,7 @@ use ts_rs::TS;
 
 use crate::config::slugify;
 use crate::frontmatter::Prop;
+use crate::parse;
 use crate::session::FileChange;
 use crate::template::{self, TemplateSettings};
 use crate::{CoreError, Result, Session};
@@ -99,6 +100,8 @@ pub struct QuickAddForm {
     pub date: bool,
     /// Whether it asks for a project.
     pub project: bool,
+    /// Whether it adds a todo, so its prompts take `@date` and `!priority`.
+    pub todo: bool,
     /// The project offered first: the one the note you're in belongs to.
     #[ts(optional)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -262,6 +265,11 @@ impl Session {
             }
         };
         let project = choice.kind == ChoiceKind::Note && choice.project;
+        let todo = choice.kind == ChoiceKind::Capture
+            && choice
+                .format
+                .as_deref()
+                .is_some_and(|f| f.trim_start().starts_with("- [ ] "));
         let default_project = match (project, note) {
             (true, Some(note)) => {
                 let config = self.config()?;
@@ -273,6 +281,7 @@ impl Session {
             prompts,
             date,
             project,
+            todo,
             default_project,
         })
     }
@@ -369,9 +378,14 @@ impl Session {
         let format = choice.format.as_deref().unwrap_or("{{prompt:Text}}");
         let ctx = self.template_context(&path, None, answers);
         let line = template::render(format, &ctx).text;
-        // A todo goes where `todo add` puts them, with its stamp.
+        // A todo goes where `todo add` puts them, with its stamp, and
+        // `@tomorrow` / `!p1` typed in it set its due date and priority.
         if let Some(task) = line.trim().strip_prefix("- [ ] ") {
-            changes.extend(self.add_task(Some(&path), task, None, 3)?.1);
+            let (text, due, priority) = parse::todo_input(task, Local::now().date_naive());
+            changes.extend(
+                self.add_task(Some(&path), &text, due, priority.unwrap_or(3))?
+                    .1,
+            );
             return Ok(QuickAdded {
                 path,
                 cursor: None,
@@ -504,6 +518,37 @@ mod tests {
         let text = read(&dir, &added.path);
         assert!(text.contains("## Todos\n"), "{text}");
         assert!(text.contains("\n- [ ] Call Jane ➕ "), "{text}");
+    }
+
+    #[test]
+    fn a_todo_takes_a_due_date_and_priority_as_typed() {
+        let (dir, s) = session();
+        assert!(s.quick_add_form("Todo", None).unwrap().todo);
+        assert!(!s.quick_add_form("Person", None).unwrap().todo);
+        let tomorrow = Local::now().date_naive().succ_opt().unwrap();
+        for typed in ["Call Jane @tomorrow !p1", "Call Jane 📅 {tomorrow} ⏫"] {
+            let typed = typed.replace("{tomorrow}", &tomorrow.to_string());
+            let added = s
+                .quick_add(
+                    "Todo",
+                    HashMap::from([("Todo".into(), typed.clone())]),
+                    None,
+                    None,
+                )
+                .unwrap();
+            let text = read(&dir, &added.path);
+            let line = text
+                .lines()
+                .rfind(|l| l.contains("Call Jane"))
+                .unwrap()
+                .to_string();
+            assert!(
+                line.starts_with(&format!("- [ ] Call Jane ⏫ 📅 {tomorrow} ➕ ")),
+                "{typed} → {line}"
+            );
+            // Start again for the next case.
+            s.write_file(&added.path, "").unwrap();
+        }
     }
 
     #[test]

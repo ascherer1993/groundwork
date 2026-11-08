@@ -106,7 +106,9 @@ export async function runChoice(name: string, opts: { project?: string } = {}) {
   const choice = useQuickAdd.getState().choices.find((c) => c.name === name);
   try {
     const form = await api.quickAddForm(name, whereYouAre());
-    const fields: DialogField[] = form.prompts.map((label) => ({ label }));
+    const fields: DialogField[] = form.prompts.map((label) =>
+      form.todo ? { label, type: "todo", placeholder: `${label}…  @date  !priority` } : { label },
+    );
     if (form.date) fields.push({ label: "Date", type: "date", value: today() });
     if (form.project) {
       if (!useTickets.getState().projects.length) await useTickets.getState().load();

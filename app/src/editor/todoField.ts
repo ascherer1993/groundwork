@@ -7,15 +7,24 @@ import { todoFieldCompletions } from "./todoInput";
 /**
  * A one-line editor for typing a new todo, with the same `@date` and
  * `!priority` completions as task lines in notes. Enter (with no
- * completion open) calls `onSubmit` with the text and clears the field.
+ * completion open) calls `onSubmit` with the text and clears the field,
+ * unless `keep` (a field in a form, which submits it).
  */
 export function todoField(
   parent: HTMLElement,
-  opts: { label: string; placeholder: string; onSubmit(text: string): void },
+  opts: {
+    label: string;
+    placeholder: string;
+    onSubmit(text: string): void;
+    value?: string;
+    onChange?(text: string): void;
+    keep?: boolean;
+  },
 ): EditorView {
   const view = new EditorView({
     parent,
     state: EditorState.create({
+      doc: opts.value ?? "",
       extensions: [
         // Completion keys take precedence, so Enter picks a suggestion first.
         autocompletion({ override: [todoFieldCompletions], icons: false }),
@@ -24,8 +33,10 @@ export function todoField(
             key: "Enter",
             run: (v) => {
               const text = v.state.doc.toString();
-              if (!text.trim()) return true;
-              v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: "" } });
+              if (!text.trim() && !opts.keep) return true;
+              if (!opts.keep) {
+                v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: "" } });
+              }
               opts.onSubmit(text);
               return true;
             },
@@ -47,6 +58,9 @@ export function todoField(
               ]
             : tr,
         ),
+        EditorView.updateListener.of((u) => {
+          if (u.docChanged) opts.onChange?.(u.state.doc.toString());
+        }),
         placeholder(opts.placeholder),
         popupTheme,
         EditorView.contentAttributes.of({ "aria-label": opts.label, role: "textbox" }),

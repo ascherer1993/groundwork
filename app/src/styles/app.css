@@ -831,6 +831,11 @@ input {
   font-size: 13px;
 }
 
+/* A todo field (editor/todoField.ts) styles itself; its text isn't muted. */
+.dialog-todo {
+  color: var(--text);
+}
+
 .switcher-hint {
   margin-left: auto;
   color: var(--text-faint);

@@ -17,6 +17,10 @@ date: boolean,
  */
 project: boolean, 
 /**
+ * Whether it adds a todo, so its prompts take `@date` and `!priority`.
+ */
+todo: boolean, 
+/**
  * The project offered first: the one the note you're in belongs to.
  */
 defaultProject?: string, };

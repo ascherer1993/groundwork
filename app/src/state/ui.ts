@@ -23,8 +23,11 @@ export interface DialogField {
   label: string;
   value?: string;
   placeholder?: string;
-  /** A date picker (`YYYY-MM-DD`) rather than text. */
-  type?: "date";
+  /**
+   * A date picker (`YYYY-MM-DD`) rather than text, or a todo's text, with
+   * `@date` and `!priority` suggestions.
+   */
+  type?: "date" | "todo";
   /** A menu of these rather than text. */
   options?: { value: string; label: string }[];
 }

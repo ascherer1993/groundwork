@@ -8,6 +8,7 @@
 use std::ops::Range;
 use std::sync::LazyLock;
 
+use chrono::NaiveDate;
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use regex::Regex;
 use serde::Serialize;
@@ -358,6 +359,53 @@ pub fn new_task_line(text: &str, priority: u8, due: Option<&str>, created: &str)
         line = format!("{line} 📅 {due}");
     }
     format!("{line} ➕ {created}")
+}
+
+/// A todo as typed: its text, with `@date` and `!p1` (or `@p1`) pulled
+/// out, as are the `📅 date` and priority markers the editor's completions
+/// insert. Mirrors `parseTodoInput` in `app/src/markdown/todos.ts`.
+pub fn todo_input(input: &str, today: NaiveDate) -> (String, Option<NaiveDate>, Option<u8>) {
+    static DUE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"📅\u{FE0F}?\s*(\d{4}-\d{2}-\d{2})").unwrap());
+    // Two-word dates first (`@nov 12`), then one word.
+    static TYPED_DATES: LazyLock<[Regex; 2]> = LazyLock::new(|| {
+        [
+            Regex::new(r"(?:^|\s)@(\w+ \d{1,2})(?:\s|$)").unwrap(),
+            Regex::new(r"(?:^|\s)@(\S+)").unwrap(),
+        ]
+    });
+    static TYPED_PRIORITY: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)(?:^|\s)[!@]p([0-5])(?:\s|$)").unwrap());
+
+    let mut due = DUE
+        .captures(input)
+        .and_then(|c| NaiveDate::parse_from_str(&c[1], "%Y-%m-%d").ok());
+    let mut priority = TASK_PRIORITY.captures(input).and_then(|c| {
+        PRIORITY_MARKERS
+            .iter()
+            .position(|m| *m == Some(&c[1]))
+            .map(|p| p as u8)
+    });
+    let text = DUE.replace_all(input, " ");
+    let mut text = TASK_PRIORITY.replace_all(&text, " ").into_owned();
+    for re in TYPED_DATES.iter() {
+        let found = re.captures(&text).and_then(|c| {
+            let date = crate::dates::parse_natural(&c[1], today)?;
+            Some((c.get(0).unwrap().range(), date))
+        });
+        if let Some((range, date)) = found {
+            due = Some(date);
+            text.replace_range(range, " ");
+            break;
+        }
+    }
+    if let Some(c) = TYPED_PRIORITY.captures(&text) {
+        priority = c[1].parse().ok();
+        let range = c.get(0).unwrap().range();
+        text.replace_range(range, " ");
+    }
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    (text, due, priority)
 }
 
 /// Parses one line as a task (line number 0).
@@ -895,5 +943,51 @@ mod tests {
         );
         let task = parse_task_line("- [ ] Call Bob ⏫ 📅 2026-11-06").unwrap();
         assert_eq!((task.text.as_str(), task.priority), ("Call Bob", 1));
+    }
+
+    #[test]
+    fn todo_input_pulls_out_dates_and_priorities() {
+        // Tuesday.
+        let today = NaiveDate::from_ymd_opt(2026, 11, 3).unwrap();
+        let date = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok();
+        let cases = [
+            (
+                "Call Bob @2026-11-06 !p1",
+                "Call Bob",
+                "2026-11-06",
+                Some(1),
+            ),
+            ("Call Bob @tomorrow", "Call Bob", "2026-11-04", None),
+            ("@fri Call Bob !P0", "Call Bob", "2026-11-06", Some(0)),
+            (
+                "Call Bob @nov 12 about it",
+                "Call Bob about it",
+                "2026-11-12",
+                None,
+            ),
+            // What the completions insert.
+            (
+                "Call Bob 📅 2026-11-06 ⏫",
+                "Call Bob",
+                "2026-11-06",
+                Some(1),
+            ),
+            ("Call Bob @p4", "Call Bob", "", Some(4)),
+            (
+                "Email jane@example.com about it",
+                "Email jane@example.com about it",
+                "",
+                None,
+            ),
+            ("Ask @someone first", "Ask @someone first", "", None),
+            ("Wow!p1", "Wow!p1", "", None),
+        ];
+        for (input, text, due, priority) in cases {
+            assert_eq!(
+                todo_input(input, today),
+                (text.to_string(), date(due), priority),
+                "{input}"
+            );
+        }
     }
 }
