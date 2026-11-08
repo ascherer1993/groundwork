@@ -1,12 +1,11 @@
-import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { trackEditor } from "../editor/active";
 import { refreshPreview } from "../editor/context";
 import {
+  createEditorState,
   type EditorHost,
-  editorExtensions,
   focusTarget,
   modeCompartment,
   modeExtensions,
@@ -102,13 +101,7 @@ export function NoteView({ path, mode, focus, editTitle }: Props) {
         // A fresh state, so undo history doesn't cross files.
         const v = view.current;
         v?.setState(
-          EditorState.create({
-            doc: body,
-            extensions: editorExtensions(
-              host.current,
-              modeRef.current === "source" ? "source" : "live",
-            ),
-          }),
+          createEditorState(body, host.current, modeRef.current === "source" ? "source" : "live"),
         );
         if (v && pendingFocus.current) focusTarget(v, pendingFocus.current);
       } catch (err) {
@@ -165,10 +158,7 @@ export function NoteView({ path, mode, focus, editTitle }: Props) {
     if (view.current) return;
     const v = new EditorView({
       parent: editorParent.current,
-      state: EditorState.create({
-        doc: latest.current,
-        extensions: editorExtensions(host.current, mode === "source" ? "source" : "live"),
-      }),
+      state: createEditorState(latest.current, host.current, mode === "source" ? "source" : "live"),
     });
     view.current = v;
     const untrack = trackEditor(v);

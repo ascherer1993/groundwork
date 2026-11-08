@@ -12,7 +12,7 @@ import { message } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
 import { renderMarkdown } from "./render";
 import { mountTickets } from "./tickets";
-import { mountTodos, parseTodosSpec } from "./todos";
+import { CONTENT_RESIZED, mountTodos, parseTodosSpec } from "./todos";
 import {
   escapeHtml,
   extension,
@@ -77,14 +77,50 @@ export async function hydrate(root: HTMLElement, source: string, depth = 0): Pro
     ...embeds.map((el) => {
       const { target, subpath } = splitTarget(el.dataset.embed!);
       const path = target ? (resolved.get(target) ?? null) : source;
-      return renderEmbed(el, path, target, subpath, el.dataset.alias || undefined, depth);
+      return renderEmbed(el, source, path, target, subpath, el.dataset.alias || undefined, depth);
     }),
     renderMermaid(root),
   ]);
 }
 
+/** Embeds folded this session, by the note they're in and what they embed. */
+const collapsed = new Set<string>();
+
+const CHEVRON =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
+
+/** The header over an embedded note or page: a chevron that folds it, and a link to open it. */
+function embedHeader(link: string): string {
+  return `<div class="embed-header"><button type="button" class="embed-toggle">${CHEVRON}</button>${link}</div>`;
+}
+
+/** Wires an embed's chevron; it stays folded, this session, wherever it's shown. */
+function foldable(el: HTMLElement, source: string) {
+  const toggle = el.querySelector<HTMLButtonElement>(":scope > .embed-header > .embed-toggle");
+  if (!toggle) return;
+  const key = `${source}\n${el.dataset.embed}`;
+  const show = (folded: boolean) => {
+    el.classList.toggle("is-collapsed", folded);
+    toggle.setAttribute("aria-expanded", String(!folded));
+    toggle.setAttribute("aria-label", folded ? "Expand embed" : "Collapse embed");
+    toggle.title = folded ? "Expand" : "Collapse";
+  };
+  show(collapsed.has(key));
+  toggle.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const folded = !collapsed.has(key);
+    if (folded) collapsed.add(key);
+    else collapsed.delete(key);
+    show(folded);
+    // Live preview re-measures its lines.
+    el.dispatchEvent(new Event(CONTENT_RESIZED, { bubbles: true }));
+  });
+}
+
 async function renderEmbed(
   el: HTMLElement,
+  source: string,
   path: string | null,
   target: string,
   subpath: string | undefined,
@@ -109,7 +145,8 @@ async function renderEmbed(
   const kind = extension(path);
   if (kind === "md" && depth < MAX_EMBED_DEPTH) {
     el.className = "embed embed-note";
-    el.innerHTML = `<div class="embed-header"><a class="internal-link" href="#" data-href="${escapeHtml(target + (subpath ? `#${subpath}` : ""))}" data-resolved="${escapeHtml(path)}">${escapeHtml(path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/i, ""))}${subpath ? ` › ${escapeHtml(subpath)}` : ""}</a></div><div class="embed-body"></div>`;
+    el.innerHTML = `${embedHeader(`<a class="internal-link" href="#" data-href="${escapeHtml(target + (subpath ? `#${subpath}` : ""))}" data-resolved="${escapeHtml(path)}">${escapeHtml(path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/i, ""))}${subpath ? ` › ${escapeHtml(subpath)}` : ""}</a>`)}<div class="embed-body"></div>`;
+    foldable(el, source);
     const body = el.querySelector<HTMLElement>(".embed-body")!;
     try {
       const file = await api.readFile(path);
@@ -131,7 +168,10 @@ async function renderEmbed(
   if (isPagePath(path)) {
     // Live: `![[x.page]]` sizes itself to the page, `![[x.page|400]]` is 400px tall.
     el.className = "embed embed-page";
-    el.innerHTML = `<div class="embed-header"><a class="internal-link" href="#" data-href="${escapeHtml(target)}" data-resolved="${escapeHtml(path)}">${escapeHtml(path.slice(path.lastIndexOf("/") + 1))}</a></div>`;
+    el.innerHTML = embedHeader(
+      `<a class="internal-link" href="#" data-href="${escapeHtml(target)}" data-resolved="${escapeHtml(path)}">${escapeHtml(path.slice(path.lastIndexOf("/") + 1))}</a>`,
+    );
+    foldable(el, source);
     const height = alias && /^\d+$/.test(alias) ? Number(alias) : undefined;
     el.append(createPageFrame(path, { embed: true, height }));
     return;

@@ -273,6 +273,7 @@ Built in from the start: Open in VS Code, Reveal in Finder, Copy relative path, 
 - Links inside pages: vault files open in Groundwork (`<a href="../Plan.md">` or `<a href="[[Plan]]">`), other pages in the same bundle navigate in place, web links open in the browser. ⌘ shortcuts are forwarded to the app.
 - Open pages and embeds reload when their files change. A bundle counts as changed when any file in it changes, except `state.json`.
 - Embeds: `![[foo.page]]` sizes itself to the page (capped at 4000px); `![[foo.page|400]]` is 400px tall.
+- Embedded notes and pages have a chevron in their header that folds them (remembered for the session). In live preview they act as blocks: clicking them doesn't move the cursor or show their source; their `</>` button does. The editor's cursor starts below the properties, so focusing it without clicking a place doesn't open the frontmatter.
 - Claude reads the state with `groundwork page state <page>`, or the state file directly.
 - Network access: `pages: { allow_network: false }` in `.groundwork/config.yml` adds a Content Security Policy that allows only the page's own files, inline code and `data:`/`blob:` URLs. On by default, so dashboards can fetch external data.
 - Obsidian will show `[[foo.page]]` links as unresolved. That's acceptable.

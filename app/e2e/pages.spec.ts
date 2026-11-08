@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { FIXTURE_VAULT as VAULT } from "./fixtures";
@@ -163,6 +163,65 @@ test("embeds are live and size themselves; pages reload when edited", async ({ p
     activePanel(page)
       .frameLocator(".cm-embed .embed-page .page-frame >> nth=0")
       .getByRole("heading", { name: "Login flow" }),
+  ).toBeVisible();
+});
+
+test("clicking around an embed doesn't edit it; its buttons fold it and show its source", async ({
+  page,
+}) => {
+  const note = join(VAULT, "Projects/Acme/demos/Ranking demo.md");
+  writeFileSync(
+    note,
+    "---\ncreated: 2026-11-03T20:15\n---\n# Ranking\n\nRank the options.\n\n![[login-flow.page]]\n",
+  );
+  // Other tests count the page's backlinks.
+  page.once("close", () => rmSync(note, { force: true }));
+  await quickOpen(page, "Ranking demo");
+  const panel = activePanel(page);
+  const embed = panel.locator(".cm-embed-block");
+  const header = embed.locator(".embed-header");
+  const frameEl = embed.locator(".page-frame");
+  await expect(header.getByRole("link", { name: "login-flow.page" })).toBeVisible();
+  await expect(panel.locator(".cm-properties")).toBeVisible();
+
+  // Beside the link, between header and page, beside the embed: nothing moves.
+  const box = (await header.getByRole("link").boundingBox())!;
+  const head = (await header.boundingBox())!;
+  const whole = (await embed.boundingBox())!;
+  for (const [x, y] of [
+    [box.x + box.width + 30, box.y + box.height / 2],
+    [box.x + 10, head.y + head.height + 2],
+    [whole.x - 10, whole.y + 60],
+  ] as const) {
+    await page.mouse.click(x, y);
+    await expect(embed).toBeVisible();
+    await expect(panel.locator(".cm-properties")).toBeVisible();
+    await expect(panel.locator(".cm-wikilink-source")).toHaveCount(0);
+  }
+
+  // The chevron folds the page away and back.
+  const toggle = header.getByRole("button", { name: "Collapse embed" });
+  await toggle.click();
+  await expect(frameEl).toBeHidden();
+  await expect(header.getByRole("button", { name: "Expand embed" })).toBeVisible();
+  await expect(panel.locator(".cm-wikilink-source")).toHaveCount(0);
+  await header.getByRole("button", { name: "Expand embed" }).click();
+  await expect(frameEl).toBeVisible();
+
+  // </> shows the source, with the cursor in it.
+  await embed.getByRole("button", { name: "Edit embed" }).click();
+  await expect(panel.locator(".cm-wikilink-source")).toHaveText("![[login-flow.page]]");
+  await expect(embed).toHaveCount(0);
+  await page.keyboard.type("x");
+  await expect(panel.locator(".cm-wikilink-source")).toHaveText("![[login-flow.pagex]]");
+  await page.keyboard.press("Backspace");
+
+  // And the link still opens the page in one click.
+  await panel.locator(".cm-line").filter({ hasText: "Rank the options." }).click();
+  await expect(embed).toBeVisible();
+  await embed.getByRole("link", { name: "login-flow.page" }).click();
+  await expect(
+    page.locator(".notes-side .dv-tab.dv-active-tab").filter({ hasText: "login-flow" }),
   ).toBeVisible();
 });
 

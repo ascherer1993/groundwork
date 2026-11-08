@@ -35,6 +35,23 @@ function editAt(view: EditorView, dom: HTMLElement) {
   view.focus();
 }
 
+/**
+ * Inside an embed, a mousedown would let the browser focus the editor and
+ * move its cursor next to the embed, which swaps the embed for its source and
+ * shifts the page under the pointer, so the click lands on nothing. Links and
+ * buttons still get their click; fields can still take focus.
+ */
+function keepEditorStill(event: MouseEvent) {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  if (!target.closest(".embed-note, .embed-page, .embed-card, .cm-embed-block")) return;
+  if (
+    target.closest("input, textarea, select, [contenteditable='true'], .todos-view, .tickets-view")
+  )
+    return;
+  event.preventDefault();
+}
+
 function isInteractive(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&
@@ -191,6 +208,8 @@ export class EmbedWidget extends WidgetType {
     readonly alias: string | undefined,
     readonly source: string,
     readonly external = false,
+    /** A note or page, filling its line; clicks on it don't edit. */
+    readonly block = false,
   ) {
     super();
   }
@@ -200,7 +219,8 @@ export class EmbedWidget extends WidgetType {
       other.target === this.target &&
       other.alias === this.alias &&
       other.source === this.source &&
-      other.external === this.external
+      other.external === this.external &&
+      other.block === this.block
     );
   }
 
@@ -224,12 +244,18 @@ export class EmbedWidget extends WidgetType {
     placeholder.dataset.embed = this.target;
     placeholder.dataset.alias = this.alias ?? "";
     wrap.append(placeholder);
+    if (this.block) {
+      wrap.classList.add("cm-embed-block");
+      wrap.append(editSourceButton(view, wrap));
+      wrap.addEventListener("mousedown", keepEditorStill);
+    }
     hydrateWidget(view, wrap, this.source);
     attachContentHandlers(wrap);
     return wrap;
   }
 
   ignoreEvent(event: Event) {
+    if (this.block) return true;
     return event.type !== "mousedown" || isInteractive(event.target);
   }
 }
@@ -277,7 +303,7 @@ export class MarkdownBlockWidget extends WidgetType {
     hydrateWidget(view, div, this.source);
     attachContentHandlers(div);
     div.addEventListener("mousedown", (e) => {
-      if (isInteractive(e.target)) return;
+      if (isInteractive(e.target)) return keepEditorStill(e);
       e.preventDefault();
       editAt(view, div);
     });
@@ -287,6 +313,27 @@ export class MarkdownBlockWidget extends WidgetType {
   ignoreEvent() {
     return true;
   }
+}
+
+/** The `</>` button on an embedded note or page: shows its `![[...]]` to edit. */
+function editSourceButton(view: EditorView, wrap: HTMLElement): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "cm-embed-edit";
+  button.title = "Edit embed";
+  button.setAttribute("aria-label", "Edit embed");
+  button.textContent = "</>";
+  button.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const from = view.posAtDOM(wrap);
+    const rest = view.state.doc.sliceString(from, view.state.doc.lineAt(from).to);
+    // Just before the closing `]]` (or `)`), so the cursor is inside the embed.
+    const close = rest.startsWith("![[") ? rest.indexOf("]]") : rest.indexOf(")");
+    view.dispatch({ selection: { anchor: from + (close > 0 ? close : 1) } });
+    view.focus();
+  });
+  return button;
 }
 
 /** Frontmatter as a properties table. */

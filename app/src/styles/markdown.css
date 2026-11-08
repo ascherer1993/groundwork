@@ -252,8 +252,51 @@ summary.callout-title {
 }
 
 .embed-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   font-size: 12px;
   margin-bottom: 4px;
+}
+
+/* Folds the embed; the chevron points right while folded. */
+.embed-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-left: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.embed-toggle:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.embed-toggle svg {
+  transform: rotate(90deg);
+  transition: transform 0.12s ease;
+}
+
+.embed.is-collapsed .embed-toggle svg {
+  transform: none;
+}
+
+.embed.is-collapsed > .embed-body,
+.embed.is-collapsed > .page-frame {
+  display: none;
+}
+
+.embed.is-collapsed > .embed-header {
+  margin-bottom: 0;
 }
 
 /* Also in live preview, outside .markdown-rendered. */
@@ -467,6 +510,44 @@ summary.callout-title {
 .cm-embed .embed-page {
   display: block;
   font-family: var(--font-text);
+}
+
+/* An embedded note or page: clicking it doesn't edit; its </> button does. */
+.cm-embed-block {
+  display: block;
+  position: relative;
+  /* Not the editor's pre-wrap, which shows the rendered HTML's newlines. */
+  white-space: normal;
+  cursor: default;
+}
+
+/*
+ * CodeMirror flanks inline widgets with cursor buffers; beside a block they
+ * become empty lines above and below the embed.
+ */
+.cm-line:has(> .cm-embed-block) > .cm-widgetBuffer {
+  display: none;
+}
+
+.cm-embed-edit {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 18px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.cm-embed-edit:hover {
+  color: var(--text);
+  background: var(--bg-hover);
 }
 
 .cm-rendered-block {

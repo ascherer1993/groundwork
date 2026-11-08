@@ -14,7 +14,7 @@ import {
   syntaxHighlighting,
 } from "@codemirror/language";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorSelection, type Extension } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, type Extension } from "@codemirror/state";
 import {
   drawSelection,
   dropCursor,
@@ -26,7 +26,13 @@ import {
 } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import { GFM } from "@lezer/markdown";
-import { splitWikilink, splitTarget, toggleTaskLine, today } from "../markdown/syntax";
+import {
+  splitFrontmatter,
+  splitTarget,
+  splitWikilink,
+  toggleTaskLine,
+  today,
+} from "../markdown/syntax";
 import { useUi } from "../state/ui";
 import { message } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
@@ -195,6 +201,19 @@ export function modeExtensions(mode: EditorMode): Extension {
   return mode === "live"
     ? [blockPreview, inlinePreview, EditorView.contentAttributes.of({ "data-mode": "live" })]
     : [EditorView.contentAttributes.of({ "data-mode": "source" })];
+}
+
+/**
+ * A note's editor state. The cursor starts where the note's text does, below
+ * its properties: focusing the editor without clicking a place (Enter in the
+ * title, a click on an embed) would otherwise open the properties' source.
+ */
+export function createEditorState(doc: string, host: EditorHost, mode: EditorMode): EditorState {
+  return EditorState.create({
+    doc,
+    selection: EditorSelection.cursor(splitFrontmatter(doc).length),
+    extensions: editorExtensions(host, mode),
+  });
 }
 
 export function editorExtensions(host: EditorHost, mode: EditorMode): Extension[] {

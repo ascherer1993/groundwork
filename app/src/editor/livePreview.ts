@@ -18,7 +18,7 @@ import {
 } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import { daySpanAt, isDayBlock } from "../markdown/daySpan";
-import { hasScheme, splitWikilink } from "../markdown/syntax";
+import { hasScheme, isImage, splitTarget, splitWikilink } from "../markdown/syntax";
 import { hasMeta, parseTaskMeta, taskMetaHtml } from "../markdown/tasks";
 import { notePath, refreshPreview } from "./context";
 import {
@@ -70,6 +70,24 @@ function touches(state: EditorState, from: number, to: number): boolean {
   if (at != null && at >= from && at <= to) return true;
   if (!state.field(focused, false)) return false;
   return state.selection.ranges.some((r) => r.from <= to && r.to >= from);
+}
+
+/**
+ * Like `touches`, but a cursor at either edge doesn't count. For embedded
+ * notes and pages, which fill their line: clicking beside one puts the cursor
+ * at its edge, and that shouldn't swap the embed for its source. The embed's
+ * own edit button puts the cursor inside.
+ */
+function within(state: EditorState, from: number, to: number): boolean {
+  const at = state.field(revealed, false);
+  if (at != null && at >= from && at <= to) return true;
+  if (!state.field(focused, false)) return false;
+  return state.selection.ranges.some((r) => r.from < to && r.to > from);
+}
+
+/** Notes and pages embed as blocks; images and external files sit in the text. */
+function isBlockEmbed(target: string, external: boolean): boolean {
+  return !external && !isImage(splitTarget(target).target);
 }
 
 function safeDecode(s: string): string {
@@ -150,39 +168,38 @@ function buildInline(view: EditorView): DecorationSet {
           }
 
           case "Image": {
-            if (active(ref.from, ref.to)) return false;
             const url = node.getChild("URL");
             if (!url) return false;
             const href = state.sliceDoc(url.from, url.to);
+            const external = hasScheme(href);
+            const target = external ? href : safeDecode(href);
+            const block = isBlockEmbed(target, external);
+            if (block ? within(state, ref.from, ref.to) : active(ref.from, ref.to)) return false;
             const marks = node.getChildren("LinkMark");
             const alt = marks.length >= 2 ? state.sliceDoc(marks[0]!.to, marks[1]!.from) : "";
-            const external = hasScheme(href);
-            const widget = new EmbedWidget(
-              external ? href : safeDecode(href),
-              alt,
-              source,
-              external,
-            );
+            const widget = new EmbedWidget(target, alt, source, external, block);
             decos.push(Decoration.replace({ widget }).range(ref.from, ref.to));
             return false;
           }
 
           case "WikiLink":
           case "WikiEmbed": {
-            if (active(ref.from, ref.to)) {
+            const embed = ref.name === "WikiEmbed";
+            const link = splitWikilink(state.sliceDoc(ref.from + (embed ? 3 : 2), ref.to - 2));
+            const block = embed && isBlockEmbed(link.target, false);
+            if (block ? within(state, ref.from, ref.to) : active(ref.from, ref.to)) {
               decos.push(Decoration.mark({ class: "cm-wikilink-source" }).range(ref.from, ref.to));
               return false;
             }
-            const start = ref.name === "WikiEmbed" ? ref.from + 3 : ref.from + 2;
-            const link = splitWikilink(state.sliceDoc(start, ref.to - 2));
-            const widget =
-              ref.name === "WikiEmbed"
-                ? new EmbedWidget(
-                    link.subpath ? `${link.target}#${link.subpath}` : link.target,
-                    link.alias,
-                    source,
-                  )
-                : new WikiLinkWidget(link, source);
+            const widget = embed
+              ? new EmbedWidget(
+                  link.subpath ? `${link.target}#${link.subpath}` : link.target,
+                  link.alias,
+                  source,
+                  false,
+                  block,
+                )
+              : new WikiLinkWidget(link, source);
             decos.push(Decoration.replace({ widget }).range(ref.from, ref.to));
             return false;
           }

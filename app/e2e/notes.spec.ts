@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { FIXTURE_VAULT as VAULT } from "./fixtures";
@@ -9,6 +9,19 @@ test.describe.configure({ mode: "serial" });
 test.beforeEach(async ({ page }) => {
   page.on("pageerror", (e) => console.log("pageerror:", e.message));
   await openVault(page, VAULT);
+});
+
+test("leaving the title puts the cursor below the properties", async ({ page }) => {
+  const note = "Cursor start.md";
+  writeFileSync(join(VAULT, note), "---\ncreated: 2026-11-08\n---\nFirst line.\n");
+  await quickOpen(page, "Cursor start");
+  await page.getByLabel("Note title").click();
+  await page.keyboard.press("Enter");
+  // The properties stay a table, and typing goes into the note's text.
+  await expect(page.locator(".cm-properties")).toBeVisible();
+  await page.keyboard.type("Typed. ");
+  await expectFile(VAULT, note, (t) => t === "---\ncreated: 2026-11-08\n---\nTyped. First line.\n");
+  rmSync(join(VAULT, note));
 });
 
 test("edits autosave to disk", async ({ page }) => {
