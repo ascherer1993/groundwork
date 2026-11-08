@@ -113,25 +113,52 @@ async function badge(count: number) {
   }
 }
 
-/** A toast for a new item while the window has focus; else the shell notifies. */
+/**
+ * A toast for a new item while the window has focus; else the shell notifies.
+ * One done as it arrives (a finished request's summary) is only in passing.
+ */
 function announce(item: InboxItem) {
   // Attention for the terminal on screen needs no word.
   if (!document.hasFocus() || item.kind === "attention") return;
+  if (item.done) {
+    useUi.getState().notify(`Finished: ${item.text}`, {
+      label: "Show",
+      run: () => showDone(item),
+    });
+    return;
+  }
   useUi.getState().notify(`${title(item)}: ${item.text}`, {
     label: item.kind === "ask" ? "Answer" : "Show",
     run: () => useInbox.getState().setOpen(true),
   });
 }
 
+function openItemLink(item: InboxItem): boolean {
+  if (item.kind !== "notify" || !item.link) return false;
+  void useWorkspace.getState().openLink("", item.link.replace(/^\[\[|\]\]$/g, ""));
+  return true;
+}
+
+/** What a finished item is about: its note or tab, else the inbox's history. */
+function showDone(item: InboxItem) {
+  if (goToTab(item) || openItemLink(item)) return;
+  useInbox.getState().setOpen(true);
+  useInbox.getState().setView("earlier");
+}
+
 /** Shows what a clicked notification was about. */
 async function showItem(id: string) {
   await useInbox.getState().load();
   const item = useInbox.getState().items.find((i) => i.id === id);
-  if (item?.kind !== "ask" && item && goToTab(item)) return;
-  if (item?.kind === "notify" && item.link) {
-    void useWorkspace.getState().openLink("", item.link.replace(/^\[\[|\]\]$/g, ""));
+  if (!item) {
+    // Done already: a finished request's summary, or answered elsewhere.
+    const done = (await api.inboxHistory().catch(() => [])).find((i) => i.id === id);
+    if (done) showDone(done);
+    else useInbox.getState().setOpen(true);
     return;
   }
+  if (item.kind !== "ask" && goToTab(item)) return;
+  if (openItemLink(item)) return;
   useInbox.getState().setOpen(true);
 }
 

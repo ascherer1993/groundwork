@@ -506,7 +506,7 @@ pub enum Request {
         #[ts(optional)]
         tab: Option<String>,
         /// Nothing to do about it: straight to the history (Earlier), with
-        /// no notification. `groundwork done`'s summary.
+        /// a passing notification but no badge. `groundwork done`'s summary.
         #[serde(default)]
         done: bool,
     },
@@ -683,7 +683,8 @@ pub enum Event {
     /// An item was added to the inbox, or answered or dismissed.
     #[serde(rename = "inbox.changed")]
     InboxChanged {
-        /// The item added, if one was.
+        /// The item added, if one was. One already `done` is only to announce
+        /// in passing (a notification or toast): it doesn't wait in the inbox.
         #[ts(optional)]
         added: Option<InboxItem>,
     },

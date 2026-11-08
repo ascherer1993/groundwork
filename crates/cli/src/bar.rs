@@ -33,9 +33,9 @@ fn outcome_name(outcome: Option<Outcome>) -> &'static str {
     }
 }
 
-/// Records how the request went, tells the user (in the inbox's history,
-/// unless there's something for them to do) and, for a finished one-off,
-/// closes this tab once Claude's turn ends.
+/// Records how the request went, tells the user (a passing notification,
+/// kept in the inbox's history, unless there's something for them to do) and,
+/// for a finished one-off, closes this tab once Claude's turn ends.
 pub fn done(
     vault: &Path,
     summary: String,
@@ -58,10 +58,10 @@ pub fn done(
     let keep_open = keep_open || outcome != Outcome::Done;
     let tab = live::this_tab();
 
-    // Only something for them to do waits in the inbox (and notifies):
-    // a request that needs them or failed, while they weren't watching. The
-    // rest goes straight to its history, Earlier. A closing tab can't be
-    // gone back to.
+    // Only something for them to do waits in the inbox: a request that needs
+    // them or failed, while they weren't watching. The rest goes straight to
+    // its history, Earlier, and the app announces it in passing (a "Finished"
+    // notification). A closing tab can't be gone back to.
     let waits = outcome != Outcome::Done && !entry.shown;
     let from = if keep_open { tab.clone() } else { None };
     if let Err(e) = inbox::post_notify(summary.clone(), link, from, !waits) {

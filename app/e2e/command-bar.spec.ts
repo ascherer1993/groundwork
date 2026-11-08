@@ -51,7 +51,12 @@ test("the command bar starts Claude on the whole vault, and logs how it went", a
   expect(call).toContain("your last step is `groundwork done");
   expect(call).not.toContain("They pointed you at");
 
-  // What it did goes in the inbox's history: nothing waits on you.
+  // It says what it did in passing (in the desktop app, a macOS notification
+  // while Groundwork is in the background; a toast while it's in front)...
+  await expect(page.locator(".toast")).toContainText(
+    "Finished: Did: Open a worktree for TEAM-9 [done]",
+  );
+  // ...and it goes in the inbox's history: nothing waits on you.
   const inboxButton = page.getByRole("button", { name: /^Inbox/ });
   const inbox = page.getByRole("dialog", { name: "Inbox" });
   await inboxButton.click();

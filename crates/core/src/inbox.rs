@@ -81,7 +81,8 @@ pub struct NewItem {
     pub tab: Option<String>,
     pub vault: Option<String>,
     /// Nothing to do about it: it goes straight to the history, done when
-    /// it's made (`done_at == created`), with no notification.
+    /// it's made (`done_at == created`). The app announces it in passing (a
+    /// notification, or a toast while it's in front) but doesn't badge it.
     pub done: bool,
 }
 

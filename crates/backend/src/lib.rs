@@ -1286,6 +1286,30 @@ mod tests {
         let err = call(json!({ "method": "inbox.answer", "params": { "id": id } }));
         assert_eq!(err["error"]["code"], "conflict");
 
+        // A finished request's summary is announced (a notification), but
+        // only to the history: nothing waits in the inbox.
+        while h.events.try_recv().is_ok() {}
+        let fin = call(json!({ "method": "inbox.notify",
+            "params": { "text": "Added a todo", "done": true } }));
+        let fid = fin["ok"]["id"].as_str().unwrap().to_string();
+        assert!(h.events.try_iter().any(|e| matches!(&e,
+            Event::InboxChanged { added: Some(item) } if item.id == fid && item.done)));
+        let open = call(json!({ "method": "inbox.list" }))["ok"].clone();
+        assert!(
+            open.as_array()
+                .unwrap()
+                .iter()
+                .all(|i| i["id"] != fid.as_str())
+        );
+        let history = call(json!({ "method": "inbox.history" }))["ok"].clone();
+        assert!(
+            history
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|i| i["id"] == fid.as_str())
+        );
+
         // Hooks: a permission prompt posts one attention item; the next
         // prompt clears it.
         let hook = |event: &str, message: Option<&str>| {

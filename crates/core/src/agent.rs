@@ -165,11 +165,12 @@ impl Session {
              `workspace open` returns without an error, it worked. Don't check up on it, wait for \
              the user to click something, or read terminals back to confirm.\n\
              \n\
-             When you've finished, your last step is `groundwork done \"<what you did, in a line \
-             or two>\"` (add `--link <note>` for the note it's about). It records the request in \
-             the command log, which the user reviews, and puts your summary in their inbox's \
-             history (only a request that needs them or failed waits for them there), so don't \
-             also `notify`. For a one-off request it then closes this tab once your turn ends, so \
+             When you've finished, your last step is `groundwork done \"<what you did>\"` (add \
+             `--link <note>` for the note it's about). It records the request in the command log, \
+             which the user reviews, and sends your summary to them as a macOS notification, so \
+             make it one short line they can take in at a glance (\"Added 'Call the dentist' to \
+             today's todos\"). It's kept in their inbox's history, but only a request that needs \
+             them or failed waits for them in the inbox, so don't also `notify`. For a one-off request it then closes this tab once your turn ends, so \
              finished sessions don't pile up. Keep the tab open instead, with `--keep-open`, \
              whenever the user asked you to keep going, stay around or wait for something, or the \
              work carries on (something still running, more to do together). If you couldn't do \

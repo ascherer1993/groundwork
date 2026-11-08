@@ -203,7 +203,7 @@ enum Command {
     /// watching), and closes this tab once Claude's turn ends, unless
     /// `--keep-open` or the outcome isn't `done`.
     Done {
-        /// What you did, in a line or two.
+        /// What you did, in a short line: it's the user's notification.
         summary: String,
         /// `done`, `needs-you` (it's waiting on them) or `failed`.
         #[arg(long, default_value = "done", value_parser = bar::outcome_arg)]

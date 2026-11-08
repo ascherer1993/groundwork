@@ -9,6 +9,7 @@ import type { UiCommand } from "./UiCommand";
  */
 export type Event = { "event": "vault.changed", "payload": { changes: Array<FileChange>, } } | { "event": "page.stateChanged", "payload": { path: string, } } | { "event": "terminal.output", "payload": { id: string, seq: number, data: string, } } | { "event": "terminal.title", "payload": { id: string, title: string, } } | { "event": "terminal.bell", "payload": { id: string, } } | { "event": "terminal.process", "payload": { id: string, process: string | null, cwd: string | null, } } | { "event": "terminal.notify", "payload": { id: string, title: string | null, body: string, } } | { "event": "terminal.exit", "payload": { id: string, code: number | null, } } | { "event": "terminal.disconnected" } | { "event": "inbox.changed", "payload": { 
 /**
- * The item added, if one was.
+ * The item added, if one was. One already `done` is only to announce
+ * in passing (a notification or toast): it doesn't wait in the inbox.
  */
 added?: InboxItem, } } | { "event": "agent.changed", "payload": { agent: AgentInfo, } } | { "event": "workspaces.changed" } | { "event": "ui.command", "payload": { id: number, command: UiCommand, } };

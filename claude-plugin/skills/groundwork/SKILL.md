@@ -267,7 +267,7 @@ groundwork done --outcome failed "…"         # it didn't work (keeps the tab o
 groundwork log [--limit 20]                  # the command log: each request, when, and how it went
 ```
 
-`done` records the request's outcome in the command log, which the user reviews, puts your summary in the inbox's history, where it doesn't wait on them (only `needs-you` and `failed` do, when they weren't watching; so don't also `notify`), and closes the tab once your turn ends, so one-off requests don't pile up open tabs. Keep it open whenever they asked you to keep going or wait for something, the work carries on, or you're unsure. If you carry on later, run `done` again when you finish.
+`done` records the request's outcome in the command log, which the user reviews, sends your summary to them as a macOS notification (so make it one short line: "Added 'Call the dentist' to today's todos") and keeps it in the inbox's history, where it doesn't wait on them (only `needs-you` and `failed` do, when they weren't watching; so don't also `notify`), and closes the tab once your turn ends, so one-off requests don't pile up open tabs. Keep it open whenever they asked you to keep going or wait for something, the work carries on, or you're unsure. If you carry on later, run `done` again when you finish.
 
 ## The app's window: opening notes, workspaces and terminal tabs
 

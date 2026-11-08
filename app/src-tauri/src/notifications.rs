@@ -57,6 +57,8 @@ pub fn setup(identifier: &str) {
 
 /// Follows the inbox: notifies new items while the window is in the
 /// background, and takes down notifications for items done elsewhere.
+/// An item done as it arrives (a finished request's summary) is announced
+/// in passing: it doesn't bounce the dock or wait in the inbox.
 pub fn on_event(app: &AppHandle, event: &Event) {
     if !ENABLED.load(Ordering::Relaxed) {
         return;
@@ -67,14 +69,34 @@ pub fn on_event(app: &AppHandle, event: &Event) {
     let app = app.clone();
     let added = added.clone();
     std::thread::spawn(move || {
-        if let Some(item) = added
-            && !focused(&app)
-        {
-            attention(&app, &item);
-            show(&app, item);
+        match added {
+            Some(item) if item.done => {
+                if !focused(&app) {
+                    show_finished(&app, item);
+                }
+                return;
+            }
+            Some(item) if !focused(&app) => {
+                attention(&app, &item);
+                show(&app, item);
+            }
+            _ => {}
         }
         withdraw_done(&app);
     });
+}
+
+/// A finished request's summary. It isn't open, so `withdraw_done` leaves
+/// it alone (it isn't in `shown`); clicking it shows what it's about.
+fn show_finished(app: &AppHandle, item: InboxItem) {
+    let mut options = Notification::new();
+    options.wait_for_click(true);
+    if let Some(NotificationResponse::Click | NotificationResponse::ActionButton(_)) =
+        send("Finished", &item.text, &options)
+    {
+        bring_forward(app);
+        let _ = app.emit(CHANNEL, json!({ "id": item.id }));
+    }
 }
 
 /// Sends a sample question a few seconds from now, so you can switch away
