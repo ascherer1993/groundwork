@@ -736,6 +736,16 @@ impl Backend {
             }
 
             Request::ProjectView { project } => to_value(self.session()?.project_view(&project)?),
+            Request::PeopleList => to_value(self.session()?.people()),
+            Request::FrontmatterSetList { text, key, values } => {
+                to_value(groundwork_core::frontmatter::set(
+                    &text,
+                    &[(
+                        key.as_str(),
+                        Some(groundwork_core::frontmatter::Prop::List(values)),
+                    )],
+                ))
+            }
 
             Request::TicketList { filter } => to_value(self.session()?.tickets(&filter)?),
             Request::TicketGit { path } => to_value(self.session()?.ticket_git(&path)?),

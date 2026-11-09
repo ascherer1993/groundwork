@@ -8,6 +8,7 @@ import type { AgentContext } from "./generated/AgentContext";
 import type { BarCommand } from "./generated/BarCommand";
 import type { CommandEntry } from "./generated/CommandEntry";
 import type { ProjectView } from "./generated/ProjectView";
+import type { Person } from "./generated/Person";
 import type { QmdStatus } from "./generated/QmdStatus";
 import type { SmartResult } from "./generated/SmartResult";
 import type { WhoKnows } from "./generated/WhoKnows";
@@ -137,6 +138,8 @@ interface Results {
   "repo.locate": RepoLocation;
   "project.list": ProjectInfo[];
   "project.view": ProjectView;
+  "people.list": Person[];
+  "frontmatter.setList": string;
   "search.smart": SmartResult[];
   "qmd.status": QmdStatus;
   "qmd.setup": QmdStatus;
@@ -317,6 +320,9 @@ export const api = {
   whoKnows: (topic: string, limit?: number) => call("who.knows", { topic, limit }),
   /** A project's events and people. */
   projectView: (project: string) => call("project.view", { project }),
+  people: () => call("people.list"),
+  setListProperty: (text: string, key: string, values: string[]) =>
+    call("frontmatter.setList", { text, key, values }),
   inbox: () => call("inbox.list"),
   inboxHistory: () => call("inbox.history"),
   answerInbox: (id: string, answer?: string) => call("inbox.answer", { id, answer }),

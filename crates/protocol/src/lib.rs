@@ -597,6 +597,19 @@ pub enum Request {
     #[serde(rename = "project.view")]
     ProjectView { project: String },
 
+    /// → `Person[]`: every contact in the vault, by name.
+    #[serde(rename = "people.list")]
+    PeopleList,
+
+    /// → `string`: `text` (a note's) with its `key` property set to the list
+    /// `values`, leaving the rest of its frontmatter as written.
+    #[serde(rename = "frontmatter.setList")]
+    FrontmatterSetList {
+        text: String,
+        key: String,
+        values: Vec<String>,
+    },
+
     /// → `Ticket[]`
     #[serde(rename = "ticket.list")]
     TicketList { filter: TicketFilter },

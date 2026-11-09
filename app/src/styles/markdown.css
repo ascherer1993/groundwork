@@ -397,6 +397,93 @@ summary.callout-title {
   text-decoration: none;
 }
 
+/* People properties: remove one, or pick more from the contacts. */
+.property-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.property-remove,
+.property-add {
+  padding: 0 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+  font: inherit;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.property-remove {
+  visibility: hidden;
+}
+
+.property-value:hover .property-remove,
+.property-remove:focus-visible {
+  visibility: visible;
+}
+
+.property-remove:hover,
+.property-add:hover,
+.property-remove:focus-visible,
+.property-add:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.people-picker {
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  padding: 0;
+  overflow: hidden;
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+.people-picker-input {
+  padding: 8px 10px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.people-picker-input:focus-visible {
+  outline: none;
+}
+
+.people-picker-list {
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.menu .people-picker-item {
+  flex-direction: column;
+  align-items: flex-start;
+  color: var(--text);
+}
+
+.menu .people-picker-item[aria-selected] {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.people-picker-detail {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.people-picker-empty {
+  padding: 6px 10px;
+  color: var(--text-faint);
+}
+
 /* Editor live preview */
 
 .cm-content[data-mode="live"] {

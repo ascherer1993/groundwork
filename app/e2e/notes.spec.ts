@@ -24,6 +24,46 @@ test("leaving the title puts the cursor below the properties", async ({ page }) 
   rmSync(join(VAULT, note));
 });
 
+test("people are picked from the contacts into the properties", async ({ page }) => {
+  const note = "People picker.md";
+  writeFileSync(
+    join(VAULT, note),
+    '---\ntype: event\n# who came\npeople: ["[[Jane Doe]]"]\n---\nNotes.\n',
+  );
+  await quickOpen(page, "People picker");
+  const props = editor(page).locator(".cm-properties");
+  await props.getByRole("button", { name: "Add a person to people" }).click();
+
+  // Contacts already there aren't offered; the list narrows as you type.
+  const picker = page.getByRole("dialog", { name: "Add a person" });
+  const options = picker.getByRole("option");
+  await expect(options).toHaveText(["Lee Park", "Priya Shah", "Sam Lee"].map((n) => new RegExp(n)));
+  await picker.getByLabel("Find a contact").fill("sam");
+  await expect(options).toHaveCount(1);
+  await page.keyboard.press("Enter");
+  await expectFile(
+    VAULT,
+    note,
+    (t) =>
+      t === '---\ntype: event\n# who came\npeople: ["[[Jane Doe]]", "[[Sam Lee]]"]\n---\nNotes.\n',
+  );
+
+  // The picker stays open for more; a click outside closes it.
+  await expect(options).toHaveCount(2);
+  await page.mouse.click(5, 5);
+  await expect(picker).toBeHidden();
+
+  // Each person can be taken out again.
+  await props.locator(".property-value", { hasText: "Jane Doe" }).hover();
+  await props.getByRole("button", { name: "Remove [[Jane Doe]]" }).click();
+  await expectFile(
+    VAULT,
+    note,
+    (t) => t === '---\ntype: event\n# who came\npeople: ["[[Sam Lee]]"]\n---\nNotes.\n',
+  );
+  rmSync(join(VAULT, note));
+});
+
 test("edits autosave to disk", async ({ page }) => {
   await quickOpen(page, "Welcome");
   await editor(page).click();

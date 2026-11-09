@@ -362,7 +362,7 @@ You type `!p1` and it turns into the marker. The CLI and agents always use the `
   - footnotes
   - task lists with clickable checkboxes
   - tables
-  - frontmatter shown as a properties panel
+  - frontmatter shown as a properties panel. In the editor, a `people:` property has a **+** that opens a searchable picker of the vault's contacts (§5.13's people: `type: person` or `contact`, or in `Contacts/`; API `people.list`), leaving out those already there, and each person has an **×** that takes them out. The list is rewritten in place (`frontmatter.setList`, through `frontmatter.rs`), keeping other properties and comments, and the change goes through the editor so it can be undone.
 - **Navigation:** Cmd-click a link to open it in a new tab, hold ⌘ over a link to preview it (the preview closes once the pointer leaves both the link and the preview), and get autocomplete for `[[`.
 
 ### 5.3 Templates & daily notes

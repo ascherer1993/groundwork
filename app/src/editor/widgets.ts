@@ -14,6 +14,7 @@ import {
   wikiDisplay,
 } from "../markdown/syntax";
 import { notePath } from "./context";
+import { attachPropertyEditing, PEOPLE_PROPERTIES } from "./properties";
 
 /**
  * Fills in a widget's links, embeds and diagrams. They change its height
@@ -353,9 +354,10 @@ export class PropertiesWidget extends WidgetType {
     const div = document.createElement("div");
     div.className = "cm-properties";
     div.dataset.notePath = this.source;
-    div.innerHTML = propertiesHtml(this.yaml);
+    div.innerHTML = propertiesHtml(this.yaml, true);
     hydrateWidget(view, div, this.source);
     attachContentHandlers(div);
+    attachPropertyEditing(view, div, this.source);
     div.addEventListener("mousedown", (e) => {
       if (isInteractive(e.target)) return;
       e.preventDefault();
@@ -369,8 +371,12 @@ export class PropertiesWidget extends WidgetType {
   }
 }
 
-/** Renders frontmatter YAML as a two-column table; values may contain links. */
-export function propertiesHtml(yaml: string): string {
+/**
+ * Renders frontmatter YAML as a two-column table; values may contain links.
+ * `editable` adds the controls for list properties people are picked into
+ * (see `./properties`), for the editor's panel.
+ */
+export function propertiesHtml(yaml: string, editable = false): string {
   let data: unknown;
   try {
     data = parseYaml(yaml);
@@ -382,11 +388,22 @@ export function propertiesHtml(yaml: string): string {
   }
   const rows = Object.entries(data as Record<string, unknown>).map(([key, value]) => {
     const values = Array.isArray(value) ? value : [value];
+    const picked = editable && PEOPLE_PROPERTIES.has(key);
     const cells = values
-      .filter((v) => v !== null && v !== undefined && v !== "")
-      .map((v) => `<span class="property-value">${renderInline(formatValue(v))}</span>`)
+      .map((v, i) => ({ v, i }))
+      .filter(({ v }) => v !== null && v !== undefined && v !== "")
+      .map(({ v, i }) => {
+        const remove = picked
+          ? `<button type="button" class="property-remove" data-index="${i}" title="Remove" aria-label="Remove ${escapeHtml(formatValue(v))}">×</button>`
+          : "";
+        return `<span class="property-value">${renderInline(formatValue(v))}${remove}</span>`;
+      })
       .join("");
-    return `<div class="property"><div class="property-key">${escapeHtml(key)}</div><div class="property-values">${cells || '<span class="muted">—</span>'}</div></div>`;
+    const add = picked
+      ? `<button type="button" class="property-add" data-key="${escapeHtml(key)}" title="Add a person" aria-label="Add a person to ${escapeHtml(key)}">+</button>`
+      : "";
+    const empty = add ? "" : '<span class="muted">—</span>';
+    return `<div class="property"><div class="property-key">${escapeHtml(key)}</div><div class="property-values">${cells || empty}${add}</div></div>`;
   });
   return `<div class="properties-title">Properties</div>${rows.join("")}`;
 }
