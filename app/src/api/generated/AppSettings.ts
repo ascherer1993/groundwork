@@ -5,4 +5,9 @@ export type AppSettings = {
  * Shortcuts changed from their defaults, by command id: a key
  * combination like `Ctrl+Cmd+1`, or `null` for none.
  */
-keys: Record<string, string | null>, };
+keys: Record<string, string | null>, 
+/**
+ * Minutes without use before an unlocked encrypted note locks again;
+ * 0 for never. The app's default (10) when absent.
+ */
+lockAfterMinutes?: number, };

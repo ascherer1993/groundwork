@@ -7,6 +7,8 @@ import { insertRendered } from "../editor/templates";
 import { EDITOR_COMMANDS } from "../editor/commands";
 import { EditorView } from "@codemirror/view";
 import { isViewPath, TODO_BOARD } from "./paths";
+import { changePassword, encryptNote, removeEncryption } from "./encryption";
+import { isEncrypted, isUnlocked, useLocks } from "../state/locks";
 import { formDialog, type PaletteItem, promptDialog, useUi } from "../state/ui";
 import { message, newNoteFolder, useVault } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
@@ -126,6 +128,13 @@ const hasActive = () => {
 };
 const hasTab = () => !!useWorkspace.getState().activePath;
 
+/** The active tab's note, and whether it's encrypted. */
+function activeNote(): { path: string; encrypted: boolean } | null {
+  const path = useWorkspace.getState().activePath;
+  if (!path || !path.toLowerCase().endsWith(".md")) return null;
+  return { path, encrypted: isEncrypted(path) };
+}
+
 function activeEditor(): EditorView | null {
   const path = useWorkspace.getState().activePath;
   return path ? editorFor(path) : null;
@@ -185,6 +194,39 @@ function commands(): Command[] {
       label: "Toggle reading view",
       when: hasActive,
       run: () => ws.toggleReading(),
+    },
+    {
+      id: "encrypt-note",
+      label: "Encrypt this note…",
+      when: () => activeNote()?.encrypted === false,
+      run: () => encryptNote(activeNote()!.path),
+    },
+    {
+      id: "lock-note",
+      label: "Lock this note",
+      when: () => {
+        const note = activeNote();
+        return !!note?.encrypted && isUnlocked(note.path);
+      },
+      run: () => useLocks.getState().lock(activeNote()!.path),
+    },
+    {
+      id: "lock-all-notes",
+      label: "Lock all encrypted notes",
+      when: () => Object.keys(useLocks.getState().unlocked).length > 0,
+      run: () => useLocks.getState().lockAll(),
+    },
+    {
+      id: "change-note-password",
+      label: "Change this note’s password…",
+      when: () => !!activeNote()?.encrypted,
+      run: () => changePassword(activeNote()!.path),
+    },
+    {
+      id: "remove-encryption",
+      label: "Remove this note’s encryption…",
+      when: () => !!activeNote()?.encrypted,
+      run: () => removeEncryption(activeNote()!.path),
     },
     {
       id: "split-right",

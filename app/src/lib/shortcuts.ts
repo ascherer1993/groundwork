@@ -1,4 +1,5 @@
 import { commandFor, useKeys } from "../state/keys";
+import { loadLockSettings } from "../state/locks";
 import { useVault } from "../state/vault";
 import { runKey } from "./commands";
 import { comboOf, usable } from "./keyCombo";
@@ -9,6 +10,7 @@ import { comboOf, usable } from "./keyCombo";
  */
 export function installShortcuts(): () => void {
   void useKeys.getState().load();
+  void loadLockSettings();
   const onKey = (e: KeyboardEvent) => {
     if (useVault.getState().status !== "vault") return;
     // The settings are recording new keys for a command.

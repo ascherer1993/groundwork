@@ -17,6 +17,7 @@ use ts_rs::TS;
 
 use crate::activity::{ActivityKind, ActivityLog, ActivitySource, machine_id};
 use crate::config::{self as config_file, Config};
+use crate::crypt;
 use crate::daily::DailySettings;
 use crate::index::{FileEntry, Index, NewFileLocation, Upsert, hash, link_name};
 use crate::pages;
@@ -239,16 +240,116 @@ impl Session {
     // ---- Writing -------------------------------------------------------
 
     /// Replaces a note's text. Returns the new content hash.
+    /// Replaces a file's text. An encrypted note is refused (see
+    /// [`Session::write_encrypted`]): nothing can write over it by accident.
     pub fn write_file(&self, path: &str, text: &str) -> Result<(String, Vec<FileChange>)> {
         let _guard = self.write_lock.lock().unwrap();
         let full = self.vault.resolve(path)?;
         if full.is_dir() {
             return Err(CoreError::InvalidPath(format!("{path} is a folder")));
         }
+        if is_encrypted_file(&full) {
+            return Err(CoreError::Encrypted(path.to_string()));
+        }
         atomic_write(&full, text)?;
         let changes = self.reindex(&[path], false);
         self.log_changes(&changes, self.source);
         Ok((hash(text.as_bytes()), changes))
+    }
+
+    // ---- Encrypted notes (see [`crypt`]) ---------------------------------
+
+    /// Encrypts a note in place with a new password. Returns its key.
+    pub fn encrypt_note(
+        &self,
+        path: &str,
+        password: &str,
+        hint: &str,
+    ) -> Result<(crypt::Key, Vec<FileChange>)> {
+        let _guard = self.write_lock.lock().unwrap();
+        let full = self.note_file(path)?;
+        let text = fs::read_to_string(&full)?;
+        if crypt::is_encrypted(&text) {
+            return Err(CoreError::Conflict(format!("{path} is already encrypted")));
+        }
+        let (file, key) = crypt::encrypt(&text, password, hint)?;
+        atomic_write(&full, &file)?;
+        Ok((key, self.encrypted_written(path)))
+    }
+
+    /// Opens an encrypted note with its password: its text and key.
+    pub fn unlock_note(&self, path: &str, password: &str) -> Result<(String, crypt::Key)> {
+        let full = self.note_file(path)?;
+        crypt::unlock(&fs::read_to_string(&full)?, password)
+    }
+
+    /// Reads an unlocked encrypted note with its key.
+    pub fn read_encrypted(&self, path: &str, key: &crypt::Key) -> Result<String> {
+        let full = self.note_file(path)?;
+        key.open(&fs::read_to_string(&full)?)
+    }
+
+    /// Saves an unlocked encrypted note's text, sealed with its key. Its
+    /// hint is kept. Returns the file's hash, like [`Session::write_file`].
+    pub fn write_encrypted(
+        &self,
+        path: &str,
+        key: &crypt::Key,
+        text: &str,
+    ) -> Result<(String, Vec<FileChange>)> {
+        let _guard = self.write_lock.lock().unwrap();
+        let full = self.note_file(path)?;
+        let current = fs::read_to_string(&full)?;
+        if !crypt::is_encrypted(&current) {
+            return Err(CoreError::Conflict(format!("{path} isn't encrypted")));
+        }
+        let file = key.seal(text, &crypt::hint(&current))?;
+        atomic_write(&full, &file)?;
+        Ok((hash(file.as_bytes()), self.encrypted_written(path)))
+    }
+
+    /// Takes a note's encryption off: writes its text back in the clear.
+    pub fn decrypt_note(&self, path: &str, password: &str) -> Result<Vec<FileChange>> {
+        let _guard = self.write_lock.lock().unwrap();
+        let full = self.note_file(path)?;
+        let (text, _) = crypt::unlock(&fs::read_to_string(&full)?, password)?;
+        atomic_write(&full, &text)?;
+        let changes = self.reindex(&[path], false);
+        self.log_changes(&changes, self.source);
+        Ok(changes)
+    }
+
+    /// Re-encrypts a note with a new password and hint.
+    pub fn change_note_password(
+        &self,
+        path: &str,
+        old: &str,
+        new: &str,
+        hint: &str,
+    ) -> Result<(crypt::Key, Vec<FileChange>)> {
+        let _guard = self.write_lock.lock().unwrap();
+        let full = self.note_file(path)?;
+        let (text, _) = crypt::unlock(&fs::read_to_string(&full)?, old)?;
+        let (file, key) = crypt::encrypt(&text, new, hint)?;
+        atomic_write(&full, &file)?;
+        Ok((key, self.encrypted_written(path)))
+    }
+
+    /// A note's file, for the encryption calls.
+    fn note_file(&self, path: &str) -> Result<PathBuf> {
+        let full = self.vault.resolve(path)?;
+        if classify(path, full.is_dir()) != NodeKind::Note {
+            return Err(CoreError::InvalidPath(format!("{path} isn't a note")));
+        }
+        Ok(full)
+    }
+
+    /// Reindexes an encrypted note just written. Its activity is logged
+    /// without detail: the log is plain text.
+    fn encrypted_written(&self, path: &str) -> Vec<FileChange> {
+        let changes = self.reindex(&[path], false);
+        self.log_changes(&changes, self.source);
+        changes
     }
 
     /// Creates a file. Notes created without text get a `created:` property.
@@ -1256,6 +1357,18 @@ fn starter_page(name: &str) -> String {
 
 /// Writes via a hidden temp file and a rename, so a crash never leaves a
 /// half-written note.
+/// Whether the note at `full` is encrypted (it reads only the start).
+fn is_encrypted_file(full: &Path) -> bool {
+    use std::io::Read;
+    let Ok(file) = fs::File::open(full) else {
+        return false;
+    };
+    let mut head = String::new();
+    // An encrypted note's frontmatter is two short lines and a hint.
+    let _ = file.take(4096).read_to_string(&mut head);
+    crypt::is_encrypted(&head)
+}
+
 pub(crate) fn atomic_write(path: &Path, text: &str) -> Result<()> {
     let name = path
         .file_name()
@@ -1469,6 +1582,98 @@ mod tests {
         fn exists(&self, path: &str) -> bool {
             self.dir.path().join(path).exists()
         }
+    }
+
+    #[test]
+    fn encrypted_notes_round_trip_and_hide_their_text() {
+        let v = TestVault::new(&[
+            (
+                "Secret.md",
+                "---\ntags: [money]\n---\nPIN 1234, see [[Other]]\n- [ ] pay ➕ 2026-11-01\n",
+            ),
+            ("Other.md", "[[Secret]]"),
+        ]);
+        let s = &v.session;
+        let (_, changes) = s.encrypt_note("Secret.md", "pw", "the usual").unwrap();
+        assert!(changes.iter().any(|c| c.path == "Secret.md"), "{changes:?}");
+        let file = v.read("Secret.md");
+        assert!(!file.contains("1234") && !file.contains("money"), "{file}");
+        assert!(file.contains("hint: the usual"));
+
+        // The index sees no tags, links or todos, and search only its name.
+        let index = s.index();
+        assert!(
+            index
+                .summaries()
+                .iter()
+                .any(|f| f.path == "Secret.md" && f.encrypted)
+        );
+        let note = index.note("Secret.md").unwrap();
+        assert!(note.tags.is_empty() && note.links.is_empty() && note.tasks.is_empty());
+        assert!(crate::search::search(&index, "1234", 10).is_empty());
+        let by_name = crate::search::search(&index, "secret", 10);
+        assert!(
+            by_name
+                .iter()
+                .any(|r| r.path == "Secret.md" && r.lines.is_empty())
+        );
+        // Links to it still resolve.
+        assert_eq!(index.backlinks("Secret.md").len(), 1);
+        drop(index);
+        assert!(s.todos(&Default::default()).is_empty());
+
+        assert!(matches!(
+            s.unlock_note("Secret.md", "nope"),
+            Err(CoreError::WrongPassword)
+        ));
+        let (text, key) = s.unlock_note("Secret.md", "pw").unwrap();
+        assert!(text.starts_with("---\ntags: [money]"));
+        s.write_encrypted("Secret.md", &key, "edited").unwrap();
+        assert_eq!(s.read_encrypted("Secret.md", &key).unwrap(), "edited");
+        assert!(v.read("Secret.md").contains("hint: the usual"));
+
+        // A new password; the old key no longer opens it.
+        let (new_key, _) = s
+            .change_note_password("Secret.md", "pw", "pw2", "new hint")
+            .unwrap();
+        assert!(s.read_encrypted("Secret.md", &key).is_err());
+        assert_eq!(s.read_encrypted("Secret.md", &new_key).unwrap(), "edited");
+        assert!(matches!(
+            s.decrypt_note("Secret.md", "pw"),
+            Err(CoreError::WrongPassword)
+        ));
+        s.decrypt_note("Secret.md", "pw2").unwrap();
+        assert_eq!(v.read("Secret.md"), "edited");
+        assert!(!s.index().summaries().iter().any(|f| f.encrypted));
+    }
+
+    #[test]
+    fn nothing_writes_over_an_encrypted_note() {
+        let v = TestVault::new(&[("Daily/2026-11-08.md", "## Todos\n- [ ] one\n")]);
+        let s = &v.session;
+        let path = "Daily/2026-11-08.md";
+        s.encrypt_note(path, "pw", "").unwrap();
+        let sealed = v.read(path);
+        assert!(matches!(
+            s.write_file(path, "plain"),
+            Err(CoreError::Encrypted(_))
+        ));
+        assert!(s.add_task(Some(path), "two", None, 0).is_err());
+        assert!(s.toggle_task(path, 1).is_err());
+        assert!(matches!(
+            s.encrypt_note(path, "pw", ""),
+            Err(CoreError::Conflict(_))
+        ));
+        assert_eq!(v.read(path), sealed);
+        // Only notes can be encrypted.
+        fs::write(v.dir.path().join("a.html"), "<p>").unwrap();
+        assert!(matches!(
+            s.encrypt_note("a.html", "pw", ""),
+            Err(CoreError::InvalidPath(_))
+        ));
+        // Renaming keeps it sealed.
+        s.rename(path, "Daily/Moved.md").unwrap();
+        assert_eq!(v.read("Daily/Moved.md"), sealed);
     }
 
     #[test]

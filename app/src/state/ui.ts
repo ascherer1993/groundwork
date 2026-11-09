@@ -27,7 +27,7 @@ export interface DialogField {
    * A date picker (`YYYY-MM-DD`) rather than text, or a todo's text, with
    * `@date` and `!priority` suggestions.
    */
-  type?: "date" | "todo";
+  type?: "date" | "todo" | "password";
   /** A menu of these rather than text. */
   options?: { value: string; label: string }[];
 }
@@ -40,6 +40,11 @@ interface Dialog {
   fields?: DialogField[];
   confirmLabel: string;
   danger?: boolean;
+  /**
+   * Checks the values before the dialog closes: a message to show (and keep
+   * it open), or `null`. It may be async (a wrong password, say).
+   */
+  validate?: (values: string[]) => string | null | Promise<string | null>;
   /** The field values, or `null` if cancelled. */
   resolve: (values: string[] | null) => void;
 }
@@ -183,6 +188,8 @@ export function formDialog(opts: {
   message?: string;
   fields: DialogField[];
   confirmLabel?: string;
+  danger?: boolean;
+  validate?: Dialog["validate"];
 }): Promise<string[] | null> {
   return new Promise((resolve) =>
     useUi.setState({

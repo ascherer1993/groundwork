@@ -177,6 +177,13 @@ pub fn listen(backend: &Arc<Backend>, socket: PathBuf) -> std::io::Result<()> {
     Ok(())
 }
 
+/// The CLI (and so an agent in a terminal) can't unlock, read or change
+/// encrypted notes, even ones unlocked in the app. It can lock them.
+fn allowed_on_socket(request: &Value) -> bool {
+    let method = request.get("method").and_then(Value::as_str).unwrap_or("");
+    !method.starts_with("crypt.") || method == "crypt.lock"
+}
+
 fn serve(backend: &Backend, stream: UnixStream) {
     let Ok(read) = stream.try_clone() else { return };
     let mut write = stream;
@@ -186,6 +193,10 @@ fn serve(backend: &Backend, stream: UnixStream) {
             continue;
         }
         let reply = match serde_json::from_str::<Value>(&line) {
+            Ok(request) if !allowed_on_socket(&request) => json!({ "error": ApiError::new(
+                ErrorCode::Forbidden,
+                "encrypted notes can only be opened in the app",
+            ) }),
             Ok(request) => match backend.handle_value(request) {
                 Ok(value) => json!({ "ok": value }),
                 Err(err) => json!({ "error": err }),

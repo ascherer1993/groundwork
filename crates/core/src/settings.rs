@@ -1,5 +1,5 @@
-//! App-wide settings that belong to this machine, not a vault: for now, the
-//! keyboard shortcuts you've changed.
+//! App-wide settings that belong to this machine, not a vault: the keyboard
+//! shortcuts you've changed, and when encrypted notes lock again.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -20,6 +20,15 @@ pub struct AppSettings {
     #[serde(default)]
     #[ts(type = "Record<string, string | null>")]
     pub keys: BTreeMap<String, Option<String>>,
+    /// Minutes without use before an unlocked encrypted note locks again;
+    /// 0 for never. The app's default (10) when absent.
+    #[serde(
+        default,
+        rename = "lockAfterMinutes",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[ts(optional)]
+    pub lock_after_minutes: Option<u32>,
 }
 
 pub struct Settings {

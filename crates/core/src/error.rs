@@ -16,6 +16,13 @@ pub enum CoreError {
     InvalidPath(String),
     #[error("{0}")]
     Conflict(String),
+    /// An encrypted note's password didn't open it.
+    #[error("wrong password")]
+    WrongPassword,
+    /// An encrypted note can't be changed that way: it has to be unlocked,
+    /// or the change would need its text.
+    #[error("{0} is encrypted")]
+    Encrypted(String),
     #[error("file is too large to open ({size} bytes)")]
     TooLarge { size: u64 },
     /// A Groundwork config file (`config.yml`, `repos.yml`, `.groundwork.yml`) is invalid.

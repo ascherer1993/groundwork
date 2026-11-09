@@ -162,9 +162,26 @@ function DialogForm({
 }) {
   const fields = dialog.fields ?? [];
   const [values, setValues] = useState(() => fields.map((f) => f.value ?? ""));
+  const [problem, setProblem] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const finish = (result: string[] | null) => {
     useUi.setState({ dialog: null });
     dialog.resolve(result);
+  };
+  const submit = async () => {
+    if (busy) return;
+    if (dialog.validate) {
+      setBusy(true);
+      const found = await Promise.resolve(dialog.validate(values)).catch((err: unknown) =>
+        err instanceof Error ? err.message : String(err),
+      );
+      setBusy(false);
+      if (found) {
+        setProblem(found);
+        return;
+      }
+    }
+    finish(values);
   };
 
   return (
@@ -178,14 +195,16 @@ function DialogForm({
         onKeyDown={(e) => e.key === "Escape" && !e.defaultPrevented && finish(null)}
         onSubmit={(e) => {
           e.preventDefault();
-          finish(values);
+          void submit();
         }}
       >
         <h2>{dialog.title}</h2>
         {dialog.message && <p className="muted">{dialog.message}</p>}
         {fields.map((field, i) => {
-          const set = (value: string) =>
+          const set = (value: string) => {
+            setProblem(null);
             setValues((v) => v.map((old, j) => (j === i ? value : old)));
+          };
           const input =
             field.type === "todo" ? (
               <TodoInput
@@ -217,6 +236,7 @@ function DialogForm({
                 value={values[i]}
                 spellCheck={false}
                 onChange={(e) => set(e.target.value)}
+                autoComplete={field.type === "password" ? "off" : undefined}
                 onFocus={(e) => field.type !== "date" && e.target.select()}
               />
             );
@@ -232,12 +252,18 @@ function DialogForm({
             </label>
           );
         })}
+        {problem && (
+          <p className="dialog-problem" role="alert">
+            {problem}
+          </p>
+        )}
         <div className="dialog-buttons">
           <button type="button" onClick={() => finish(null)}>
             Cancel
           </button>
           <button
             type="submit"
+            disabled={busy}
             autoFocus={fields.length === 0}
             className={dialog.danger ? "danger-button" : "primary"}
           >
@@ -305,6 +331,13 @@ function HoverPreview() {
       .readFile(hover.path)
       .then((file) => {
         if (cancelled) return;
+        if (file.encrypted) {
+          setLoaded({
+            for: hover,
+            html: `<p class="muted">Encrypted note. Open it to unlock it.</p>`,
+          });
+          return;
+        }
         const fm = splitFrontmatter(file.text ?? "");
         const text = hover.subpath ? (extractSubpath(fm.body, hover.subpath) ?? fm.body) : fm.body;
         setLoaded({

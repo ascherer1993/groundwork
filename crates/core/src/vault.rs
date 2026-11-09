@@ -35,6 +35,18 @@ pub struct FileContent {
     #[ts(optional)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// For an encrypted note (whose `text` is the sealed file): its hint.
+    #[ts(optional)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encrypted: Option<Encrypted>,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Encrypted {
+    /// Empty if it has none.
+    pub hint: String,
 }
 
 impl Vault {
@@ -121,11 +133,18 @@ impl Vault {
                 .filter(|t| !t.contains('\0')),
             _ => None,
         };
+        let encrypted = match (&kind, &text) {
+            (NodeKind::Note, Some(t)) if crate::crypt::is_encrypted(t) => Some(Encrypted {
+                hint: crate::crypt::hint(t),
+            }),
+            _ => None,
+        };
         Ok(FileContent {
             path: rel.to_string(),
             kind,
             size,
             text,
+            encrypted,
         })
     }
 }

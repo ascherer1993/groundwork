@@ -60,6 +60,7 @@ export const KEY_COMMANDS: KeyCommand[] = [
   { id: "todo-board", label: "Open the todo board", group: "Notes", key: "Shift+Cmd+T" },
   { id: "daily-today", label: "Open today’s daily note", group: "Notes", key: "Shift+Cmd+D" },
   { id: "toggle-reading", label: "Toggle reading view", group: "Notes", key: "Cmd+E" },
+  { id: "lock-note", label: "Lock this note", group: "Notes", key: "Ctrl+Cmd+L" },
   { id: "split-right", label: "Split right", group: "Notes", key: "Cmd+\\" },
   { id: "back", label: "Go back", group: "Notes", key: "Cmd+[" },
   { id: "forward", label: "Go forward", group: "Notes", key: "Cmd+]" },
@@ -136,7 +137,9 @@ interface KeysState {
 
 async function save(overrides: Record<string, string | null>) {
   try {
-    await api.saveSettings({ keys: overrides });
+    // The other settings stay as they are.
+    const current = await api.settings();
+    await api.saveSettings({ ...current, keys: overrides });
   } catch (err) {
     useUi.getState().notify(message(err));
   }

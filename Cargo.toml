@@ -21,6 +21,13 @@ ts-rs = "12"
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 
+# Encrypted notes derive their key with Argon2id, which is far too slow
+# unoptimized.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+
 # https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
 codegen-units = 1

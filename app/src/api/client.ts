@@ -75,6 +75,13 @@ interface Results {
   "page.setState": null;
   "file.read": FileContent;
   "file.write": WriteResult;
+  "crypt.encrypt": null;
+  "crypt.unlock": string;
+  "crypt.read": string;
+  "crypt.write": WriteResult;
+  "crypt.lock": null;
+  "crypt.decrypt": null;
+  "crypt.changePassword": null;
   "file.create": string;
   "file.createUntitled": string;
   "file.createFromLink": string;
@@ -208,6 +215,15 @@ export const api = {
 
   readFile: (path: string) => call("file.read", { path }),
   writeFile: (path: string, text: string) => call("file.write", { path, text }),
+  encryptNote: (path: string, password: string, hint: string) =>
+    call("crypt.encrypt", { path, password, hint }),
+  unlockNote: (path: string, password: string) => call("crypt.unlock", { path, password }),
+  readUnlocked: (path: string) => call("crypt.read", { path }),
+  writeUnlocked: (path: string, text: string) => call("crypt.write", { path, text }),
+  lockNote: (path?: string) => call("crypt.lock", path === undefined ? {} : { path }),
+  decryptNote: (path: string, password: string) => call("crypt.decrypt", { path, password }),
+  changeNotePassword: (path: string, oldPassword: string, password: string, hint: string) =>
+    call("crypt.changePassword", { path, oldPassword, password, hint }),
   createFile: (path: string, text?: string) => call("file.create", { path, text }),
   createUntitled: (folder: string) => call("file.createUntitled", { folder }),
   createFromLink: (source: string, target: string) =>

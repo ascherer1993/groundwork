@@ -4,6 +4,7 @@ import {
   ArrowRight,
   BookOpen,
   Code,
+  Lock,
   PanelRight,
   PencilLine,
 } from "lucide-react";
@@ -15,6 +16,7 @@ import { vaultFileUrl } from "../lib/fileUrl";
 import { isPagePath, projectOfView, TODO_BOARD } from "../lib/paths";
 import { isImage } from "../markdown/syntax";
 import { useKeyLabel, withKey } from "../state/keys";
+import { useEncrypted, useLocks } from "../state/locks";
 import { message, useVault } from "../state/vault";
 import { type PanelParams, useWorkspace, type ViewMode } from "../state/workspace";
 import { hasLinks, LinksPanel } from "./LinksPanel";
@@ -55,6 +57,9 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
   const linkable = hasLinks(path);
   const current = page && mode !== "source" ? "reading" : mode;
   const project = projectOfView(path);
+  const encrypted = useEncrypted(path);
+  const unlocked = useLocks((s) => !!s.unlocked[path]);
+  const lockKey = useKeyLabel("lock-note");
   const [viewTitle, setViewTitle] = useState<string | null>(null);
   const setTitle = useCallback(
     (title: string) => {
@@ -115,6 +120,16 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
               </button>
             ))}
           </div>
+        )}
+        {note && encrypted && unlocked && (
+          <button
+            className="icon"
+            aria-label="Lock note"
+            title={withKey("Lock note", lockKey)}
+            onClick={() => void useLocks.getState().lock(path)}
+          >
+            <Lock size={14} />
+          </button>
         )}
         {linkable && (
           <button

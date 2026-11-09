@@ -13,11 +13,13 @@ mod window;
 
 pub use page_server::PageFile;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use chrono::NaiveDate;
 use groundwork_core::command_log::CommandLog;
+use groundwork_core::crypt;
 use groundwork_core::inbox::{InboxKind, NewItem};
 use groundwork_core::pages;
 use groundwork_core::qmd;
@@ -68,6 +70,9 @@ pub struct Backend {
     terminals: terminals::Terminals,
     agents: agents::Agents,
     window: window::Window,
+    /// The keys of unlocked encrypted notes, by path. Only in memory: they
+    /// go when the note is locked, the vault closes or the app quits.
+    keys: Mutex<HashMap<String, crypt::Key>>,
 }
 
 impl Backend {
@@ -81,6 +86,7 @@ impl Backend {
             window: window::Window::new(events.clone()),
             data_dir,
             open: Mutex::new(None),
+            keys: Mutex::new(HashMap::new()),
             events,
             page_token: page_server::new_token(),
         }
@@ -321,6 +327,70 @@ impl Backend {
             }
             Request::FileDelete { path } => {
                 let changes = self.session()?.delete(&path)?;
+                self.emit(changes);
+                Ok(Value::Null)
+            }
+            Request::CryptEncrypt {
+                path,
+                password,
+                hint,
+            } => {
+                let (_, changes) = self.session()?.encrypt_note(&path, &password, &hint)?;
+                self.keys.lock().unwrap().remove(&path);
+                self.emit(changes);
+                Ok(Value::Null)
+            }
+            Request::CryptUnlock { path, password } => {
+                let (text, key) = self.session()?.unlock_note(&path, &password)?;
+                self.keys.lock().unwrap().insert(path, key);
+                to_value(text)
+            }
+            Request::CryptRead { path } => {
+                let session = self.session()?;
+                let keys = self.keys.lock().unwrap();
+                let key = keys.get(&path).ok_or_else(|| locked(&path))?;
+                to_value(session.read_encrypted(&path, key)?)
+            }
+            Request::CryptWrite { path, text } => {
+                let session = self.session()?;
+                let (hash, changes) = {
+                    let keys = self.keys.lock().unwrap();
+                    let key = keys.get(&path).ok_or_else(|| locked(&path))?;
+                    session.write_encrypted(&path, key, &text)?
+                };
+                self.emit(changes);
+                to_value(WriteResult { hash })
+            }
+            Request::CryptLock { path } => {
+                let mut keys = self.keys.lock().unwrap();
+                match path {
+                    Some(path) => {
+                        keys.remove(&path);
+                    }
+                    None => keys.clear(),
+                }
+                Ok(Value::Null)
+            }
+            Request::CryptDecrypt { path, password } => {
+                let changes = self.session()?.decrypt_note(&path, &password)?;
+                self.keys.lock().unwrap().remove(&path);
+                self.emit(changes);
+                Ok(Value::Null)
+            }
+            Request::CryptChangePassword {
+                path,
+                old_password,
+                password,
+                hint,
+            } => {
+                let (key, changes) =
+                    self.session()?
+                        .change_note_password(&path, &old_password, &password, &hint)?;
+                let mut keys = self.keys.lock().unwrap();
+                if keys.contains_key(&path) {
+                    keys.insert(path, key);
+                }
+                drop(keys);
                 self.emit(changes);
                 Ok(Value::Null)
             }
@@ -837,6 +907,7 @@ impl Backend {
     fn close_vault(&self) {
         // Dropping the session saves its snapshot.
         self.open.lock().unwrap().take();
+        self.keys.lock().unwrap().clear();
     }
 
     fn setup_env(&self) -> SetupEnv {
@@ -926,10 +997,39 @@ impl Backend {
     }
 
     fn emit(&self, changes: Vec<FileChange>) {
+        self.follow_keys(&changes);
         if !changes.is_empty() {
             (self.events)(Event::VaultChanged { changes });
         }
     }
+}
+
+impl Backend {
+    /// Keeps unlocked notes unlocked as they move; forgets deleted ones.
+    fn follow_keys(&self, changes: &[FileChange]) {
+        let mut keys = self.keys.lock().unwrap();
+        if keys.is_empty() {
+            return;
+        }
+        for c in changes {
+            match (&c.kind, &c.from) {
+                (groundwork_core::ChangeKind::Moved, Some(from)) => {
+                    if let Some(key) = keys.remove(from) {
+                        keys.insert(c.path.clone(), key);
+                    }
+                }
+                (groundwork_core::ChangeKind::Removed, _) => {
+                    keys.remove(&c.path);
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// The error for an encrypted note that isn't unlocked.
+fn locked(path: &str) -> ApiError {
+    ApiError::new(ErrorCode::Encrypted, format!("{path} is locked"))
 }
 
 fn parse_date(text: &str) -> Result<NaiveDate, ApiError> {
@@ -1115,6 +1215,85 @@ mod tests {
         fn call(&self, request: Value) -> Value {
             self.backend.handle_value(request).unwrap()
         }
+    }
+
+    #[test]
+    fn encrypted_notes_unlock_until_locked_and_never_over_the_socket() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::os::unix::net::UnixStream;
+
+        let h = harness();
+        let backend = Arc::new(h.backend);
+        let call = |request: Value| backend.handle_value(request);
+        call(json!({ "method": "crypt.encrypt",
+            "params": { "path": "Welcome.md", "password": "pw", "hint": "h" } }))
+        .unwrap();
+        let file =
+            call(json!({ "method": "file.read", "params": { "path": "Welcome.md" } })).unwrap();
+        assert_eq!(file["encrypted"], json!({ "hint": "h" }));
+        assert!(!file["text"].as_str().unwrap().contains("Welcome"));
+        // Locked: it can't be read or written.
+        let err = call(json!({ "method": "crypt.read", "params": { "path": "Welcome.md" } }))
+            .unwrap_err();
+        assert!(matches!(err.code, ErrorCode::Encrypted));
+        let err = call(json!({ "method": "file.write",
+            "params": { "path": "Welcome.md", "text": "plain" } }))
+        .unwrap_err();
+        assert!(matches!(err.code, ErrorCode::Encrypted));
+        let err = call(json!({ "method": "crypt.unlock",
+            "params": { "path": "Welcome.md", "password": "nope" } }))
+        .unwrap_err();
+        assert!(matches!(err.code, ErrorCode::WrongPassword));
+
+        let text = call(json!({ "method": "crypt.unlock",
+            "params": { "path": "Welcome.md", "password": "pw" } }))
+        .unwrap();
+        assert!(text.as_str().unwrap().contains("Welcome"));
+        call(json!({ "method": "crypt.write",
+            "params": { "path": "Welcome.md", "text": "edited" } }))
+        .unwrap();
+        // It stays unlocked as it moves.
+        call(json!({ "method": "file.rename",
+            "params": { "from": "Welcome.md", "to": "Hello.md" } }))
+        .unwrap();
+        assert_eq!(
+            call(json!({ "method": "crypt.read", "params": { "path": "Hello.md" } })).unwrap(),
+            json!("edited")
+        );
+
+        // The CLI's socket can't reach it, even unlocked, but can lock it.
+        backend.listen().unwrap();
+        let socket = h.data.path().join(agents::SOCKET_NAME);
+        let over_socket = |request: Value| -> Value {
+            let mut stream = UnixStream::connect(&socket).unwrap();
+            writeln!(stream, "{request}").unwrap();
+            let mut line = String::new();
+            BufReader::new(stream).read_line(&mut line).unwrap();
+            serde_json::from_str(&line).unwrap()
+        };
+        for request in [
+            json!({ "method": "crypt.read", "params": { "path": "Hello.md" } }),
+            json!({ "method": "crypt.unlock", "params": { "path": "Hello.md", "password": "pw" } }),
+            json!({ "method": "crypt.write", "params": { "path": "Hello.md", "text": "x" } }),
+            json!({ "method": "crypt.decrypt", "params": { "path": "Hello.md", "password": "pw" } }),
+        ] {
+            assert_eq!(over_socket(request)["error"]["code"], json!("forbidden"));
+        }
+        assert_eq!(
+            over_socket(json!({ "method": "crypt.lock", "params": { "path": "Hello.md" } })),
+            json!({ "ok": null })
+        );
+        let err =
+            call(json!({ "method": "crypt.read", "params": { "path": "Hello.md" } })).unwrap_err();
+        assert!(matches!(err.code, ErrorCode::Encrypted));
+
+        call(json!({ "method": "crypt.decrypt",
+            "params": { "path": "Hello.md", "password": "pw" } }))
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(h.vault.path().join("Hello.md")).unwrap(),
+            "edited"
+        );
     }
 
     #[test]

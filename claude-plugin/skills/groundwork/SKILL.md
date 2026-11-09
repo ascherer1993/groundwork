@@ -43,6 +43,7 @@ Groundwork is a desktop app. It shows the vault as a file tree, notes in tabs (l
 - **Make people and events with `groundwork add person|event`** (see "People and events" below), so they land where the user's Quick add puts them.
 - New notes get a `created: YYYY-MM-DDTHH:mm` property. `note create` adds it; add it yourself if you write a new file directly.
 - Editing the body of an existing note directly is fine. Keep the frontmatter (`---` block) valid YAML.
+- **Leave encrypted notes alone.** A note whose frontmatter says `encrypted: groundwork-v1` is locked with the user's password: its file holds only a hint and ciphertext. Don't edit, rewrite or delete it, and don't try to decrypt it; the CLI can't open it either (`crypt.*` calls are refused). If you need what's in it, ask the user.
 
 ## Commands
 

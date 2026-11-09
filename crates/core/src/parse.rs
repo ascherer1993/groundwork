@@ -415,7 +415,7 @@ pub fn parse_task_line(line: &str) -> Option<Task> {
 }
 
 /// Returns the frontmatter's byte range (fences included) and its parsed value.
-fn split_frontmatter(text: &str) -> (Option<Range<usize>>, Option<Value>) {
+pub(crate) fn split_frontmatter(text: &str) -> (Option<Range<usize>>, Option<Value>) {
     let first_line_end = text.find('\n').map_or(text.len(), |i| i + 1);
     if text[..first_line_end].trim_end() != "---" {
         return (None, None);

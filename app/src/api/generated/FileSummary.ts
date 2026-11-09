@@ -6,4 +6,8 @@ export type FileSummary = { path: string, kind: NodeKind,
  * What `[[...]]` matches: the note's file name without `.md`, or the full
  * file name for anything else.
  */
-title: string, aliases: Array<string>, };
+title: string, aliases: Array<string>, 
+/**
+ * An encrypted note (see [`crate::crypt`]).
+ */
+encrypted?: boolean, };

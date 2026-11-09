@@ -151,7 +151,12 @@ pub fn search(index: &Index, query: &str, limit: usize) -> Vec<SearchResult> {
                 return None;
             }
             let title = link_name(path, NodeKind::Note).to_string();
-            let text = index.read_text(path)?;
+            // An encrypted note is found by its name only.
+            let text = if crate::crypt::marks_encrypted(note.frontmatter.as_ref()) {
+                String::new()
+            } else {
+                index.read_text(path)?
+            };
             if !terms
                 .iter()
                 .all(|t| t.is_match(&text) || t.is_match(&title))

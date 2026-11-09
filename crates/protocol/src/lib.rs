@@ -216,6 +216,45 @@ pub enum Request {
     #[serde(rename = "folder.create")]
     FolderCreate { path: String },
 
+    /// → `null`: encrypts a note in place with a new password (see
+    /// `groundwork_core::crypt`). It's left locked.
+    #[serde(rename = "crypt.encrypt")]
+    CryptEncrypt {
+        path: String,
+        password: String,
+        #[serde(default)]
+        hint: String,
+    },
+    /// → `string`: an encrypted note's text. It stays unlocked (its key
+    /// kept in memory) until `crypt.lock`. Fails with `wrong_password`.
+    #[serde(rename = "crypt.unlock")]
+    CryptUnlock { path: String, password: String },
+    /// → `string`: an unlocked note's text as it is on disk now. Fails with
+    /// `encrypted` if it's locked.
+    #[serde(rename = "crypt.read")]
+    CryptRead { path: String },
+    /// → `WriteResult`: saves an unlocked note's text, encrypted.
+    #[serde(rename = "crypt.write")]
+    CryptWrite { path: String, text: String },
+    /// → `null`: locks a note again (every note without `path`).
+    #[serde(rename = "crypt.lock")]
+    CryptLock {
+        #[ts(optional)]
+        path: Option<String>,
+    },
+    /// → `null`: takes a note's encryption off, writing its text in the clear.
+    #[serde(rename = "crypt.decrypt")]
+    CryptDecrypt { path: String, password: String },
+    /// → `null`: re-encrypts a note with a new password and hint.
+    #[serde(rename = "crypt.changePassword", rename_all = "camelCase")]
+    CryptChangePassword {
+        path: String,
+        old_password: String,
+        password: String,
+        #[serde(default)]
+        hint: String,
+    },
+
     /// → `string[]`: the notes in the templates folder.
     #[serde(rename = "template.list")]
     TemplateList,
@@ -887,6 +926,10 @@ pub enum ErrorCode {
     Forbidden,
     Conflict,
     TooLarge,
+    /// An encrypted note's password didn't open it.
+    WrongPassword,
+    /// The note is encrypted (and locked, or the change needs its text).
+    Encrypted,
     /// The app's window didn't answer (it's needed for this).
     Unavailable,
     Internal,
@@ -927,6 +970,8 @@ impl From<CoreError> for ApiError {
                 ErrorCode::Conflict
             }
             CoreError::TooLarge { .. } => ErrorCode::TooLarge,
+            CoreError::WrongPassword => ErrorCode::WrongPassword,
+            CoreError::Encrypted(_) => ErrorCode::Encrypted,
             CoreError::Io(_) | CoreError::Json(_) | CoreError::Setup(_) => ErrorCode::Internal,
         };
         Self::new(code, err.to_string())

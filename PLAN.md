@@ -631,6 +631,14 @@ These all work without the app running:
 - **Events:** a subnote in `Events/` or a `Meetings` folder isn't an event of its own (unless its own `type:` says so), so a transcript doesn't show twice in the project view or the todo board.
 - The rules live in `crates/core/src/subnotes.rs`, mirrored for the tree in `app/src/lib/subnotes.ts`. Later, maybe: pages (`Name.key.html`) as subnotes too.
 
+### 5.16 Encrypted notes (built 2026-11-08)
+- **Encrypting:** right-click a note › **Encrypt…** (or the palette) asks for a password twice and an optional hint, warning that a forgotten password can't be recovered. The note stays a `.md` file at its path (links, renames and the tree work as before); on disk only `encrypted: groundwork-v1` and `hint:` are readable, then a notice and a ```` ```groundwork-encrypted ```` block. The whole note, its own frontmatter included, is sealed with XChaCha20-Poly1305 under an Argon2id key (64 MiB, 3 passes; the cost is stored in the file and authenticated). Format: `crates/core/src/crypt.rs`. Groundwork-only: Obsidian shows the ciphertext.
+- **Opening:** a locked note shows its hint and a password field in place of its text. Unlocking keeps the derived key in the backend's memory only (`Backend::keys`), so saves re-seal with a fresh nonce without asking again.
+- **Locking again:** the lock button in the note's header (beside the links panel button, shown while unlocked), ⌃⌘L, "Lock all encrypted notes", closing the last tab showing it, quitting or switching vault, or `lockAfterMinutes` without use (default 10, 0 = never; Settings › Encrypted notes). Rules: `app/src/state/locks.ts`.
+- **Also:** **Change password…** and **Remove encryption…** (both need the password). A lock icon marks encrypted notes in the tree.
+- **What can't see inside:** search (it finds them by name only), the index (no tags, links or todos), embeds and hover previews (a placeholder, even unlocked), and the CLI/Claude: the app socket refuses `crypt.*` except `crypt.lock`, and `Session::write_file` refuses to write over an encrypted note, so todos, quick add and agents can't clobber one. qmd still indexes the (meaningless) ciphertext.
+- Known limits: links inside an encrypted note aren't rewritten when their targets are renamed (the index can't see them); an encrypted note's activity is logged as a plain "modified".
+
 ## 6. Phases
 
 Each phase ends with a **feedback checkpoint**: a short list of things to try, then adjustments before moving on. Development runs against the fixture vault and a fresh dogfood vault, not your existing one.

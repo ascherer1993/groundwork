@@ -7,6 +7,7 @@ import {
   FolderOpen,
   Globe,
   LayoutList,
+  Lock,
   PanelsTopLeft,
   type LucideIcon,
 } from "lucide-react";
@@ -18,6 +19,8 @@ import type { ProjectInfo } from "../api/generated/ProjectInfo";
 import { displayName, projectViewPath } from "../lib/paths";
 import { allSubnotes, type Grouped, groupSubnotes } from "../lib/subnotes";
 import { openNoteWorkspace } from "../lib/commands";
+import { changePassword, encryptNote, removeEncryption } from "../lib/encryption";
+import { isEncrypted, isUnlocked, useEncrypted, useLocks } from "../state/locks";
 import { createProject, openProjectView, projectAt, ticketAt, useTickets } from "../state/tickets";
 import { confirmDialog, formDialog, type MenuEntry, promptDialog, useUi } from "../state/ui";
 import { message, useVault } from "../state/vault";
@@ -148,6 +151,21 @@ function menuFor(node: TreeNode, subnotes: TreeNode[] = []): MenuEntry[] {
           label: "Add worktree…",
           action: () => void useTickets.getState().newTicket({ note: node.path }),
         });
+      }
+      entries.push("separator");
+      if (isEncrypted(node.path)) {
+        if (isUnlocked(node.path)) {
+          entries.push({
+            label: "Lock",
+            action: () => void useLocks.getState().lock(node.path),
+          });
+        }
+        entries.push(
+          { label: "Change password…", action: () => void changePassword(node.path) },
+          { label: "Remove encryption…", action: () => void removeEncryption(node.path) },
+        );
+      } else {
+        entries.push({ label: "Encrypt…", action: () => void encryptNote(node.path) });
       }
     }
     entries.push("separator");
@@ -358,6 +376,7 @@ function TreeItem({
   const renaming = useUi((s) => s.renaming === node.path);
   const [dropping, setDropping] = useState(false);
   const { base, ext } = displayName(node.name, node.kind);
+  const encrypted = useEncrypted(node.path);
   const project = useTickets((s) =>
     isFolder ? s.projects.find((p) => p.folder === node.path) : undefined,
   );
@@ -469,6 +488,7 @@ function TreeItem({
             {subkey ?? base}
             {ext && <span className="ext">{ext}</span>}
           </span>
+          {encrypted && <Lock size={11} className="tree-lock" aria-hidden />}
         </button>
       )}
       {isFolder && expanded && node.children && node.children.length > 0 && (

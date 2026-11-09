@@ -95,6 +95,10 @@ pub struct FileSummary {
     /// file name for anything else.
     pub title: String,
     pub aliases: Vec<String>,
+    /// An encrypted note (see [`crate::crypt`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    pub encrypted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -222,6 +226,10 @@ impl Index {
                     .as_ref()
                     .map(|n| n.aliases.clone())
                     .unwrap_or_default(),
+                encrypted: f
+                    .note
+                    .as_ref()
+                    .is_some_and(|n| crate::crypt::marks_encrypted(n.frontmatter.as_ref())),
             })
             .collect()
     }

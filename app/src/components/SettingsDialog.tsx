@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import type { QuickAddChoice } from "../api/generated/QuickAddChoice";
 import { comboOf, displayCombo, usable } from "../lib/keyCombo";
 import { allCommands, bindingOf, type KeyCommand, useKeys } from "../state/keys";
+import { useLocks } from "../state/locks";
 import { choiceCommand, useQuickAdd } from "../state/quickadd";
 import { useUi } from "../state/ui";
 import { SearchSettings } from "./SearchSettings";
@@ -12,7 +13,7 @@ import { SearchSettings } from "./SearchSettings";
  * Settings has a section per feature, down its side. A feature's section
  * holds its settings; Keyboard shortcuts lists every feature's commands.
  */
-const SECTIONS = ["Quick add", "Search", "Keyboard shortcuts"] as const;
+const SECTIONS = ["Quick add", "Search", "Encrypted notes", "Keyboard shortcuts"] as const;
 export type Section = (typeof SECTIONS)[number];
 
 /** The section last shown, while the app runs. */
@@ -74,6 +75,8 @@ function SettingsDialogBody() {
             <QuickAddSettings />
           ) : section === "Search" ? (
             <SearchSettings />
+          ) : section === "Encrypted notes" ? (
+            <EncryptionSettings />
           ) : (
             <ShortcutSettings />
           )}
@@ -85,6 +88,43 @@ function SettingsDialogBody() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ---- Encrypted notes -------------------------------------------------------
+
+function EncryptionSettings() {
+  const minutes = useLocks((s) => s.lockAfterMinutes);
+  const [value, setValue] = useState(String(minutes));
+  const commit = () => {
+    const n = Number(value);
+    if (Number.isFinite(n) && n >= 0) useLocks.getState().setLockAfterMinutes(n);
+    else setValue(String(minutes));
+  };
+  return (
+    <>
+      <div className="settings-head">
+        <h2>Encrypted notes</h2>
+      </div>
+      <p className="muted">
+        Right-click a note and choose <strong>Encrypt…</strong> to lock it with a password. An
+        unlocked note locks again when you close its tab, press the lock in its header, quit, or
+        leave it unused for a while.
+      </p>
+      <label className="dialog-field settings-inline">
+        <span>Lock after this many minutes unused (0 for never)</span>
+        <input
+          type="number"
+          min={0}
+          step={1}
+          aria-label="Lock after minutes unused"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => e.key === "Enter" && commit()}
+        />
+      </label>
+    </>
   );
 }
 

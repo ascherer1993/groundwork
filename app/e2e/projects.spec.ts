@@ -80,7 +80,9 @@ test("a project's view lists its events, with search, filters and sort", async (
     item
       .locator(":scope > ul > li")
       .evaluateAll((items) => items.map((i) => i.getAttribute("aria-label")));
-  await expect.poll(() => labels(acme)).toEqual(["demos", "Meetings", "Work", "Acme"]);
+  await expect
+    .poll(() => labels(acme))
+    .toEqual(["demos", "Meetings", "Work", "Acme", "Credentials"]);
   const overview = acme.getByRole("treeitem", { name: "Acme", exact: true });
   await expect.poll(() => labels(overview)).toEqual(["Acme project view"]);
   await expect(tree.getByRole("treeitem", { name: "Acme project view" })).toHaveText(

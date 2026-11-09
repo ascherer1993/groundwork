@@ -8,6 +8,7 @@ pub mod agent;
 pub mod board;
 pub mod command_log;
 pub mod config;
+pub mod crypt;
 pub mod daily;
 pub mod dates;
 mod error;

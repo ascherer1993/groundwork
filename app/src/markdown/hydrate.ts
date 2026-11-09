@@ -150,6 +150,12 @@ async function renderEmbed(
     const body = el.querySelector<HTMLElement>(".embed-body")!;
     try {
       const file = await api.readFile(path);
+      if (file.encrypted) {
+        // Not even when it's unlocked: embeds go wherever the note does.
+        body.className = "embed-body embed-locked";
+        body.textContent = "Encrypted note. Open it to unlock it.";
+        return;
+      }
       const fm = splitFrontmatter(file.text ?? "");
       const text = subpath ? extractSubpath(fm.body, subpath) : fm.body;
       if (text === null) {
