@@ -25,6 +25,7 @@ fixtures/vault/.trash/
 .env
 .env.*
 .claude/settings.local.json
+CLAUDE.local.md
 *.local
 
 # Editors and OS
