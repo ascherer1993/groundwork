@@ -7,6 +7,7 @@ import { insertRendered } from "../editor/templates";
 import { EDITOR_COMMANDS } from "../editor/commands";
 import { EditorView } from "@codemirror/view";
 import { isViewPath, TODO_BOARD } from "./paths";
+import { canPickFolder, pickFolder } from "./pickFolder";
 import { changePassword, encryptNote, removeEncryption } from "./encryption";
 import { isEncrypted, isUnlocked, useLocks } from "../state/locks";
 import { formDialog, type PaletteItem, promptDialog, useUi } from "../state/ui";
@@ -470,7 +471,10 @@ async function terminalInFolder() {
     id: "other",
     label: "Another folder…",
     run: async () => {
-      const cwd = await promptDialog({ title: "Folder", value: "~/", confirmLabel: "Open" });
+      // The native picker on desktop; typing it in browser mode.
+      const cwd = canPickFolder()
+        ? await pickFolder({ title: "New terminal in…", start: "~/" })
+        : await promptDialog({ title: "Folder", value: "~/", confirmLabel: "Open" });
       if (cwd?.trim()) await open(cwd.trim());
     },
   });

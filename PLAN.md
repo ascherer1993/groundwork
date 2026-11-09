@@ -335,6 +335,8 @@ You type `!p1` and it turns into the marker. The CLI and agents always use the `
 
 ## 5. Subsystem designs
 
+**Folder fields** (`FolderInput`) can be typed or picked with a **Choose…** button, so no folder ever has to be typed. A folder on this Mac (a workspace's folder, a repo's checkout and worktrees folder, a terminal's "Another folder…") uses the native folder picker, which browser mode doesn't have, so there it's typing only. A folder in the vault (the daily notes folder, a Quick add choice's folder) is picked from a searchable list of the vault's folders, so the value stays vault-relative; it works in browser mode too.
+
 ### 5.1 Vault core (`crates/core`)
 
 - **Parse:** frontmatter, wikilinks, embeds, Markdown links, headings, block ids (`^id`), tags (inline and frontmatter), aliases.

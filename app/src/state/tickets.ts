@@ -113,10 +113,11 @@ export async function locateRepo(id: string): Promise<boolean> {
     message:
       "Its main checkout on this Mac (any folder in it). Worktrees go in a folder beside it unless you choose one.",
     fields: [
-      { label: "Checkout", value: repo?.location?.path ?? "~/" },
+      { label: "Checkout", value: repo?.location?.path ?? "~/", type: "folder" },
       {
         label: "Worktrees folder",
         value: repo?.location?.worktrees ?? "",
+        type: "folder",
         placeholder: "<checkout>-worktrees",
       },
     ],

@@ -101,7 +101,7 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
       message: "Its terminals start in this folder.",
       fields: [
         { label: "Name", placeholder: "Name" },
-        { label: "Folder", value: useVault.getState().vault?.path ?? "" },
+        { label: "Folder", value: useVault.getState().vault?.path ?? "", type: "folder" },
       ],
       confirmLabel: "Create",
     });
@@ -140,7 +140,7 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
     const cwd = await formDialog({
       title: "Change folder",
       message: "New terminals start in this folder. Open ones stay where they are.",
-      fields: [{ label: "Folder", value: workspace?.cwd ?? "" }],
+      fields: [{ label: "Folder", value: workspace?.cwd ?? "", type: "folder" }],
       confirmLabel: "Change",
     }).then((values) => values?.[0]?.trim());
     if (!cwd || cwd === workspace?.cwd) return;

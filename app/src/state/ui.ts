@@ -25,9 +25,10 @@ export interface DialogField {
   placeholder?: string;
   /**
    * A date picker (`YYYY-MM-DD`) rather than text, or a todo's text, with
-   * `@date` and `!priority` suggestions.
+   * `@date` and `!priority` suggestions, or a folder on this Mac, with a
+   * Choose… button for the native folder picker.
    */
-  type?: "date" | "todo" | "password";
+  type?: "date" | "todo" | "password" | "folder";
   /** A menu of these rather than text. */
   options?: { value: string; label: string }[];
 }

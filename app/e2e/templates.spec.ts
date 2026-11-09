@@ -110,6 +110,46 @@ test("Settings put daily notes in a folder of Groundwork's own", async ({ page }
   rmSync(join(VAULT, "Journal"), { recursive: true });
 });
 
+test("a vault folder can be chosen from a list", async ({ page }) => {
+  const config = readFileSync(join(VAULT, ".groundwork/config.yml"), "utf8");
+  await page.keyboard.press("Meta+,");
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("button", { name: "Daily notes", exact: true }).click();
+  await settings.getByRole("button", { name: "Choose…" }).click();
+
+  // The vault's folders, nested ones too, and its root; hidden ones aren't.
+  const list = page.getByRole("dialog", { name: "Folders for daily notes folder" });
+  const options = list.getByRole("option");
+  await expect(options.first()).toHaveText("Vault root");
+  await expect(list.getByRole("option", { name: "Projects/Acme", exact: true })).toBeVisible();
+  await expect(list.getByRole("option", { name: /^\./ })).toHaveCount(0);
+
+  // Escape closes the list, not Settings.
+  await page.keyboard.press("Escape");
+  await expect(list).toBeHidden();
+  await expect(settings).toBeVisible();
+
+  // Picking one saves it at once.
+  await settings.getByRole("button", { name: "Choose…" }).click();
+  await list.getByLabel("Find a folder").fill("even");
+  await expect(options).toHaveText(["Events"]);
+  await page.keyboard.press("Enter");
+  await expect(settings.getByLabel("Daily notes folder")).toHaveValue("Events");
+  await expect(settings.getByLabel("Today’s daily note")).toContainText("Events/");
+  await expectFile(VAULT, ".groundwork/config.yml", (t) => t.endsWith("  folder: Events\n"));
+
+  // The root is "/", which means the root even over Obsidian's folder.
+  await settings.getByRole("button", { name: "Choose…" }).click();
+  await list.getByRole("option", { name: "Vault root" }).click();
+  await expect(settings.getByLabel("Daily notes folder")).toHaveValue("/");
+  await expectFile(VAULT, ".groundwork/config.yml", (t) => t.endsWith('  folder: ""\n'));
+
+  await settings.getByLabel("Daily notes folder").fill("");
+  await settings.getByLabel("Daily notes folder").press("Enter");
+  await expectFile(VAULT, ".groundwork/config.yml", (t) => t === config);
+  await settings.getByRole("button", { name: "Done" }).click();
+});
+
 test("the command palette lists recent commands first", async ({ page }) => {
   await runCommand(page, "Toggle links panel");
   await page.keyboard.press("Meta+p");

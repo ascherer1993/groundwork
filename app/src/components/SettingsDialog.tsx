@@ -10,6 +10,7 @@ import { useLocks } from "../state/locks";
 import { choiceCommand, useQuickAdd } from "../state/quickadd";
 import { useUi } from "../state/ui";
 import { message } from "../state/vault";
+import { FolderInput } from "./FolderInput";
 import { SearchSettings } from "./SearchSettings";
 
 /**
@@ -139,19 +140,21 @@ function DailySettings() {
     void api.templates().then(setTemplates, () => setTemplates([]));
   }, []);
 
-  const save = async () => {
+  /** Saves the fields, with `pending` over what's typed (a folder just picked). */
+  const save = async (pending: Partial<Record<keyof DailyFields, string>> = {}) => {
     if (!settings) return;
-    const changed = (Object.keys(draft) as (keyof DailyFields)[]).some(
-      (k) => draft[k].trim() !== saved[k],
+    const fields = { ...draft, ...pending };
+    const changed = (Object.keys(fields) as (keyof DailyFields)[]).some(
+      (k) => fields[k].trim() !== saved[k],
     );
     if (!changed) return;
     const value = (v: string) => (v.trim() === "" ? null : v.trim());
     try {
       show(
         await api.saveDailySettings({
-          folder: value(draft.folder),
-          format: value(draft.format),
-          template: value(draft.template),
+          folder: value(fields.folder),
+          format: value(fields.format),
+          template: value(fields.template),
         }),
       );
       setError(null);
@@ -173,6 +176,25 @@ function DailySettings() {
         {DAILY_FIELDS.map(({ key, label, fallback, hint }) => {
           const obsidian = settings?.obsidian[key];
           const placeholder = obsidian ? `${obsidian} (from Obsidian)` : `Default: ${fallback}`;
+          if (key === "folder")
+            return (
+              <div key={key} className="dialog-field">
+                <span>{label}</span>
+                <FolderInput
+                  scope="vault"
+                  label="Daily notes folder"
+                  rootValue="/"
+                  placeholder={placeholder}
+                  value={draft.folder}
+                  disabled={!settings}
+                  onChange={(folder) => setDraft((d) => ({ ...d, folder }))}
+                  onPick={(folder) => void save({ folder })}
+                  onBlur={() => void save()}
+                  onKeyDown={(e) => e.key === "Enter" && void save()}
+                />
+                <span className="daily-hint">{hint}</span>
+              </div>
+            );
           return (
             <label key={key} className="dialog-field">
               <span>{label}</span>
@@ -589,14 +611,17 @@ function ChoiceEditor({
         </label>
         {c.kind === "note" ? (
           <>
-            <label className="dialog-field">
+            <div className="dialog-field">
               <span>In the folder</span>
-              <input
+              <FolderInput
+                scope="vault"
+                label="In the folder"
+                rootValue=""
                 value={c.folder ?? ""}
                 placeholder="Events"
-                onChange={(e) => set({ folder: e.target.value })}
+                onChange={(folder) => set({ folder })}
               />
-            </label>
+            </div>
             <label className="dialog-field">
               <span>Named</span>
               <input

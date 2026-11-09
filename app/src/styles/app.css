@@ -3117,3 +3117,67 @@ button.link-button:hover:not(:disabled) {
 .settings-inline input {
   width: 96px;
 }
+
+/* A folder field (FolderInput): the path, and Choose… to pick it. */
+.folder-input {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.folder-input input {
+  flex: 1;
+  min-width: 0;
+}
+
+.folder-input > button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.folder-list {
+  z-index: 130;
+  display: flex;
+  flex-direction: column;
+  max-height: 300px;
+  padding: 0;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.folder-list-input {
+  padding: 8px 10px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.folder-list-input:focus-visible {
+  outline: none;
+}
+
+.folder-list-items {
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.menu .folder-list-items button {
+  color: var(--text);
+}
+
+.menu .folder-list-items button[aria-selected] {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.folder-list-empty {
+  padding: 6px 10px;
+  color: var(--text-faint);
+}

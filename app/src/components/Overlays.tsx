@@ -10,6 +10,7 @@ import { todoField } from "../editor/todoField";
 import { useUi } from "../state/ui";
 import { CommandBar } from "./CommandBar";
 import { CommandLog } from "./CommandLog";
+import { FolderInput } from "./FolderInput";
 import { Palette } from "./Palette";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { SettingsDialog } from "./SettingsDialog";
@@ -214,6 +215,15 @@ function DialogForm({
                 autoFocus={i === 0}
                 onChange={set}
               />
+            ) : field.type === "folder" ? (
+              <FolderInput
+                scope="machine"
+                label={field.label}
+                placeholder={field.placeholder}
+                value={values[i] ?? ""}
+                autoFocus={i === 0}
+                onChange={set}
+              />
             ) : field.options ? (
               <select
                 autoFocus={i === 0}
@@ -243,6 +253,12 @@ function DialogForm({
           // A single prompt is titled by the dialog; several get their own labels.
           return fields.length === 1 ? (
             <div key={i} className="dialog-field">
+              {input}
+            </div>
+          ) : field.type === "folder" ? (
+            // Two controls: the text and its Choose… button.
+            <div key={i} className="dialog-field">
+              <span>{field.label}</span>
               {input}
             </div>
           ) : (
