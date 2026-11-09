@@ -423,6 +423,15 @@ impl Backend {
                 })
             }
 
+            Request::DailySettings => to_value(groundwork_core::daily::DailyNoteSettings::read(
+                self.session()?.vault().root(),
+            )),
+            Request::DailySaveSettings { settings } => {
+                to_value(groundwork_core::daily::DailyNoteSettings::save(
+                    self.session()?.vault().root(),
+                    settings,
+                )?)
+            }
             Request::DailyOpen { date } => {
                 let date = match date {
                     Some(d) => parse_date(&d)?,

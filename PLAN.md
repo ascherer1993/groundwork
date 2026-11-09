@@ -107,7 +107,7 @@ A project is any folder containing `.groundwork.yml`. Inside a project, any subf
 ### 4.2 Obsidian settings Groundwork respects (read-only)
 
 - `app.json`: `newLinkFormat` (shortest/relative/absolute), `useMarkdownLinks`, attachment folder
-- `daily-notes.json`: folder, date format, template
+- `daily-notes.json`: folder, date format, template, unless Groundwork's own `daily_notes:` (in `.groundwork/config.yml`) sets them (§5.3)
 - `templates.json` and the Templater plugin `data.json`: templates folder
 
 ### 4.3 Repos and components — `.groundwork/repos.yml` (portable)
@@ -396,7 +396,7 @@ There's one simple `{{…}}` syntax. It's a superset of Obsidian's core template
 - Text inside code spans and fenced code blocks is never expanded.
 - `\{{date}}` escapes a tag, so it's output literally.
 
-Daily notes follow `daily-notes.json`. Cmd+Shift+D opens today's note. Daily notes and todos work together (§5.11).
+Daily notes follow Groundwork's own settings, then Obsidian's. **Settings › Daily notes** sets the folder, date format and template, kept in the vault as `daily_notes:` in `.groundwork/config.yml` (edited in place, so the rest of the file stays as written). Each field left empty falls back to `.obsidian/daily-notes.json`, then the defaults (the vault's root, `YYYY-MM-DD`, no template); an empty folder set on purpose (`/` in Settings) means the root even when Obsidian says otherwise. Settings shows Obsidian's values as placeholders and where today's note will go. (Decided 2026-11-09: Groundwork's settings always win, so the app needn't depend on Obsidian's file.) Cmd+Shift+D opens today's note. Daily notes and todos work together (§5.11).
 
 **In the app (built in Phase 2):**
 - The templates folder comes from Obsidian's `templates.json` (default `Templates/`).

@@ -1,19 +1,28 @@
 import { ArrowDown, ArrowUp, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
+import type { DailyFields } from "../api/generated/DailyFields";
+import type { DailyNoteSettings } from "../api/generated/DailyNoteSettings";
 import type { QuickAddChoice } from "../api/generated/QuickAddChoice";
 import { comboOf, displayCombo, usable } from "../lib/keyCombo";
 import { allCommands, bindingOf, type KeyCommand, useKeys } from "../state/keys";
 import { useLocks } from "../state/locks";
 import { choiceCommand, useQuickAdd } from "../state/quickadd";
 import { useUi } from "../state/ui";
+import { message } from "../state/vault";
 import { SearchSettings } from "./SearchSettings";
 
 /**
  * Settings has a section per feature, down its side. A feature's section
  * holds its settings; Keyboard shortcuts lists every feature's commands.
  */
-const SECTIONS = ["Quick add", "Search", "Encrypted notes", "Keyboard shortcuts"] as const;
+const SECTIONS = [
+  "Daily notes",
+  "Quick add",
+  "Search",
+  "Encrypted notes",
+  "Keyboard shortcuts",
+] as const;
 export type Section = (typeof SECTIONS)[number];
 
 /** The section last shown, while the app runs. */
@@ -71,7 +80,9 @@ function SettingsDialogBody() {
           ))}
         </nav>
         <div className="settings-body">
-          {section === "Quick add" ? (
+          {section === "Daily notes" ? (
+            <DailySettings />
+          ) : section === "Quick add" ? (
             <QuickAddSettings />
           ) : section === "Search" ? (
             <SearchSettings />
@@ -88,6 +99,114 @@ function SettingsDialogBody() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ---- Daily notes -----------------------------------------------------------
+
+const DAILY_FIELDS = [
+  { key: "folder", label: "Folder", fallback: "the vault’s root", hint: "Type / for the root." },
+  { key: "format", label: "Date format", fallback: "YYYY-MM-DD", hint: "Moment.js tokens." },
+  { key: "template", label: "Template", fallback: "none", hint: "" },
+] as const;
+
+/**
+ * Settings › Daily notes. Groundwork's own settings, kept in the vault's
+ * `.groundwork/config.yml`; a field left empty uses Obsidian's.
+ */
+function DailySettings() {
+  const [settings, setSettings] = useState<DailyNoteSettings | null>(null);
+  const empty = { folder: "", format: "", template: "" };
+  const [draft, setDraft] = useState<Record<keyof DailyFields, string>>(empty);
+  const [saved, setSaved] = useState<Record<keyof DailyFields, string>>(empty);
+  const [error, setError] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<string[]>([]);
+
+  const show = (s: DailyNoteSettings) => {
+    setSettings(s);
+    const gw = s.groundwork;
+    const fields = {
+      // An empty folder set on purpose is the root; it shows as "/".
+      folder: gw.folder === "" ? "/" : (gw.folder ?? ""),
+      format: gw.format ?? "",
+      template: gw.template ?? "",
+    };
+    setDraft(fields);
+    setSaved(fields);
+  };
+  useEffect(() => {
+    void api.dailySettings().then(show, (e: unknown) => setError(message(e)));
+    void api.templates().then(setTemplates, () => setTemplates([]));
+  }, []);
+
+  const save = async () => {
+    if (!settings) return;
+    const changed = (Object.keys(draft) as (keyof DailyFields)[]).some(
+      (k) => draft[k].trim() !== saved[k],
+    );
+    if (!changed) return;
+    const value = (v: string) => (v.trim() === "" ? null : v.trim());
+    try {
+      show(
+        await api.saveDailySettings({
+          folder: value(draft.folder),
+          format: value(draft.format),
+          template: value(draft.template),
+        }),
+      );
+      setError(null);
+    } catch (e) {
+      setError(message(e));
+    }
+  };
+
+  return (
+    <>
+      <div className="settings-head">
+        <h2>Daily notes</h2>
+      </div>
+      <p className="muted">
+        ⇧⌘D opens today’s note. These are kept in the vault, in <code>.groundwork/config.yml</code>,
+        and come before Obsidian’s daily notes settings. A field left empty uses Obsidian’s.
+      </p>
+      <div className="settings-scroll daily-settings">
+        {DAILY_FIELDS.map(({ key, label, fallback, hint }) => {
+          const obsidian = settings?.obsidian[key];
+          const placeholder = obsidian ? `${obsidian} (from Obsidian)` : `Default: ${fallback}`;
+          return (
+            <label key={key} className="dialog-field">
+              <span>{label}</span>
+              <input
+                aria-label={`Daily notes ${label.toLowerCase()}`}
+                list={key === "template" ? "daily-templates" : undefined}
+                placeholder={placeholder}
+                value={draft[key]}
+                disabled={!settings}
+                onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+                onBlur={() => void save()}
+                onKeyDown={(e) => e.key === "Enter" && void save()}
+              />
+              {hint && <span className="daily-hint">{hint}</span>}
+            </label>
+          );
+        })}
+        <datalist id="daily-templates">
+          {templates.map((t) => (
+            <option key={t} value={t.replace(/\.md$/, "")} />
+          ))}
+        </datalist>
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+        {settings && (
+          <p className="muted" aria-label="Today’s daily note">
+            Today’s note: <code>{settings.todayPath}</code>
+          </p>
+        )}
+      </div>
+    </>
   );
 }
 

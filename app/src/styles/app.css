@@ -2127,6 +2127,20 @@ label.check input {
   overflow: auto;
 }
 
+.daily-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.daily-settings input::placeholder {
+  color: var(--text-faint);
+}
+
+.daily-hint {
+  color: var(--text-faint);
+}
+
 .settings-scroll h3 {
   margin: 12px 0 4px;
   color: var(--text-faint);

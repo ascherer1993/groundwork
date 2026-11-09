@@ -1,3 +1,5 @@
+import { readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { FIXTURE_VAULT as VAULT } from "./fixtures";
 import { editor, expectFile, openVault, quickOpen } from "./helpers";
@@ -63,6 +65,49 @@ test("⌘⇧D opens today's daily note", async ({ page }) => {
   await page.keyboard.press("Meta+Shift+d");
   await expect(page.getByLabel("Note title")).toHaveValue(today);
   await expectFile(VAULT, `Daily/${today}.md`, (t) => t.length > 0);
+});
+
+test("Settings put daily notes in a folder of Groundwork's own", async ({ page }) => {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const today = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const config = readFileSync(join(VAULT, ".groundwork/config.yml"), "utf8");
+
+  await page.keyboard.press("Meta+,");
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("button", { name: "Daily notes", exact: true }).click();
+  // Obsidian's settings show through until Groundwork's are set.
+  const folder = settings.getByLabel("Daily notes folder");
+  await expect(folder).toHaveAttribute("placeholder", "Daily (from Obsidian)");
+  await expect(settings.getByLabel("Today’s daily note")).toContainText(`Daily/${today}.md`);
+
+  await folder.fill("Journal/Days");
+  await folder.press("Enter");
+  await expect(settings.getByLabel("Today’s daily note")).toContainText(`Journal/Days/${today}.md`);
+  await expectFile(
+    VAULT,
+    ".groundwork/config.yml",
+    (t) => t.startsWith(config) && t.endsWith("daily_notes:\n  folder: Journal/Days\n"),
+  );
+  // A folder outside the vault is refused.
+  await folder.fill("../Elsewhere");
+  await folder.press("Enter");
+  await expect(settings.getByRole("alert")).toContainText("inside the vault");
+  await folder.fill("Journal/Days");
+  await settings.getByRole("button", { name: "Done" }).click();
+
+  await page.keyboard.press("Meta+Shift+d");
+  await expect(page.getByLabel("Note title")).toHaveValue(today);
+  await expectFile(VAULT, `Journal/Days/${today}.md`, (t) => t.length > 0);
+
+  // Emptying the field goes back to Obsidian's, and the config as it was.
+  await page.keyboard.press("Meta+,");
+  await settings.getByLabel("Daily notes folder").fill("");
+  await settings.getByLabel("Daily notes folder").press("Enter");
+  await expect(settings.getByLabel("Today’s daily note")).toContainText(`Daily/${today}.md`);
+  await expectFile(VAULT, ".groundwork/config.yml", (t) => t === config);
+  await settings.getByRole("button", { name: "Done" }).click();
+  rmSync(join(VAULT, "Journal"), { recursive: true });
 });
 
 test("the command palette lists recent commands first", async ({ page }) => {

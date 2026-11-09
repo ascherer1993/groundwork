@@ -9,6 +9,8 @@ import type { BarCommand } from "./generated/BarCommand";
 import type { CommandEntry } from "./generated/CommandEntry";
 import type { ProjectView } from "./generated/ProjectView";
 import type { Person } from "./generated/Person";
+import type { DailyFields } from "./generated/DailyFields";
+import type { DailyNoteSettings } from "./generated/DailyNoteSettings";
 import type { QmdStatus } from "./generated/QmdStatus";
 import type { SmartResult } from "./generated/SmartResult";
 import type { WhoKnows } from "./generated/WhoKnows";
@@ -95,6 +97,8 @@ interface Results {
   "quickAdd.form": QuickAddForm;
   "quickAdd.run": QuickAdded;
   "daily.open": string;
+  "daily.settings": DailyNoteSettings;
+  "daily.saveSettings": DailyNoteSettings;
   "index.tags": TagCount[];
   "setup.status": SetupStatus;
   "setup.installCli": SetupStatus;
@@ -269,6 +273,8 @@ export const api = {
     opts: { date?: string; project?: string } = {},
   ) => call("quickAdd.run", { choice, answers, ...opts }),
   openDaily: (date?: string) => call("daily.open", { date }),
+  dailySettings: () => call("daily.settings"),
+  saveDailySettings: (settings: DailyFields) => call("daily.saveSettings", { settings }),
 
   reveal: (path: string) => call("os.reveal", { path }),
   openExternally: (path: string) => call("os.open", { path }),

@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 
 use groundwork_core::agent::AgentContext;
+use groundwork_core::daily::DailyFields;
 use groundwork_core::inbox::InboxItem;
 use groundwork_core::quickadd::QuickAddChoice;
 use groundwork_core::settings::AppSettings;
@@ -305,6 +306,14 @@ pub enum Request {
         #[ts(optional)]
         date: Option<String>,
     },
+    /// → `DailyNoteSettings`: Groundwork's daily notes settings and
+    /// Obsidian's, which fill in whatever Groundwork's leave unset.
+    #[serde(rename = "daily.settings")]
+    DailySettings,
+    /// → `DailyNoteSettings`: saves Groundwork's daily notes settings (in
+    /// `.groundwork/config.yml`); unset fields fall back to Obsidian's.
+    #[serde(rename = "daily.saveSettings")]
+    DailySaveSettings { settings: DailyFields },
 
     /// → `string | null`: what `history.undo` would revert.
     #[serde(rename = "history.peek")]
