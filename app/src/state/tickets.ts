@@ -17,7 +17,7 @@ import type { Ticket } from "../api/generated/Ticket";
 import { openExternalUrl } from "../lib/fileUrl";
 import { launchAgent } from "./claude";
 import { projectViewPath } from "../lib/paths";
-import { confirmDialog, formDialog, useUi } from "./ui";
+import { confirmDialog, formDialog, type MenuEntry, useUi } from "./ui";
 import { message, onVaultChange, useVault } from "./vault";
 import { isTerminal, type TerminalParams, useWorkspace } from "./workspace";
 import { useWorkspaces } from "./workspaces";
@@ -241,6 +241,156 @@ export async function restoreTicket(path: string): Promise<void> {
       return;
     }
   }
+}
+
+/** A repo's name, as `repos.yml` gives it. */
+export function repoName(id: string): string {
+  return useTickets.getState().repos.find((r) => r.id === id)?.name ?? id;
+}
+
+/**
+ * Gives a ticket a worktree in another repo (asking which, and where it's
+ * checked out if this Mac doesn't know), then runs its setup in a new
+ * terminal there, in the ticket's workspace.
+ */
+export async function addTicketRepo(path: string, repo?: string): Promise<void> {
+  await useTickets.getState().load();
+  const ticket = ticketAt(path);
+  if (!ticket) return;
+  if (!repo) {
+    const have = new Set(ticket.worktree ? ticket.repos.map((r) => r.id) : []);
+    const choices = useTickets.getState().repos.filter((r) => !have.has(r.id));
+    if (!choices.length) {
+      useUi.getState().notify("It has a worktree in every repo already.");
+      return;
+    }
+    useUi.getState().openPalette({
+      placeholder: `Add a repo to “${ticket.title}”…`,
+      items: choices.map((r) => ({
+        id: r.id,
+        label: r.name,
+        detail: r.location ? (r.description ?? undefined) : "not located on this Mac yet",
+        run: () => addTicketRepo(path, r.id),
+      })),
+    });
+    return;
+  }
+  for (;;) {
+    try {
+      const created = await api.addTicketRepo(path, repo);
+      void useTickets.getState().load();
+      const added = created.ticket.repos.find((r) => r.id === repo)?.worktreePath;
+      const workspace = created.workspace;
+      if (workspace) {
+        await useWorkspaces.getState().refresh();
+        await useWorkspaces.getState().ready(workspace.id);
+        const ws = useWorkspace.getState();
+        ws.showWorkspace(workspace.id, ws.view === "note" ? "split" : ws.view);
+        await ws.openTerminal(added ?? undefined, { run: setupLine(created.setup) });
+      }
+      useUi.getState().notify(`Added ${repoName(repo)} to “${created.ticket.title}”`);
+      return;
+    } catch (err) {
+      const missing = message(err).match(NOT_LOCATED)?.[1];
+      if (missing && (await locateRepo(missing))) continue;
+      if (!missing) useUi.getState().notify(message(err));
+      return;
+    }
+  }
+}
+
+/** Makes one of a ticket's repos its default, where its workspace's terminals start. */
+export async function setDefaultTicketRepo(path: string, repo: string): Promise<void> {
+  try {
+    await api.setDefaultTicketRepo(path, repo);
+    await Promise.all([useTickets.getState().load(), useWorkspaces.getState().refresh()]);
+  } catch (err) {
+    useUi.getState().notify(message(err));
+  }
+}
+
+/** Somewhere a new terminal in a workspace can start. */
+export interface TerminalPlace {
+  label: string;
+  detail?: string;
+  cwd: string;
+  /** The ticket's default repo. */
+  isDefault?: boolean;
+}
+
+/**
+ * Where a workspace's new terminals can start besides its folder: for a
+ * ticket's, each of its worktrees (the default first), then each component
+ * it touches. Also the ticket, for menus that add or change its repos.
+ */
+export async function terminalPlaces(
+  area: string,
+): Promise<{ ticket?: Ticket; places: TerminalPlace[] }> {
+  const note = useWorkspaces.getState().list.find((w) => w.id === area)?.note;
+  if (!note) return { places: [] };
+  const [context] = await Promise.all([
+    api.context({ note }).catch(() => null),
+    useTickets.getState().tickets.length ? null : useTickets.getState().load(),
+  ]);
+  const ticket = context?.ticket ?? ticketAt(note);
+  const places: TerminalPlace[] = [];
+  const repos = ticket?.worktree ? ticket.repos : [];
+  repos.forEach((r, i) => {
+    if (r.worktreePath)
+      places.push({
+        label: repoName(r.id),
+        detail: r.worktreePath,
+        cwd: r.worktreePath,
+        isDefault: i === 0 && repos.length > 1,
+      });
+  });
+  for (const c of context?.components ?? []) {
+    if (!c.absPath) continue;
+    const name = c.id.slice(c.id.indexOf(":") + 1);
+    places.push({
+      label: repos.length > 1 ? `${name} (${repoName(c.id.slice(0, c.id.indexOf(":")))})` : name,
+      detail: c.path,
+      cwd: c.absPath,
+    });
+  }
+  return { ticket: ticket ?? undefined, places };
+}
+
+/**
+ * A workspace's new-terminal menu: its folder, then its ticket's worktrees
+ * (the default starred) and components, then the ticket's repo choices.
+ * `open` starts the terminal (in the workspace's folder without a `cwd`).
+ */
+export async function newTerminalItems(
+  area: string,
+  open: (cwd?: string) => void,
+): Promise<MenuEntry[]> {
+  const { ticket, places } = await terminalPlaces(area);
+  const items: MenuEntry[] = [{ label: "New terminal", action: () => open() }];
+  for (const p of places)
+    items.push({
+      label: `New terminal in ${p.label}`,
+      starred: p.isDefault,
+      action: () => open(p.cwd),
+    });
+  const repos = ticket ? repoMenuItems(ticket) : [];
+  if (repos.length) items.push("separator", ...repos);
+  return items;
+}
+
+/** A menu's items for a ticket's repos: make one the default, or add another. */
+export function repoMenuItems(ticket: Ticket) {
+  const items: { label: string; action: () => void }[] = [];
+  const repos = ticket.worktree ? ticket.repos : [];
+  if (repos.length > 1)
+    for (const r of repos.slice(1))
+      items.push({
+        label: `Make ${repoName(r.id)} the default`,
+        action: () => void setDefaultTicketRepo(ticket.path, r.id),
+      });
+  if (ticket.status !== "closed")
+    items.push({ label: "Add repo…", action: () => void addTicketRepo(ticket.path) });
+  return items;
 }
 
 /** The note's workspace, made (and linked from the note) if it has none. */

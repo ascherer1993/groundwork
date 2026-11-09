@@ -166,6 +166,8 @@ interface Results {
   "ticket.create": CreatedTicket;
   "ticket.close": Ticket;
   "ticket.restore": CreatedTicket;
+  "ticket.addRepo": CreatedTicket;
+  "ticket.setDefaultRepo": Ticket;
   "ticket.strays": StrayWorktree[];
   "context.get": Context;
   "action.run": null;
@@ -339,6 +341,9 @@ export const api = {
   createTicket: (ticket: NewTicket) => call("ticket.create", { ticket }),
   closeTicket: (path: string, force?: boolean) => call("ticket.close", { path, force }),
   restoreTicket: (path: string) => call("ticket.restore", { path }),
+  addTicketRepo: (path: string, repo: string) => call("ticket.addRepo", { path, repo }),
+  setDefaultTicketRepo: (path: string, repo: string) =>
+    call("ticket.setDefaultRepo", { path, repo }),
   strayWorktrees: () => call("ticket.strays"),
   /** For a note, or an absolute folder. */
   context: (where: { note?: string; cwd?: string }) => call("context.get", where),

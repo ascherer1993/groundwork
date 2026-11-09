@@ -18,9 +18,14 @@ slug?: string,
  */
 projects?: Array<string>, code?: Array<string>, 
 /**
- * From `code` or the projects' code when they use one repo.
+ * The default repo. Without it or `repos`, every repo in `code`, else
+ * the projects' repo when they use one.
  */
 repo?: string, 
+/**
+ * More repos, each getting a worktree on the same branch.
+ */
+repos?: Array<string>, 
 /**
  * An existing note to turn into the ticket ("Add worktree").
  */

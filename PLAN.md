@@ -201,9 +201,9 @@ ticket: INT-123
 jira: https://company.atlassian.net/browse/INT-123
 projects: ["[[Lincoln]]", "[[Empower]]"]   # every project it affects; the first is its home
 code: [integrations:shared, integrations:lincoln-web]   # what it touches (optional)
-repo: integrations
-worktree: INT-123-fix-login      # name inside the repo's worktree dir
-branch: INT-123-fix-login
+repos: [integrations, web]       # where it has worktrees; the first is the default (★)
+worktree: INT-123-fix-login      # name inside each repo's worktree dir
+branch: INT-123-fix-login        # the same branch in every repo
 status: active                   # active | closed
 people: ["[[Jane Doe]]"]
 
@@ -212,6 +212,11 @@ projects: ["[[Lincoln]]", "[[Empower]]"]
 
 # Any note that has a workspace
 workspace: ws-7f3a               # id of a machine-local workspace record
+```
+
+A ticket written before multi-repo tickets has `repo: integrations`, read as `repos: [integrations]`; it becomes `repos:` the first time its repos change.
+
+```yaml
 
 # Person
 type: person
@@ -438,12 +443,19 @@ Daily notes follow Groundwork's own settings, then Obsidian's. **Settings › Da
   - (added 2026-11-06, after cmux) a workspace can have a **colour** (one of eight, from its menu's Colour…; down the left edge of the workspace and its terminals in the list, and of the terminals' header), be **pinned** to the top (Pin to top: a Pinned section above the groups, with a pin by the name), and be **dragged** to another place in its section. The order is the order of `workspaces.json` (`workspace.move`); within a section, workspaces keep it. ⌘1–9, "Switch workspace…" and Next/Previous workspace follow the list as shown (`state/workspaceOrder.ts`).
 - **Terminal tabs can be named** (a double click on the tab, or its menu's Rename tab…). The name is kept in the tab's params, so it outlives a restart, and shows instead of the title the program sets; an empty name goes back to that.
 - **Notes with a workspace** switch views with the window's own buttons (notes, split, terminals); opening the note makes its workspace current. (They had a Note · Split · Workspace switch of their own above the note until 2026-11-05; it repeated the window's buttons, so it went.)
-- **Ticket workspaces** open their first tab at the worktree root, so agents see the repo's own `CLAUDE.md`. The new-tab menu also offers one tab per component the ticket touches, opened in that component's folder.
+- **Ticket workspaces** open their first tab at the default repo's worktree root, so agents see the repo's own `CLAUDE.md`. The new-tab menu offers each of the ticket's worktrees (the default starred) and each component the ticket touches, opened in that component's folder.
+- **The Vault workspace** (added 2026-11-09): always first in "Switch workspace…" and the terminals header's menu, made the first time it's picked, in the vault root and pinned to the top. It belongs to no note, so following never switches to it. It isn't the "Agents" workspace, which keeps the command bar's sessions apart.
 - A note has no workspace until you choose "Create workspace" or create a ticket.
 
 ### 5.6 Projects, repos, tickets & worktrees
 
-- **One worktree per ticket**, in its repo's worktree directory, whichever project the ticket belongs to. Tickets from Lincoln and Empower share the `integrations` worktree directory; ticket keys keep the names unique.
+- **One worktree per repo a ticket touches** (decided 2026-11-09, replacing one worktree per ticket: a ticket can span repos). Each is in its repo's worktree directory, whichever project the ticket belongs to, all with the same folder name and branch (named by the default repo's formats). Tickets from Lincoln and Empower share the `integrations` worktree directory; ticket keys keep the names unique.
+  - **One workspace per ticket**, however many repos: its tabs pick their worktree (§5.5), so a ticket doesn't fill the Workspaces view. A workspace belongs to one note and is never shared between tickets; two tickets in the same folder get a workspace each.
+  - **The default repo** is the first in `repos:`, starred in the menus. ⌘T and the first tab start in its worktree, and so does the workspace's folder. "Make default" moves a repo to the front and changes the workspace's folder.
+  - **Add repo…** (the note bar, the ticket's menus, `groundwork ticket add-repo`) adds a worktree in another repo on the ticket's branch. A ticket can start with no repo at all and get its first worktree this way.
+  - **Close** checks every worktree first and removes none unless all can go; **Restore** brings them all back.
+  - The Tickets view groups a ticket by its default repo; its git state adds up all its worktrees.
+  - Subnotes follow their note's workspace (§5.5), so a ticket's per-repo notes (`INT-123 Fix login.web.md`) use the ticket's workspace.
 - **Where a ticket's note goes:** the work folder of its home project (the first in `projects:`). A ticket that belongs to no single project goes to the repo's `home_project` if it has one, otherwise to the vault's default work folder (`Work/`, set in `config.yml`).
 - **Ad-hoc tickets.** Projects and tracker keys are both optional. A spike or quick fix can be just a repo plus a slug: `groundwork ticket create --repo integrations --slug try-new-cache`. It gets a branch and worktree (name formats skip `{{key}}` and its separator when there's no key), a workspace and a note in the default work folder, and you can attach it to projects or a Jira key later by editing frontmatter.
 - **Starting a worktree** works from wherever you are:
@@ -743,7 +755,7 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
   - **Keyboard shortcuts are configurable** in Settings (⌘,): click one and press new keys (they need ⌘, ⌃ or ⌥; Backspace clears). Keys taken from another command leave it with none. Changes are machine-local, in `settings.json` in the data folder (`settings.get` / `settings.set`), and apply in every vault. The registry is `app/src/state/keys.ts`; menus, tooltips and the palette show the current keys.
   - A terminal with no workspace to go in (⌘T when there's none) gets a new workspace named after its folder.
   - Layouts from before had notes in workspaces and terminals among the notes: the notes' tabs drop out of workspaces, and terminals in the notes layout leave their tabs (they keep running, under Running terminals).
-  - **The terminals follow the notes** (built in a second stage): when a note opens, its workspace becomes current. That's the note's own (the workspace whose `note` it is), else the nearest above it: a folder note's (`Acme/Acme.md`) or a project overview's. With neither, nothing changes (later perhaps a generic workspace instead). Following never changes the view. A **lock** in the terminals' header (or the palette) keeps the current workspace (it was called a pin until 2026-11-06, when pinning came to mean keeping a workspace at the top of the list); the header names it and says whether it's following or locked, and its name switches workspace. **Picking** a workspace (the list, ⌘1–9, "Switch workspace…") opens its note on the left, if it has one. The rule is in `app/src/state/follow.ts`.
+  - **The terminals follow the notes** (built in a second stage): when a note opens, its workspace becomes current. That's the note's own (the workspace whose `note` it is), else its note's if it's a subnote (added 2026-11-09), else the nearest above it: a folder note's (`Acme/Acme.md`) or a project overview's. With neither, nothing changes (later perhaps a generic workspace instead). Following never changes the view. A **lock** in the terminals' header (or the palette) keeps the current workspace (it was called a pin until 2026-11-06, when pinning came to mean keeping a workspace at the top of the list); the header names it and says whether it's following or locked, and its name switches workspace. **Picking** a workspace (the list, ⌘1–9, "Switch workspace…") opens its note on the left, if it has one. The rule is in `app/src/state/follow.ts`.
 - Started 2026-11-04, without waiting for the Phase 4 checkpoint (the user's call). Built in two parts:
   1. **The model, API and CLI** *(built)*: config, repo locations, git worktrees, tickets, context, `code who`, actions.
   2. **The app** *(built)*: note workspaces and view modes, ticket creation, the tickets view and block, actions on ticket notes, close and restore.
@@ -862,10 +874,10 @@ Things built but not yet tried for real, to come back to:
 - Databases (Dataview/Bases-style or something richer); to be designed later
 - MCP server wrapper
 - Real Jira API integration (status and title sync)
-- Graph view, themes, plugin system, other agents (Codex…), multi-repo tickets (one worktree per repo)
+- Graph view, themes, plugin system, other agents (Codex…)
+- **Clickable folder notes** (asked for 2026-11-09): a folder with its own note (`Acme/Acme.md`) is one row in the tree; clicking it opens the note, and its chevron opens the folder.
 - **A month view of the todo board** (§5.11), if the week isn't enough. `todo.board` already takes up to six weeks.
-- Workspaces and projects (discussed 2026-11-05; waiting until the user has seen how work is organised at the new job, since one repo per ticket and several projects per ticket may be enough):
-  - Attaching an existing workspace to a note or project ("Attach to note…", "Choose workspace…"); today a note's workspace is always a new one, and ⌘T's workspaces belong to no note.
+- Workspaces and projects (discussed 2026-11-05; on 2026-11-09 tickets became multi-repo with one workspace each, §5.6, and workspaces stay one per note, never shared):
   - Where a code project's own workspace starts: the main checkout rather than the project's vault folder.
   - Badges for a ticket's other projects in the Workspaces view (§5.5 describes them; the view only uses the home project).
   - Nested projects don't roll up: a parent project doesn't see its sub-projects' notes unless they list it in `projects:`.

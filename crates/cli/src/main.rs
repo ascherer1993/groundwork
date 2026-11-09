@@ -381,9 +381,11 @@ enum TicketCommand {
         /// What it touches, `repo:component` (repeatable).
         #[arg(long)]
         code: Vec<String>,
-        /// Default: the one repo its code or projects use.
-        #[arg(long)]
-        repo: Option<String>,
+        /// A repo to make a worktree in, all on one branch (repeatable; the
+        /// first is the default). Default: every repo its code touches, else
+        /// the one repo its projects use.
+        #[arg(long = "repo")]
+        repos: Vec<String>,
         /// Turn this existing note into the ticket, where it is.
         #[arg(long)]
         note: Option<String>,
@@ -410,9 +412,20 @@ enum TicketCommand {
         #[arg(long)]
         component: Option<String>,
     },
-    /// A ticket's details and its worktree's git state.
+    /// A ticket's details and its worktrees' git state.
     Show { note: String },
-    /// Remove the worktree, end its terminals and mark the ticket closed.
+    /// Give a ticket a worktree in another repo, on its branch, then run that
+    /// repo's setup. Its terminals open from the ticket's one workspace.
+    AddRepo {
+        note: String,
+        repo: String,
+        #[arg(long)]
+        no_setup: bool,
+    },
+    /// Make one of a ticket's repos its default: where its workspace's
+    /// terminals start.
+    DefaultRepo { note: String, repo: String },
+    /// Remove its worktrees, end their terminals and mark the ticket closed.
     /// Refuses when that would lose uncommitted or unpushed work.
     Close {
         note: String,
@@ -420,7 +433,7 @@ enum TicketCommand {
         #[arg(long)]
         force: bool,
     },
-    /// Bring a closed ticket's worktree back (from the local or remote branch).
+    /// Bring a closed ticket's worktrees back (from the local or remote branch).
     Restore {
         note: String,
         #[arg(long)]
@@ -1145,6 +1158,10 @@ fn print_context_to(w: &mut impl std::io::Write, c: &Context) {
         if let Some(b) = &t.branch {
             out!("  branch {b}");
         }
+        if t.repos.len() > 1 {
+            let ids: Vec<&str> = t.repos.iter().map(|r| r.id.as_str()).collect();
+            out!("  repos: {} (the first is the default)", ids.join(", "));
+        }
     } else if let Some(n) = &c.note {
         out!("Note: {n}");
     }
@@ -1197,6 +1214,25 @@ fn print_context_to(w: &mut impl std::io::Write, c: &Context) {
         out!("Related notes:");
         for r in &c.related {
             out!("  {r}");
+        }
+    }
+}
+
+/// Each repo's worktree, the default first and marked.
+fn print_worktrees(t: &Ticket) {
+    for (i, r) in t.repos.iter().enumerate() {
+        let default = if i == 0 && t.repos.len() > 1 {
+            " (default)"
+        } else {
+            ""
+        };
+        match &r.worktree_path {
+            Some(w) if Path::new(w).is_dir() => println!("  worktree: {w} [{}]{default}", r.id),
+            Some(w) => println!("  worktree: {w} [{}]{default} (not on disk)", r.id),
+            None => println!(
+                "  worktree: [{}]{default} repo not located on this machine",
+                r.id
+            ),
         }
     }
 }
@@ -1389,7 +1425,7 @@ fn ticket(session: &Session, cmd: TicketCommand, json: bool) -> Fallible<()> {
             slug,
             projects,
             code,
-            repo,
+            repos,
             note,
             adopt,
             no_worktree,
@@ -1403,7 +1439,8 @@ fn ticket(session: &Session, cmd: TicketCommand, json: bool) -> Fallible<()> {
                     slug,
                     projects,
                     code,
-                    repo,
+                    repo: None,
+                    repos,
                     note,
                     adopt,
                     no_worktree,
@@ -1453,38 +1490,31 @@ fn ticket(session: &Session, cmd: TicketCommand, json: bool) -> Fallible<()> {
             if let Some(b) = &ticket.branch {
                 println!("  branch: {b}");
             }
-            match (&ticket.worktree_path, git.exists) {
-                (Some(w), true) => {
-                    println!("  worktree: {w}");
-                    let mut state = Vec::new();
-                    if git.dirty {
-                        state.push("uncommitted changes".to_string());
-                    }
-                    if git.unpushed > 0 {
-                        state.push(format!("{} unpushed", git.unpushed));
-                    }
-                    if !git.on_remote {
-                        state.push("not on the remote".into());
-                    }
-                    if git.behind > 0 {
-                        state.push(format!("{} behind its base", git.behind));
-                    }
-                    if state.is_empty() {
-                        state.push("clean and pushed".into());
-                    }
-                    println!("  git: {}", state.join(", "));
+            if git.exists {
+                let mut state = Vec::new();
+                if git.dirty {
+                    state.push("uncommitted changes".to_string());
                 }
-                (Some(w), false) => println!("  worktree: {w} (not on disk)"),
-                (None, _) if ticket.repo.is_some() && ticket.worktree.is_some() => {
-                    println!("  repo not located on this machine")
+                if git.unpushed > 0 {
+                    state.push(format!("{} unpushed", git.unpushed));
                 }
-                _ => {}
+                if !git.on_remote {
+                    state.push("not on the remote".into());
+                }
+                if git.behind > 0 {
+                    state.push(format!("{} behind its base", git.behind));
+                }
+                if state.is_empty() {
+                    state.push("clean and pushed".into());
+                }
+                println!("  git: {}", state.join(", "));
             }
+            print_worktrees(&ticket);
             Ok(())
         }
         TicketCommand::Close { note, force } => {
             let path = resolve_note(session, &note)?;
-            let worktree = session.ticket(&path).map_err(err)?.worktree_path;
+            let worktrees = session.ticket(&path).map_err(err)?.repos;
             let (ticket, _, _) = session.close_ticket(&path, force).map_err(|e| {
                 let msg = err(e);
                 if msg.starts_with("Not closed") {
@@ -1493,7 +1523,11 @@ fn ticket(session: &Session, cmd: TicketCommand, json: bool) -> Fallible<()> {
                     msg
                 }
             })?;
-            let ended = worktree.map_or(0, |w| end_terminals_in(Path::new(&w)));
+            let ended: usize = worktrees
+                .iter()
+                .filter_map(|r| r.worktree_path.as_deref())
+                .map(|w| end_terminals_in(Path::new(w)))
+                .sum();
             if json {
                 return print_json(
                     &serde_json::json!({ "ticket": ticket, "terminalsEnded": ended }),
@@ -1506,6 +1540,25 @@ fn ticket(session: &Session, cmd: TicketCommand, json: bool) -> Fallible<()> {
                     if ended == 1 { "" } else { "s" }
                 );
             }
+            Ok(())
+        }
+        TicketCommand::AddRepo {
+            note,
+            repo,
+            no_setup,
+        } => {
+            let path = resolve_note(session, &note)?;
+            let created = session.add_ticket_repo(&path, &repo).map_err(err)?;
+            report_created(&created, no_setup, json)
+        }
+        TicketCommand::DefaultRepo { note, repo } => {
+            let path = resolve_note(session, &note)?;
+            let (ticket, _, _) = session.set_ticket_default_repo(&path, &repo).map_err(err)?;
+            if json {
+                return print_json(&ticket);
+            }
+            println!("{}", ticket_line(&ticket));
+            print_worktrees(&ticket);
             Ok(())
         }
         TicketCommand::Restore { note, no_setup } => {
@@ -1538,12 +1591,10 @@ fn report_created(created: &CreatedTicket, no_setup: bool, json: bool) -> Fallib
         print_json(created)?;
     } else {
         println!("{}", t.path);
-        if let Some(w) = &t.worktree_path {
-            println!("  worktree: {w}");
-        }
         if let Some(b) = &t.branch {
             println!("  branch: {b}");
         }
+        print_worktrees(t);
     }
     if no_setup || created.setup.is_empty() {
         return Ok(());

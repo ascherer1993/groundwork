@@ -765,11 +765,26 @@ impl Backend {
             }
             Request::TicketClose { path, force } => {
                 let session = self.session()?;
-                let worktree = session.ticket(&path)?.worktree_path;
+                let worktrees = session.ticket(&path)?.repos;
                 let (ticket, _, changes) = session.close_ticket(&path, force.unwrap_or(false))?;
                 self.emit(changes);
-                if let Some(wt) = worktree {
-                    self.terminals.kill_inside(Path::new(&wt));
+                for wt in worktrees.iter().filter_map(|r| r.worktree_path.as_deref()) {
+                    self.terminals.kill_inside(Path::new(wt));
+                }
+                to_value(ticket)
+            }
+            Request::TicketAddRepo { path, repo } => {
+                let created = self.session()?.add_ticket_repo(&path, &repo)?;
+                self.emit(created.changes.clone());
+                (self.events)(Event::WorkspacesChanged);
+                to_value(created)
+            }
+            Request::TicketSetDefaultRepo { path, repo } => {
+                let (ticket, workspace, changes) =
+                    self.session()?.set_ticket_default_repo(&path, &repo)?;
+                self.emit(changes);
+                if workspace.is_some() {
+                    (self.events)(Event::WorkspacesChanged);
                 }
                 to_value(ticket)
             }

@@ -808,7 +808,7 @@ fn tickets_from_create_to_close() {
     assert_eq!(
         created,
         format!(
-            "Projects/Acme/Work/TEAM-7 Fix signup.md\n  worktree: {}\n  branch: TEAM-7-fix-signup\n",
+            "Projects/Acme/Work/TEAM-7 Fix signup.md\n  branch: TEAM-7-fix-signup\n  worktree: {} [acme-platform]\n",
             wt.display()
         )
     );
@@ -857,6 +857,37 @@ fn tickets_from_create_to_close() {
 
     let show = v.ok(&["ticket", "show", "TEAM-7 Fix signup"]);
     assert!(show.contains("git: not on the remote"), "{show}");
+
+    // A second repo, on the same branch; the default can change.
+    let infra_dir = code.path().join("infra");
+    fs::create_dir_all(&infra_dir).unwrap();
+    let infra = git_repo(&infra_dir);
+    v.ok(&["repo", "locate", "acme-infra", infra.to_str().unwrap()]);
+    let added = v.ok(&[
+        "ticket",
+        "add-repo",
+        "TEAM-7 Fix signup",
+        "acme-infra",
+        "--no-setup",
+    ]);
+    let infra_wt = infra
+        .with_file_name("acme-worktrees")
+        .join("TEAM-7-fix-signup");
+    assert!(
+        added.contains(&format!(
+            "  worktree: {} [acme-platform] (default)\n  worktree: {} [acme-infra]\n",
+            wt.display(),
+            infra_wt.display()
+        )),
+        "{added}"
+    );
+    assert!(infra_wt.is_dir());
+    let switched = v.ok(&["ticket", "default-repo", "TEAM-7 Fix signup", "acme-infra"]);
+    assert!(switched.contains("[acme-infra] (default)"), "{switched}");
+    assert!(
+        v.read("Projects/Acme/Work/TEAM-7 Fix signup.md")
+            .contains("repos: [acme-infra, acme-platform]\n")
+    );
     let (ok, _, err) = v.run(&["ticket", "close", "TEAM-7 Fix signup"]);
     assert!(
         !ok && err.contains("its branch isn't on the remote. Use --force"),
@@ -866,7 +897,7 @@ fn tickets_from_create_to_close() {
         v.ok(&["ticket", "close", "TEAM-7 Fix signup", "--force"])
             .starts_with("closed ")
     );
-    assert!(!wt.exists());
+    assert!(!wt.exists() && !infra_wt.exists());
     assert!(
         v.read("Projects/Acme/Work/TEAM-7 Fix signup.md")
             .contains("status: closed\n")
@@ -878,7 +909,7 @@ fn tickets_from_create_to_close() {
     );
 
     v.ok(&["ticket", "restore", "TEAM-7 Fix signup", "--no-setup"]);
-    assert!(wt.is_dir());
+    assert!(wt.is_dir() && infra_wt.is_dir());
 }
 
 #[test]

@@ -622,15 +622,15 @@ pub enum Request {
     /// → `Ticket[]`
     #[serde(rename = "ticket.list")]
     TicketList { filter: TicketFilter },
-    /// → `GitState`: the ticket's worktree.
+    /// → `GitState`: the ticket's worktrees, added up.
     #[serde(rename = "ticket.git")]
     TicketGit { path: String },
     /// → `CreatedTicket`: makes the worktree, the note and a workspace.
     /// Setup isn't run; the app runs it in the workspace's first terminal.
     #[serde(rename = "ticket.create")]
     TicketCreate { ticket: NewTicket },
-    /// → `Ticket`: refuses, unless `force`, when removing the worktree would
-    /// lose work. Ends terminals working in the worktree.
+    /// → `Ticket`: refuses, unless `force`, when removing any of its
+    /// worktrees would lose work. Ends terminals working in them.
     #[serde(rename = "ticket.close")]
     TicketClose {
         path: String,
@@ -641,6 +641,14 @@ pub enum Request {
     /// → `CreatedTicket`
     #[serde(rename = "ticket.restore")]
     TicketRestore { path: String },
+    /// → `CreatedTicket`: a worktree in another repo on the ticket's branch
+    /// (its first, for a ticket with none). Setup is for that worktree only.
+    #[serde(rename = "ticket.addRepo")]
+    TicketAddRepo { path: String, repo: String },
+    /// → `Ticket`: makes one of its repos the default, where its workspace
+    /// starts.
+    #[serde(rename = "ticket.setDefaultRepo")]
+    TicketSetDefaultRepo { path: String, repo: String },
     /// → `StrayWorktree[]`: worktrees with no ticket note.
     #[serde(rename = "ticket.strays")]
     TicketStrays,

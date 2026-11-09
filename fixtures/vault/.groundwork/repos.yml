@@ -28,3 +28,16 @@ acme-platform:
       kind: terminal
       run: npm run storybook -w apps/web
       component: acme-platform:web
+acme-infra:
+  name: Acme infra
+  description: Terraform for Acme's AWS accounts. Tickets that change both code and infrastructure have worktrees in both.
+  git:
+    base_branch: main
+    branch_format: "{{key}}-{{slug}}"
+    worktree_name: "{{key}}-{{slug}}"
+  setup:
+    - terraform init
+  components:
+    network:
+      path: network
+      description: VPCs, subnets and the load balancers.

@@ -37,12 +37,26 @@ pub struct Ticket {
     pub projects: Vec<String>,
     /// What it touches: `repo` or `repo:component`.
     pub code: Vec<String>,
+    /// The default repo: the first of `repos`.
     pub repo: Option<String>,
-    /// The worktree's folder name.
+    /// The worktrees' folder name, the same in every repo.
     pub worktree: Option<String>,
+    /// The same in every repo.
     pub branch: Option<String>,
     pub workspace: Option<String>,
-    /// Where the worktree is (or would be) on this machine, once the repo is located.
+    /// Where the default repo's worktree is (or would be) on this machine, once the repo is located.
+    pub worktree_path: Option<String>,
+    /// Every repo it has a worktree in, the default first.
+    pub repos: Vec<TicketRepo>,
+}
+
+/// One of a ticket's repos.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TicketRepo {
+    pub id: String,
+    /// Where its worktree is (or would be) on this machine, once the repo is located.
     pub worktree_path: Option<String>,
 }
 
@@ -87,9 +101,13 @@ pub struct NewTicket {
     pub projects: Vec<String>,
     #[ts(optional, as = "Option<Vec<String>>")]
     pub code: Vec<String>,
-    /// From `code` or the projects' code when they use one repo.
+    /// The default repo. Without it or `repos`, every repo in `code`, else
+    /// the projects' repo when they use one.
     #[ts(optional)]
     pub repo: Option<String>,
+    /// More repos, each getting a worktree on the same branch.
+    #[ts(optional, as = "Option<Vec<String>>")]
+    pub repos: Vec<String>,
     /// An existing note to turn into the ticket ("Add worktree").
     #[ts(optional)]
     pub note: Option<String>,
@@ -339,6 +357,21 @@ pub(crate) fn fm_list(fm: Option<&Value>, key: &str) -> Vec<String> {
     }
 }
 
+/// A ticket's repos, the default first: `repos:`, else the older `repo:`.
+fn ticket_repo_ids(fm: Option<&Value>) -> Vec<String> {
+    let mut ids = fm_list(fm, "repos");
+    if ids.is_empty() {
+        ids.extend(fm_str(fm, "repo"));
+    }
+    let mut seen = Vec::new();
+    ids.retain(|id| {
+        let new = !seen.contains(id);
+        seen.push(id.clone());
+        new
+    });
+    ids
+}
+
 pub(crate) fn file_stem(path: &str) -> &str {
     let name = path.rsplit('/').next().unwrap_or(path);
     name.strip_suffix(".md").unwrap_or(name)
@@ -529,15 +562,20 @@ impl Session {
                 let key = key.as_deref()?;
                 Some(config.tracker_for(key)?.url_for(key))
             });
-        let repo = fm_str(fm, "repo");
         let worktree = fm_str(fm, "worktree");
-        let worktree_path = match (&repo, &worktree) {
-            (Some(r), Some(w)) => self
-                .repos()
-                .get(r)
-                .map(|l| l.worktree(w).display().to_string()),
-            _ => None,
-        };
+        let repos: Vec<TicketRepo> = ticket_repo_ids(fm)
+            .into_iter()
+            .map(|id| TicketRepo {
+                worktree_path: worktree.as_ref().and_then(|w| {
+                    self.repos()
+                        .get(&id)
+                        .map(|l| l.worktree(w).display().to_string())
+                }),
+                id,
+            })
+            .collect();
+        let repo = repos.first().map(|r| r.id.clone());
+        let worktree_path = repos.first().and_then(|r| r.worktree_path.clone());
         Some(Ticket {
             path: path.to_string(),
             title: file_stem(path).to_string(),
@@ -552,6 +590,7 @@ impl Session {
             branch: fm_str(fm, "branch"),
             workspace: fm_str(fm, "workspace"),
             worktree_path,
+            repos,
         })
     }
 
@@ -598,7 +637,7 @@ impl Session {
                 filter
                     .repo
                     .as_ref()
-                    .is_none_or(|r| t.repo.as_ref() == Some(r))
+                    .is_none_or(|r| t.repos.iter().any(|tr| &tr.id == r))
             })
             .filter(|t| project.as_ref().is_none_or(|p| t.projects.contains(p)))
             .filter(|t| filter.component.as_ref().is_none_or(|c| t.code.contains(c)))
@@ -609,19 +648,55 @@ impl Session {
         Ok(tickets)
     }
 
-    /// The ticket's worktree's git state (all defaults when there's none).
+    /// The git state of the ticket's worktrees, added up: changes in any,
+    /// commits unpushed and behind in all, on the remote only if all are
+    /// (all defaults when there's none on disk).
     pub fn ticket_git(&self, path: &str) -> Result<GitState> {
         let config = self.config()?;
         let ticket = self.ticket(path)?;
-        let (Some(repo), Some(wt)) = (&ticket.repo, &ticket.worktree_path) else {
-            return Ok(GitState::default());
-        };
-        let base = config.repo(repo).map(|r| r.git.base_branch.clone())?;
-        let mut state = git::state(Path::new(wt), &base);
+        let mut total: Option<GitState> = None;
+        for r in &ticket.repos {
+            let Some(wt) = &r.worktree_path else { continue };
+            let base = config.repo(&r.id).map(|r| r.git.base_branch.clone())?;
+            let state = git::state(Path::new(wt), &base);
+            if !state.exists {
+                continue;
+            }
+            total = Some(match total {
+                None => state,
+                Some(mut t) => {
+                    t.dirty |= state.dirty;
+                    t.unpushed += state.unpushed;
+                    t.behind += state.behind;
+                    t.on_remote &= state.on_remote;
+                    t
+                }
+            });
+        }
+        let mut state = total.unwrap_or_default();
         if state.exists && state.branch.is_none() {
             state.branch = ticket.branch;
         }
         Ok(state)
+    }
+
+    /// Each of the ticket's worktrees on disk, with what closing it would lose.
+    fn worktree_warnings(&self, config: &Config, ticket: &Ticket) -> Result<Vec<String>> {
+        let mut problems = Vec::new();
+        for r in &ticket.repos {
+            let Some(wt) = &r.worktree_path else { continue };
+            let repo = config.repo(&r.id)?;
+            let warnings = git::state(Path::new(wt), &repo.git.base_branch).warnings();
+            if warnings.is_empty() {
+                continue;
+            }
+            problems.push(if ticket.repos.len() > 1 {
+                format!("in {}, {}", repo.id, warnings.join(", "))
+            } else {
+                warnings.join(", ")
+            });
+        }
+        Ok(problems)
     }
 
     /// Creates a ticket: its worktree (unless adopting one or there's no
@@ -668,31 +743,49 @@ impl Session {
             config.component(code)?;
         }
         let repo_of = |code: &String| code.split(':').next().unwrap_or(code).to_string();
-        let repo_id = match given(&new.repo) {
-            Some(r) => Some(config.repo(r)?.id.clone()),
-            None => {
-                let mut repos: Vec<String> = new.code.iter().map(repo_of).collect();
-                if repos.is_empty() {
-                    repos = projects
-                        .iter()
-                        .flat_map(|p| p.code.iter().map(repo_of))
-                        .collect();
-                }
-                repos.sort();
-                repos.dedup();
-                match repos.as_slice() {
-                    [one] => Some(one.clone()),
-                    [] => None,
-                    _ => {
-                        return Err(CoreError::InvalidPath(format!(
-                            "which repo? the ticket could use {}",
-                            repos.join(" or ")
-                        )));
-                    }
+        let mut repo_ids: Vec<String> = Vec::new();
+        for r in given(&new.repo)
+            .into_iter()
+            .chain(new.repos.iter().map(String::as_str))
+        {
+            let id = config.repo(r.trim())?.id.clone();
+            if !repo_ids.contains(&id) {
+                repo_ids.push(id);
+            }
+        }
+        if repo_ids.is_empty() {
+            // Every repo the code touches, in the order given.
+            for id in new.code.iter().map(repo_of) {
+                if !repo_ids.contains(&id) {
+                    repo_ids.push(id);
                 }
             }
-        };
-        let repo: Option<&Repo> = repo_id.as_deref().map(|r| config.repo(r)).transpose()?;
+        }
+        if repo_ids.is_empty() {
+            // Projects using several repos don't say which this one touches.
+            let mut repos: Vec<String> = projects
+                .iter()
+                .flat_map(|p| p.code.iter().map(repo_of))
+                .collect();
+            repos.sort();
+            repos.dedup();
+            match repos.as_slice() {
+                [one] => repo_ids.push(one.clone()),
+                [] => {}
+                _ => {
+                    return Err(CoreError::InvalidPath(format!(
+                        "which repo? the ticket could use {}",
+                        repos.join(" or ")
+                    )));
+                }
+            }
+        }
+        let repos: Vec<&Repo> = repo_ids
+            .iter()
+            .map(|r| config.repo(r))
+            .collect::<Result<_>>()?;
+        let repo: Option<&Repo> = repos.first().copied();
+        let repo_id = repo.map(|r| r.id.clone());
         if projects.is_empty()
             && let Some(home) = repo.and_then(|r| r.home_project.as_deref())
         {
@@ -742,15 +835,21 @@ impl Session {
             ));
         }
 
-        // The worktree.
+        // The worktrees: one per repo, with the default repo's names.
         let mut setup = Vec::new();
-        let mut worktree: Option<(String, PathBuf, String)> = None;
+        // (folder name, branch, each repo's worktree)
+        let mut worktree: Option<(String, String, Vec<PathBuf>)> = None;
         if let Some(repo) = repo.filter(|_| !new.no_worktree) {
-            let location = self.repos().require(&repo.id)?;
             let branch_name = name_format(&repo.git.branch_format, key.as_deref(), &slug, &title);
             let wt_name = name_format(&repo.git.worktree_name, key.as_deref(), &slug, &title);
             match &adopt {
                 Some(path) => {
+                    if repos.len() > 1 {
+                        return Err(CoreError::InvalidPath(
+                            "adopt a worktree with one repo; add the others afterwards".into(),
+                        ));
+                    }
+                    let location = self.repos().require(&repo.id)?;
                     let path = std::fs::canonicalize(path).map_err(|_| {
                         CoreError::NotFound(format!("no worktree at {}", path.display()))
                     })?;
@@ -778,13 +877,14 @@ impl Session {
                             location.worktrees
                         )));
                     }
-                    worktree = Some((name, path, found.branch.unwrap_or(branch_name)));
+                    let branch = found.branch.unwrap_or(branch_name);
+                    worktree = Some((name, branch, vec![path]));
                 }
                 None => {
-                    let path = location.worktree(&wt_name);
-                    git::add_worktree(location.path(), &path, &branch_name, &repo.git.base_branch)?;
-                    setup = setup_steps(&config, repo, &new.code, &location.path, &path);
-                    worktree = Some((wt_name, path, branch_name));
+                    let (paths, steps) =
+                        self.add_worktrees(&config, &repos, &new.code, &wt_name, &branch_name)?;
+                    setup = steps;
+                    worktree = Some((wt_name, branch_name, paths));
                 }
             }
         }
@@ -842,8 +942,8 @@ impl Session {
         };
 
         // The workspace.
-        let cwd = match &worktree {
-            Some((_, p, _)) => p.display().to_string(),
+        let cwd = match worktree.as_ref().and_then(|(_, _, paths)| paths.first()) {
+            Some(p) => p.display().to_string(),
             None => self.default_folder(home.map(|p| p.folder.as_str()).unwrap_or(&path)),
         };
         let workspace = self
@@ -868,10 +968,13 @@ impl Session {
         if !new.code.is_empty() {
             props.push(("code", Some(Prop::List(new.code.clone()))));
         }
-        if let Some(r) = &repo_id {
-            props.push(("repo", Some(Prop::text(r))));
+        // `repos:` are where it has worktrees: none without one.
+        if let Some((_, _, paths)) = &worktree {
+            let ids = repo_ids[..paths.len()].to_vec();
+            props.push(("repos", Some(Prop::List(ids))));
         }
-        if let Some((name, _, branch)) = &worktree {
+        props.push(("repo", None));
+        if let Some((name, branch, _)) = &worktree {
             props.push(("worktree", Some(Prop::text(name))));
             props.push(("branch", Some(Prop::text(branch))));
         }
@@ -906,18 +1009,22 @@ impl Session {
                 ticket.title
             )));
         }
-        if let (Some(repo), Some(wt)) = (&ticket.repo, &ticket.worktree_path) {
-            let wt = Path::new(wt);
+        // Every worktree is checked before any goes.
+        if !force {
+            let problems = self.worktree_warnings(&config, &ticket)?;
+            if !problems.is_empty() {
+                return Err(CoreError::Conflict(format!(
+                    "Not closed: {}.",
+                    problems.join("; ")
+                )));
+            }
+        }
+        for r in &ticket.repos {
+            let Some(wt) = r.worktree_path.as_deref().map(Path::new) else {
+                continue;
+            };
             if wt.exists() {
-                let repo = config.repo(repo)?;
-                let location = self.repos().require(&repo.id)?;
-                let warnings = git::state(wt, &repo.git.base_branch).warnings();
-                if !warnings.is_empty() && !force {
-                    return Err(CoreError::Conflict(format!(
-                        "Not closed: {}.",
-                        warnings.join(", ")
-                    )));
-                }
+                let location = self.repos().require(&r.id)?;
                 git::remove_worktree(location.path(), wt, force)?;
             }
         }
@@ -950,15 +1057,30 @@ impl Session {
         }
         let mut setup = Vec::new();
         let cwd = match (&ticket.repo, &ticket.worktree, &ticket.branch) {
-            (Some(repo), Some(name), Some(branch)) => {
-                let repo = config.repo(repo)?;
-                let location = self.repos().require(&repo.id)?;
-                let wt = location.worktree(name);
-                if !wt.exists() {
-                    git::add_worktree(location.path(), &wt, branch, &repo.git.base_branch)?;
-                    setup = setup_steps(&config, repo, &ticket.code, &location.path, &wt);
-                }
-                wt.display().to_string()
+            (Some(_), Some(name), Some(branch)) => {
+                // Back in each repo whose worktree is gone.
+                let repos: Vec<&Repo> = ticket
+                    .repos
+                    .iter()
+                    .map(|r| config.repo(&r.id))
+                    .collect::<Result<_>>()?;
+                let missing: Vec<&Repo> = repos
+                    .iter()
+                    .copied()
+                    .filter(|r| {
+                        self.repos()
+                            .get(&r.id)
+                            .is_none_or(|l| !l.worktree(name).exists())
+                    })
+                    .collect();
+                let (_, steps) =
+                    self.add_worktrees(&config, &missing, &ticket.code, name, branch)?;
+                setup = steps;
+                self.repos()
+                    .require(&repos[0].id)?
+                    .worktree(name)
+                    .display()
+                    .to_string()
             }
             _ => {
                 let home = ticket.projects.first().and_then(|p| config.project(p));
@@ -985,6 +1107,165 @@ impl Session {
         })
     }
 
+    /// Adds a worktree named `name` on `branch` in each repo, with their
+    /// setup. Every repo must be located and free of the name first; if one
+    /// fails, those already made are taken away again.
+    fn add_worktrees(
+        &self,
+        config: &Config,
+        repos: &[&Repo],
+        code: &[String],
+        name: &str,
+        branch: &str,
+    ) -> Result<(Vec<PathBuf>, Vec<SetupStep>)> {
+        let mut planned = Vec::new();
+        for repo in repos {
+            let location = self.repos().require(&repo.id)?;
+            let path = location.worktree(name);
+            if path.exists() {
+                return Err(CoreError::AlreadyExists(path.display().to_string()));
+            }
+            planned.push((*repo, location, path));
+        }
+        let mut made: Vec<(PathBuf, PathBuf)> = Vec::new();
+        let mut setup = Vec::new();
+        for (repo, location, path) in &planned {
+            if let Err(e) = git::add_worktree(location.path(), path, branch, &repo.git.base_branch)
+            {
+                for (checkout, wt) in &made {
+                    let _ = git::remove_worktree(checkout, wt, true);
+                }
+                return Err(e);
+            }
+            made.push((location.path().to_path_buf(), path.clone()));
+            setup.extend(setup_steps(config, repo, code, &location.path, path));
+        }
+        Ok((planned.into_iter().map(|(_, _, p)| p).collect(), setup))
+    }
+
+    /// Gives an active ticket a worktree in another repo, on its branch (or,
+    /// for a ticket with none yet, a branch named by that repo's formats).
+    /// The first repo becomes the default, and the workspace starts there.
+    /// The setup is for the new worktree only.
+    pub fn add_ticket_repo(&self, path: &str, repo: &str) -> Result<CreatedTicket> {
+        let config = self.config()?;
+        let ticket = self.ticket(path)?;
+        if !ticket.is_active() {
+            return Err(CoreError::Conflict(format!(
+                "{} is closed; restore it first",
+                ticket.title
+            )));
+        }
+        let repo = config.repo(repo.trim())?;
+        // An older ticket can name a repo without having a worktree in it.
+        let has_worktrees = ticket.worktree.is_some() && ticket.branch.is_some();
+        if has_worktrees && ticket.repos.iter().any(|r| r.id == repo.id) {
+            return Err(CoreError::Conflict(format!(
+                "{} already has a worktree in {}",
+                ticket.title, repo.id
+            )));
+        }
+        let (name, branch, new_names) = match (&ticket.worktree, &ticket.branch) {
+            (Some(w), Some(b)) => (w.clone(), b.clone(), false),
+            _ => {
+                let stem = file_stem(path);
+                let title = ticket
+                    .key
+                    .as_deref()
+                    .map_or(stem, |k| stem.strip_prefix(k).map_or(stem, str::trim_start));
+                let slug = slugify(title);
+                let key = ticket.key.as_deref();
+                (
+                    name_format(&repo.git.worktree_name, key, &slug, title),
+                    name_format(&repo.git.branch_format, key, &slug, title),
+                    true,
+                )
+            }
+        };
+        let (paths, setup) = self.add_worktrees(&config, &[repo], &ticket.code, &name, &branch)?;
+
+        let mut ids: Vec<String> = Vec::new();
+        if has_worktrees {
+            ids.extend(ticket.repos.iter().map(|r| r.id.clone()));
+        }
+        ids.push(repo.id.clone());
+        let mut props: Vec<(&str, Option<Prop>)> =
+            vec![("repos", Some(Prop::List(ids))), ("repo", None)];
+        if new_names {
+            props.push(("worktree", Some(Prop::text(&name))));
+            props.push(("branch", Some(Prop::text(&branch))));
+        }
+        let mut changes = self.set_properties(path, &props)?;
+
+        // The first worktree is where the workspace starts.
+        let first = !has_worktrees;
+        let cwd = paths[0].display().to_string();
+        let workspace = match ticket
+            .workspace
+            .as_deref()
+            .and_then(|id| self.workspaces().list().into_iter().find(|w| w.id == id))
+        {
+            Some(ws) if first => Some(self.workspaces().update(
+                &ws.id,
+                &crate::workspaces::WorkspaceChange {
+                    cwd: Some(&cwd),
+                    ..Default::default()
+                },
+            )?),
+            Some(ws) => Some(ws),
+            None => {
+                let (ws, ch) = self.note_workspace(path)?;
+                changes.extend(ch);
+                Some(ws)
+            }
+        };
+        Ok(CreatedTicket {
+            ticket: self.ticket(path)?,
+            workspace,
+            setup,
+            cursor: None,
+            changes,
+        })
+    }
+
+    /// Makes one of the ticket's repos its default: first in `repos:`, and
+    /// where its workspace starts when the worktree is there. Returns the
+    /// workspace if it changed.
+    pub fn set_ticket_default_repo(
+        &self,
+        path: &str,
+        repo: &str,
+    ) -> Result<(Ticket, Option<Workspace>, Vec<FileChange>)> {
+        let ticket = self.ticket(path)?;
+        let Some(chosen) = ticket.repos.iter().find(|r| r.id == repo.trim()) else {
+            return Err(CoreError::NotFound(format!(
+                "{} has no worktree in {repo}",
+                ticket.title
+            )));
+        };
+        let mut ids = vec![chosen.id.clone()];
+        ids.extend(
+            ticket
+                .repos
+                .iter()
+                .filter(|r| r.id != chosen.id)
+                .map(|r| r.id.clone()),
+        );
+        let changes =
+            self.set_properties(path, &[("repos", Some(Prop::List(ids))), ("repo", None)])?;
+        let workspace = match (&ticket.workspace, &chosen.worktree_path) {
+            (Some(id), Some(wt)) if Path::new(wt).is_dir() => Some(self.workspaces().update(
+                id,
+                &crate::workspaces::WorkspaceChange {
+                    cwd: Some(wt),
+                    ..Default::default()
+                },
+            )?),
+            _ => None,
+        };
+        Ok((self.ticket(path)?, workspace, changes))
+    }
+
     /// Worktrees of located repos that no ticket note refers to.
     pub fn stray_worktrees(&self) -> Result<Vec<StrayWorktree>> {
         let config = self.config()?;
@@ -994,7 +1275,8 @@ impl Session {
                 ..Default::default()
             })?
             .into_iter()
-            .filter_map(|t| t.worktree_path.map(PathBuf::from))
+            .flat_map(|t| t.repos)
+            .filter_map(|r| r.worktree_path.map(PathBuf::from))
             .collect();
         let mut strays = Vec::new();
         for (id, location) in self.repos().all() {
@@ -1155,7 +1437,8 @@ impl Session {
                 .collect(),
             None => Vec::new(),
         };
-        let repo_id = ticket.as_ref().and_then(|t| t.repo.clone()).or(repo_id);
+        // In one of a ticket's worktrees, that repo; for the note, its default.
+        let repo_id = repo_id.or_else(|| ticket.as_ref().and_then(|t| t.repo.clone()));
         Ok(self.finish_context(&config, note, ticket, projects, repo_id, in_checkout))
     }
 
@@ -1170,12 +1453,18 @@ impl Session {
     ) -> Context {
         let repo = repo_id.as_deref().and_then(|r| config.repos.get(r));
         let location = repo.and_then(|r| self.repos().get(&r.id));
-        // Where the code is: the ticket's worktree if it's on disk, else
-        // the folder we were asked about, else the main checkout.
-        let worktree = ticket
-            .as_ref()
-            .and_then(|t| t.worktree_path.clone())
-            .filter(|p| Path::new(p).is_dir());
+        // Each of the ticket's worktrees that's on disk, by repo.
+        let worktrees: HashMap<String, String> = ticket
+            .iter()
+            .flat_map(|t| &t.repos)
+            .filter_map(|r| {
+                let wt = r.worktree_path.clone()?;
+                Path::new(&wt).is_dir().then(|| (r.id.clone(), wt))
+            })
+            .collect();
+        // Where the code is: the ticket's worktree in this repo if it's on
+        // disk, else the folder we were asked about, else the main checkout.
+        let worktree = repo.and_then(|r| worktrees.get(&r.id).cloned());
         let code_root = worktree
             .clone()
             .map(PathBuf::from)
@@ -1205,13 +1494,12 @@ impl Session {
             let Ok((r, Some((name, c)))) = config.component(id) else {
                 continue;
             };
-            let abs = (Some(r.id.as_str()) == repo.map(|r| r.id.as_str()))
-                .then(|| {
-                    code_root
-                        .as_ref()
-                        .map(|root| root.join(&c.path).display().to_string())
-                })
-                .flatten();
+            let root = match worktrees.get(&r.id) {
+                Some(wt) => Some(PathBuf::from(wt)),
+                None if Some(r.id.as_str()) == repo.map(|r| r.id.as_str()) => code_root.clone(),
+                None => None,
+            };
+            let abs = root.map(|root| root.join(&c.path).display().to_string());
             components.push(ComponentContext {
                 id: format!("{}:{name}", r.id),
                 path: c.path.clone(),
@@ -1277,6 +1565,7 @@ impl Session {
         let actions = self.actions(
             config,
             ticket.as_ref(),
+            worktree.as_deref(),
             &projects,
             repo,
             &components,
@@ -1300,6 +1589,7 @@ impl Session {
         &self,
         config: &Config,
         ticket: Option<&Ticket>,
+        worktree: Option<&str>,
         projects: &[ProjectRef],
         repo: Option<&Repo>,
         components: &[ComponentContext],
@@ -1316,9 +1606,7 @@ impl Session {
         if let Some(c) = checkout {
             vars.insert("repo.path".into(), c.display().to_string());
         }
-        let worktree = ticket
-            .and_then(|t| t.worktree_path.clone())
-            .filter(|p| Path::new(p).is_dir());
+        let worktree = worktree.map(str::to_string);
         if let Some(w) = &worktree {
             vars.insert("worktree.path".into(), w.clone());
         }
@@ -1351,6 +1639,28 @@ impl Session {
                 run: format!("code {}", shell_quote(w)),
                 inputs: Vec::new(),
                 cwd: w.clone(),
+                source: "built-in".into(),
+            });
+        }
+        // A ticket's other worktrees.
+        for r in ticket.iter().flat_map(|t| &t.repos) {
+            let Some(wt) = r.worktree_path.as_ref().filter(|p| Path::new(p).is_dir()) else {
+                continue;
+            };
+            if Some(wt) == worktree.as_ref() {
+                continue;
+            }
+            let name = config
+                .repos
+                .get(&r.id)
+                .map_or(r.id.as_str(), |r| r.display_name());
+            actions.push(Action {
+                id: format!("open-vscode:{}", r.id),
+                label: format!("Open {name} in VS Code"),
+                kind: "shell".into(),
+                run: format!("code {}", shell_quote(wt)),
+                inputs: Vec::new(),
+                cwd: wt.clone(),
                 source: "built-in".into(),
             });
         }
@@ -1732,6 +2042,18 @@ mod tests {
 
         fn worktrees(&self) -> PathBuf {
             self.repo.with_file_name("repo-worktrees")
+        }
+
+        /// A second repo, `acme-infra`, located beside the first.
+        fn infra(&self) -> PathBuf {
+            let dir = self.dir.path().join("infra");
+            fs::create_dir_all(&dir).unwrap();
+            let repo = git::tests::repo_with_origin(&dir);
+            self.session
+                .repos()
+                .locate("acme-infra", repo.to_str().unwrap(), None)
+                .unwrap();
+            repo.with_file_name("repo-worktrees")
         }
     }
 
@@ -2195,5 +2517,199 @@ mod tests {
         s.session.delete_workspace(&ws.id).unwrap();
         assert!(!s.read("Welcome.md").contains("workspace:"));
         assert_eq!(s.session.workspaces().list().len(), 1);
+    }
+
+    #[test]
+    fn a_ticket_spans_repos_with_one_workspace() {
+        let s = Setup::new();
+        s.locate();
+        let infra = s.infra();
+
+        // Code in two repos: a worktree in each, on one branch, one workspace.
+        let created = s
+            .session
+            .create_ticket(&NewTicket {
+                code: vec!["acme-platform:web".into(), "acme-infra:network".into()],
+                ..new_ticket("TEAM-500", "Move login")
+            })
+            .unwrap();
+        let t = &created.ticket;
+        let web = s.worktrees().join("TEAM-500-move-login");
+        let net = infra.join("TEAM-500-move-login");
+        assert!(web.join("README.md").is_file() && net.join("README.md").is_file());
+        assert_eq!(t.repo.as_deref(), Some("acme-platform"));
+        assert_eq!(
+            t.repos,
+            [
+                TicketRepo {
+                    id: "acme-platform".into(),
+                    worktree_path: Some(web.display().to_string())
+                },
+                TicketRepo {
+                    id: "acme-infra".into(),
+                    worktree_path: Some(net.display().to_string())
+                },
+            ]
+        );
+        let setup: Vec<_> = created.setup.iter().map(|s| s.command.as_str()).collect();
+        assert_eq!(setup, ["npm install", "terraform init"]);
+        let text = s.read(&t.path);
+        assert!(
+            text.contains("repos: [acme-platform, acme-infra]\n"),
+            "{text}"
+        );
+        assert!(!text.contains("repo:"), "{text}");
+        assert_eq!(s.session.workspaces().list().len(), 1);
+        let ws = created.workspace.unwrap();
+        assert_eq!(
+            ws.cwd,
+            fs::canonicalize(&web).unwrap().display().to_string()
+        );
+
+        // Listed under either repo; git state over both.
+        for repo in ["acme-platform", "acme-infra"] {
+            let found = s
+                .session
+                .tickets(&TicketFilter {
+                    repo: Some(repo.into()),
+                    ..Default::default()
+                })
+                .unwrap();
+            assert!(found.iter().any(|f| f.path == t.path), "{repo}");
+        }
+        fs::write(net.join("main.tf"), "\n").unwrap();
+        let git = s.session.ticket_git(&t.path).unwrap();
+        assert!(git.exists && git.dirty && !git.on_remote);
+
+        // Context: components in their own repo's worktree; from inside the
+        // infra worktree, that repo.
+        let ctx = s.session.context(Some(&t.path), None).unwrap();
+        assert_eq!(ctx.repo.as_ref().unwrap().id, "acme-platform");
+        let paths: Vec<_> = ctx
+            .components
+            .iter()
+            .map(|c| c.abs_path.clone().unwrap())
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                web.join("apps/web").display().to_string(),
+                net.join("network").display().to_string()
+            ]
+        );
+        assert!(
+            ctx.actions.iter().any(
+                |a| a.id == "open-vscode:acme-infra" && a.label == "Open Acme infra in VS Code"
+            )
+        );
+        let inside = s.session.context(None, Some(&net)).unwrap();
+        assert_eq!(inside.note.as_deref(), Some(t.path.as_str()));
+        let repo = inside.repo.unwrap();
+        assert_eq!(repo.id, "acme-infra");
+        assert_eq!(repo.worktree_path.as_deref(), Some(net.to_str().unwrap()));
+
+        // The default can move; the workspace follows it.
+        let (moved, changed, _) = s
+            .session
+            .set_ticket_default_repo(&t.path, "acme-infra")
+            .unwrap();
+        assert_eq!(moved.repo.as_deref(), Some("acme-infra"));
+        assert!(
+            s.read(&t.path)
+                .contains("repos: [acme-infra, acme-platform]\n")
+        );
+        assert_eq!(changed.unwrap().cwd, net.display().to_string());
+        assert!(s.session.set_ticket_default_repo(&t.path, "nope").is_err());
+
+        // Closing checks every worktree before removing any.
+        let err = s
+            .session
+            .close_ticket(&t.path, false)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("in acme-infra, it has uncommitted changes"),
+            "{err}"
+        );
+        assert!(web.exists() && net.exists());
+        s.session.close_ticket(&t.path, true).unwrap();
+        assert!(!web.exists() && !net.exists());
+        let restored = s.session.restore_ticket(&t.path).unwrap();
+        assert!(web.exists() && net.exists());
+        assert_eq!(restored.setup.len(), 2);
+        assert_eq!(
+            restored.workspace.unwrap().cwd,
+            fs::canonicalize(&net).unwrap().display().to_string()
+        );
+    }
+
+    #[test]
+    fn repos_are_added_to_a_ticket_later() {
+        let s = Setup::new();
+        s.locate();
+        // A repo that isn't located stops a ticket before anything is made.
+        let both = NewTicket {
+            repos: vec!["acme-platform".into(), "acme-infra".into()],
+            ..new_ticket("TEAM-700", "Both")
+        };
+        assert!(matches!(
+            s.session.create_ticket(&both),
+            Err(CoreError::RepoNotLocated(r)) if r == "acme-infra"
+        ));
+        assert!(!s.worktrees().join("TEAM-700-both").exists());
+        let infra = s.infra();
+
+        // An older ticket with `repo:` gains a second; it becomes `repos:`.
+        let old = "Projects/Acme/Work/TEAM-123 Fix login.md";
+        let wt = s.worktrees().join("TEAM-123-fix-login");
+        git::add_worktree(&s.repo, &wt, "TEAM-123-fix-login", "main").unwrap();
+        assert_eq!(s.session.ticket(old).unwrap().repos.len(), 1);
+        let added = s.session.add_ticket_repo(old, "acme-infra").unwrap();
+        let ids: Vec<_> = added.ticket.repos.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["acme-platform", "acme-infra"]);
+        assert!(infra.join("TEAM-123-fix-login/README.md").is_file());
+        assert_eq!(added.setup.len(), 1, "only the new worktree's setup");
+        let text = s.read(old);
+        assert!(
+            text.contains("repos: [acme-platform, acme-infra]\n"),
+            "{text}"
+        );
+        assert!(!text.contains("repo:"), "{text}");
+        assert!(text.contains("people: [\"[[Jane Doe]]\"]"), "{text}");
+        assert!(
+            s.session.add_ticket_repo(old, "acme-infra").is_err(),
+            "twice"
+        );
+        assert!(s.session.add_ticket_repo(old, "nope").is_err());
+
+        // A ticket with no repo yet: its first one names the branch and
+        // moves the workspace there.
+        let plain = s
+            .session
+            .create_ticket(&NewTicket {
+                key: Some("TEAM-600".into()),
+                title: Some("Plan migration".into()),
+                projects: vec!["acme".into()],
+                no_worktree: true,
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(plain.ticket.repos.is_empty());
+        let first = s
+            .session
+            .add_ticket_repo(&plain.ticket.path, "acme-infra")
+            .unwrap();
+        assert_eq!(
+            first.ticket.branch.as_deref(),
+            Some("TEAM-600-plan-migration")
+        );
+        let net = infra.join("TEAM-600-plan-migration");
+        assert!(net.is_dir());
+        let ws = first.workspace.unwrap();
+        assert_eq!(ws.id, plain.workspace.unwrap().id);
+        assert_eq!(
+            ws.cwd,
+            fs::canonicalize(&net).unwrap().display().to_string()
+        );
     }
 }

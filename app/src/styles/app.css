@@ -912,6 +912,11 @@ button.danger-button {
   margin: auto 0 auto auto;
 }
 
+.menu-star {
+  color: var(--accent);
+  fill: currentColor;
+}
+
 .menu button.danger:hover,
 .menu button.danger:focus-visible {
   background: var(--danger);
@@ -1428,7 +1433,8 @@ button.terminals-name:hover {
   margin-left: auto;
 }
 
-.terminals-header .terminals-state + button.icon {
+.terminals-header .terminals-state + button.icon,
+.terminals-header button.icon + button.icon {
   margin-left: 0;
 }
 
@@ -3180,4 +3186,29 @@ button.link-button:hover:not(:disabled) {
 .folder-list-empty {
   padding: 6px 10px;
   color: var(--text-faint);
+}
+
+/* The default repo's star in the new-ticket dialog. */
+.repo-choice {
+  display: flex;
+  align-items: center;
+}
+
+.ticket-choices button.repo-star {
+  margin-left: 4px;
+  padding: 1px 3px;
+  color: var(--text-muted);
+}
+
+.ticket-choices button.repo-star.is-default {
+  color: var(--accent);
+}
+
+.ticket-choices button.repo-star.is-default svg {
+  fill: currentColor;
+}
+
+.ticket-repos {
+  flex: none;
+  white-space: nowrap;
 }

@@ -9,6 +9,8 @@ export interface MenuItem {
   color?: string;
   /** Marked as the current choice. */
   checked?: boolean;
+  /** Marked with a star: a ticket's default repo. */
+  starred?: boolean;
 }
 
 export type MenuEntry = MenuItem | "separator";

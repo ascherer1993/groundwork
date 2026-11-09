@@ -5,7 +5,7 @@ import type { TerminalInfo } from "../api/generated/TerminalInfo";
 import type { Workspace } from "../api/generated/Workspace";
 import { showTerminalMenu } from "../state/claude";
 import { useKeyLabel } from "../state/keys";
-import { showSplit } from "../state/tickets";
+import { newTerminalItems, showSplit } from "../state/tickets";
 import {
   mostUrgent,
   stateOf,
@@ -146,19 +146,13 @@ function AreaRow({
   const menu = async (e: React.MouseEvent) => {
     e.preventDefault();
     const { clientX: x, clientY: y } = e;
-    // A ticket's workspace offers a terminal in each component it touches.
+    // A ticket's workspace offers a terminal in each worktree and component.
     const note = useWorkspaces.getState().list.find((w) => w.id === area)?.note;
-    const context = note ? await api.context({ note }).catch(() => null) : null;
-    const components = (context?.components ?? []).filter((c) => c.absPath);
+    const terminals = await newTerminalItems(area, (cwd) =>
+      switchAnd(area, () => useWorkspace.getState().openTerminal(cwd)),
+    );
     useUi.getState().showMenu(x, y, [
-      {
-        label: "New terminal",
-        action: () => switchAnd(area, () => useWorkspace.getState().openTerminal()),
-      },
-      ...components.map((c) => ({
-        label: `New terminal in ${c.id.slice(c.id.indexOf(":") + 1)}`,
-        action: () => switchAnd(area, () => useWorkspace.getState().openTerminal(c.absPath!)),
-      })),
+      ...terminals,
       ...(note ? [{ label: "Open note", action: () => void showSplit(note, area) }] : []),
       "separator",
       {

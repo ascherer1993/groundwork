@@ -28,6 +28,7 @@ import { useWorkspaces } from "../state/workspaces";
 import { useKeyLabel } from "../state/keys";
 import { useUi } from "../state/ui";
 import { useVault } from "../state/vault";
+import { newTerminalItems } from "../state/tickets";
 import { FilePanel } from "./FilePanel";
 import { TerminalPanel } from "./TerminalPanel";
 
@@ -185,9 +186,16 @@ function Area({ area, layout, shown }: { area: string; layout?: unknown; shown: 
 }
 
 /** Which workspace's terminals these are, and whether they follow the notes. */
-function TerminalsHeader({ name, color }: { name: string; color?: string }) {
+function TerminalsHeader({ id, name, color }: { id: string; name: string; color?: string }) {
   const locked = useWorkspace((s) => s.locked);
   const split = useWorkspace((s) => s.view === "split");
+  const newTerminal = async (e: React.MouseEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const items = await newTerminalItems(id, (cwd) => {
+      void useWorkspace.getState().openTerminal(cwd);
+    });
+    useUi.getState().showMenu(rect.left, rect.bottom + 4, items);
+  };
   return (
     <header className="terminals-header" data-color={color}>
       <button
@@ -201,6 +209,15 @@ function TerminalsHeader({ name, color }: { name: string; color?: string }) {
       {split && (
         <span className="terminals-state muted">{locked ? "Locked" : "Following notes"}</span>
       )}
+      <button
+        type="button"
+        className="icon"
+        aria-label="New terminal in…"
+        title="New terminal in…"
+        onClick={(e) => void newTerminal(e)}
+      >
+        <Plus size={13} />
+      </button>
       <button
         type="button"
         className="icon"
@@ -317,7 +334,11 @@ export function Workspace() {
         onFocusCapture={focus("terminals")}
       >
         {currentWorkspace && (
-          <TerminalsHeader name={currentWorkspace.name} color={currentWorkspace.color} />
+          <TerminalsHeader
+            id={currentWorkspace.id}
+            name={currentWorkspace.name}
+            color={currentWorkspace.color}
+          />
         )}
         <div className="terminal-docks">
           {loaded &&

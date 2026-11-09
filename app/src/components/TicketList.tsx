@@ -8,6 +8,8 @@ import {
   closeTicket,
   noteWorkspace,
   openProjectView,
+  repoMenuItems,
+  repoName,
   restoreTicket,
   showSplit,
   useTickets,
@@ -33,7 +35,7 @@ function matches(t: Ticket, spec: TicketListSpec, projectId?: string): boolean {
   if (status === "active" && t.status === "closed") return false;
   if (status === "closed" && t.status !== "closed") return false;
   if (projectId && !t.projects.includes(projectId)) return false;
-  if (spec.repo && t.repo !== spec.repo) return false;
+  if (spec.repo && !t.repos.some((r) => r.id === spec.repo)) return false;
   if (spec.component && !t.code.includes(spec.component)) return false;
   if (spec.text) {
     const hay = `${t.key ?? ""} ${t.title}`.toLowerCase();
@@ -98,6 +100,8 @@ function TicketRow({ ticket }: { ticket: Ticket }) {
           ? [{ label: "Open Jira ticket", action: () => void openExternalUrl(ticket.url!) }]
           : []),
         "separator" as const,
+        ...repoMenuItems(ticket),
+        ...(closed ? [] : ["separator" as const]),
         closed
           ? { label: "Restore", action: () => void restoreTicket(ticket.path) }
           : { label: "Close ticket…", action: () => void closeTicket(ticket.path) },
@@ -123,6 +127,14 @@ function TicketRow({ ticket }: { ticket: Ticket }) {
             </span>
           ) : (
             <span>no worktree</span>
+          )}
+          {ticket.worktree && ticket.repos.length > 1 && (
+            <span
+              className="ticket-repos"
+              title={`${ticket.repos.map((r) => repoName(r.id)).join(", ")} (the first is the default)`}
+            >
+              {ticket.repos.length} repos
+            </span>
           )}
           {state.length > 0 && <span className="ticket-git warn">{state.join(" · ")}</span>}
         </span>

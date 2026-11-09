@@ -14,7 +14,12 @@ import { formDialog, type PaletteItem, promptDialog, useUi } from "../state/ui";
 import { message, newNoteFolder, useVault } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
 import { orderedWorkspaces } from "../state/workspaceOrder";
-import { useWorkspaces } from "../state/workspaces";
+import {
+  showVaultWorkspace,
+  useWorkspaces,
+  VAULT_WORKSPACE,
+  vaultWorkspace,
+} from "../state/workspaces";
 import { useInbox } from "../state/inbox";
 import { testNotification } from "../state/inbox";
 import { openCommandBar } from "../state/commandBar";
@@ -23,12 +28,16 @@ import { newTicketFromJira, triageTodos } from "../state/claude";
 import { allCommands, keyLabel } from "../state/keys";
 import { choiceCommand, openQuickAdd, runChoice, useQuickAdd } from "../state/quickadd";
 import {
+  addTicketRepo,
   closeTicket,
   locateRepo,
   noteWorkspace,
   openProjectView,
   pickAction,
+  repoName,
+  setDefaultTicketRepo,
   showSplit,
+  terminalPlaces,
   ticketAt,
   useTickets,
 } from "../state/tickets";
@@ -252,6 +261,11 @@ function commands(): Command[] {
     },
     { id: "switch-workspace", label: "Switch workspace…", run: switchWorkspace },
     {
+      id: "vault-workspace",
+      label: "Show the Vault workspace",
+      run: () => void showVaultWorkspace(),
+    },
+    {
       id: "toggle-pin",
       label: ws.locked ? "Let the terminals follow notes" : "Lock the terminals to this workspace",
       when: () => ws.locked || !!ws.workspace,
@@ -309,6 +323,18 @@ function commands(): Command[] {
       label: "Run action…",
       when: hasActive,
       run: () => pickAction(ws.activePath!),
+    },
+    {
+      id: "add-ticket-repo",
+      label: "Add a repo to this ticket…",
+      when: () => ticketAt(ws.activePath)?.status === "active",
+      run: () => addTicketRepo(ws.activePath!),
+    },
+    {
+      id: "default-ticket-repo",
+      label: "Change this ticket’s default repo…",
+      when: () => (ticketAt(ws.activePath)?.repos.length ?? 0) > 1,
+      run: () => pickDefaultRepo(ws.activePath!),
     },
     {
       id: "close-ticket",
@@ -444,16 +470,17 @@ async function terminalInFolder() {
   if (tree) walk(tree);
   const open = (cwd: string) => useWorkspace.getState().openTerminal(cwd);
   const items: PaletteItem[] = [];
-  // In a ticket's workspace: the components it touches, in its worktree.
+  // In a ticket's workspace: its worktrees (the default first), then the
+  // components it touches.
   const current = useWorkspace.getState().workspace;
-  const note = useWorkspaces.getState().list.find((w) => w.id === current)?.note;
-  if (note) {
-    const context = await api.context({ note }).catch(() => null);
-    for (const c of context?.components ?? []) {
-      if (c.absPath) {
-        const cwd = c.absPath;
-        items.push({ id: `component:${c.id}`, label: c.id, detail: c.path, run: () => open(cwd) });
-      }
+  if (current) {
+    for (const p of (await terminalPlaces(current)).places) {
+      items.push({
+        id: `place:${p.cwd}`,
+        label: p.isDefault ? `${p.label} ★` : p.label,
+        detail: p.detail,
+        run: () => open(p.cwd),
+      });
     }
   }
   items.push(
@@ -485,18 +512,47 @@ async function terminalInFolder() {
   });
 }
 
+/** Picks which of a ticket's repos is its default. */
+function pickDefaultRepo(path: string) {
+  const ticket = ticketAt(path);
+  if (!ticket) return;
+  useUi.getState().openPalette({
+    placeholder: "Default repo…",
+    items: ticket.repos.map((r, i) => ({
+      id: r.id,
+      label: i === 0 ? `${repoName(r.id)} ★` : repoName(r.id),
+      detail: r.worktreePath ?? undefined,
+      run: () => (i === 0 ? undefined : setDefaultTicketRepo(path, r.id)),
+    })),
+  });
+}
+
 /** Lists the workspaces, with their shortcuts. */
 export function switchWorkspace() {
-  useUi.getState().openPalette({
-    placeholder: "Switch to…",
-    items: orderedWorkspaces().map((w, i) => ({
+  // The vault's own workspace comes first, made the first time it's picked.
+  const vaultWs = vaultWorkspace();
+  const items: PaletteItem[] = [
+    {
+      id: "vault-workspace",
+      label: VAULT_WORKSPACE,
+      detail: vaultWs?.cwd ?? useVault.getState().vault?.path ?? "the vault",
+      hint: undefined,
+      run: () => void showVaultWorkspace(),
+    },
+  ];
+  orderedWorkspaces().forEach((w, i) => {
+    if (w.id === vaultWs?.id) return;
+    items.push({
       id: w.id,
       label: w.name,
       detail: w.cwd,
       hint: i < 9 ? keyLabel(`workspace-${i + 1}`) : undefined,
       run: () => useWorkspaces.getState().pick(w.id),
-    })),
+    });
   });
+  const vaultAt = orderedWorkspaces().findIndex((w) => w.id === vaultWs?.id);
+  if (vaultAt >= 0 && vaultAt < 9) items[0]!.hint = keyLabel(`workspace-${vaultAt + 1}`);
+  useUi.getState().openPalette({ placeholder: "Switch to…", items });
 }
 
 /** The workspace after (or before) the current one, round the list. */

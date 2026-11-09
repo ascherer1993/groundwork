@@ -1,4 +1,4 @@
-import { Check, X } from "lucide-react";
+import { Check, Star, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { closePreview, enterPreview, leavePreview } from "../lib/linkPreview";
@@ -111,6 +111,9 @@ function ContextMenu() {
               )}
               {item.label}
               {item.checked && <Check size={13} className="menu-check" aria-hidden="true" />}
+              {item.starred && (
+                <Star size={12} className="menu-check menu-star" aria-label="default" />
+              )}
             </button>
           ),
         )}
