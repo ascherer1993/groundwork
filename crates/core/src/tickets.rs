@@ -1892,56 +1892,62 @@ impl Session {
             .unwrap_or_else(|| vault.clone());
 
         let mut actions: Vec<Action> = Vec::new();
+        // VS Code: the worktree we're in, and for a ticket in several repos,
+        // all of them in one window (each with its own changes in Source
+        // Control) and each of the others on its own.
+        let code = vscode_cli();
+        let on_disk: Vec<(&str, &String)> = ticket
+            .iter()
+            .flat_map(|t| &t.repos)
+            .filter_map(|r| {
+                let wt = r.worktree_path.as_ref()?;
+                Path::new(wt).is_dir().then_some((r.id.as_str(), wt))
+            })
+            .collect();
+        let repo_name = |id: &str| {
+            config
+                .repos
+                .get(id)
+                .map_or(id.to_string(), |r| r.display_name().to_string())
+        };
         if let Some(w) = &worktree {
+            let label = match repo {
+                Some(r) if on_disk.len() > 1 => format!("Open {} in VS Code", r.display_name()),
+                _ => "Open in VS Code".into(),
+            };
             actions.push(Action {
                 id: "open-vscode".into(),
-                label: "Open in VS Code".into(),
+                label,
                 kind: "shell".into(),
-                run: format!("code {}", shell_quote(w)),
+                run: format!("{code} {}", shell_quote(w)),
                 inputs: Vec::new(),
                 cwd: w.clone(),
                 source: "built-in".into(),
             });
         }
-        // A ticket in several repos: all its worktrees in one window, each
-        // with its own changes in Source Control.
-        let on_disk: Vec<&String> = ticket
-            .iter()
-            .flat_map(|t| &t.repos)
-            .filter_map(|r| r.worktree_path.as_ref())
-            .filter(|p| Path::new(p).is_dir())
-            .collect();
         if on_disk.len() > 1 {
-            let folders: Vec<String> = on_disk.iter().map(|p| shell_quote(p)).collect();
+            let folders: Vec<String> = on_disk.iter().map(|(_, p)| shell_quote(p)).collect();
             actions.push(Action {
                 id: "open-vscode-ticket".into(),
-                label: "Open ticket in VS Code".into(),
+                label: "Open all worktrees in VS Code".into(),
                 kind: "shell".into(),
-                run: format!("code -n {}", folders.join(" ")),
+                run: format!("{code} -n {}", folders.join(" ")),
                 inputs: Vec::new(),
-                cwd: on_disk[0].clone(),
+                cwd: on_disk[0].1.clone(),
                 source: "built-in".into(),
             });
         }
-        // A ticket's other worktrees.
-        for r in ticket.iter().flat_map(|t| &t.repos) {
-            let Some(wt) = r.worktree_path.as_ref().filter(|p| Path::new(p).is_dir()) else {
-                continue;
-            };
-            if Some(wt) == worktree.as_ref() {
+        for (id, wt) in &on_disk {
+            if Some(*wt) == worktree.as_ref() {
                 continue;
             }
-            let name = config
-                .repos
-                .get(&r.id)
-                .map_or(r.id.as_str(), |r| r.display_name());
             actions.push(Action {
-                id: format!("open-vscode:{}", r.id),
-                label: format!("Open {name} in VS Code"),
+                id: format!("open-vscode:{id}"),
+                label: format!("Open {} in VS Code", repo_name(id)),
                 kind: "shell".into(),
-                run: format!("code {}", shell_quote(wt)),
+                run: format!("{code} {}", shell_quote(wt)),
                 inputs: Vec::new(),
-                cwd: wt.clone(),
+                cwd: (*wt).clone(),
                 source: "built-in".into(),
             });
         }
@@ -2296,6 +2302,21 @@ pub fn setup_line(steps: &[SetupStep]) -> Option<String> {
         parts.push(format!("cd {}", shell_quote(&first.cwd)));
     }
     Some(parts.join(" && "))
+}
+
+/// How to run VS Code's `code` command, quoted for a shell. Its app bundle
+/// carries the CLI, so this works without "Install 'code' command in PATH";
+/// with no VS Code in the usual places, plain `code` from the login shell.
+pub fn vscode_cli() -> String {
+    let bundle = "Visual Studio Code.app/Contents/Resources/app/bin/code";
+    let mut places = vec![PathBuf::from("/Applications").join(bundle)];
+    if let Some(home) = dirs::home_dir() {
+        places.push(home.join("Applications").join(bundle));
+    }
+    places
+        .into_iter()
+        .find(|p| p.is_file())
+        .map_or_else(|| "code".into(), |p| shell_quote(&p.to_string_lossy()))
 }
 
 pub fn shell_quote(s: &str) -> String {
@@ -2927,6 +2948,10 @@ mod tests {
                 |a| a.id == "open-vscode:acme-infra" && a.label == "Open Acme infra in VS Code"
             )
         );
+        // With two worktrees, the one we're in says which repo it is.
+        assert!(ctx.actions.iter().any(|a| a.id == "open-vscode"
+            && a.label == "Open Acme platform in VS Code"
+            && a.run == format!("{} {}", vscode_cli(), web.display())));
         let both = ctx
             .actions
             .iter()
@@ -2934,7 +2959,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             both.run,
-            format!("code -n {} {}", web.display(), net.display())
+            format!("{} -n {} {}", vscode_cli(), web.display(), net.display())
         );
         let inside = s.session.context(None, Some(&net)).unwrap();
         assert_eq!(inside.note.as_deref(), Some(t.path.as_str()));

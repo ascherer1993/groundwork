@@ -99,8 +99,10 @@ function gitSummary(git: GitState): { text: string; warn: boolean } {
 export function NoteBar({ path }: { path: string }) {
   const ticket = useTickets((s) => s.tickets.find((t) => t.path === path));
   const project = useTickets((s) => s.projects.find((p) => p.overview === path));
-  const [git, setGit] = useState<GitState | null>(null);
-  const [actions, setActions] = useState<Action[]>([]);
+  // Each is tagged with its note: the bar stays mounted as the tab moves
+  // between notes, and must never show the last one's actions or git state.
+  const [loadedGit, setGit] = useState<{ path: string; git: GitState | null }>();
+  const [loadedActions, setActions] = useState<{ path: string; actions: Action[] }>();
   const active = !!ticket && ticket.status !== "closed";
   const tree = useVault((s) => s.tree);
   const family = useMemo(() => subnoteFamily(tree, path), [tree, path]);
@@ -118,12 +120,12 @@ export function NoteBar({ path }: { path: string }) {
       if (worktreePath && active)
         void api
           .ticketGit(path)
-          .then((g) => !cancelled && setGit(g))
+          .then((g) => !cancelled && setGit({ path, git: g }))
           .catch(() => {});
-      else setGit(null);
+      else setGit({ path, git: null });
       void api
         .context({ note: path })
-        .then((c) => !cancelled && setActions(c.actions))
+        .then((c) => !cancelled && setActions({ path, actions: c.actions }))
         .catch(() => {});
     };
     load();
@@ -137,12 +139,27 @@ export function NoteBar({ path }: { path: string }) {
     };
   }, [path, isTicket, worktreePath, active, repoKey]);
 
+  const git = isTicket && loadedGit?.path === path ? loadedGit.git : null;
+  const actions = isTicket && loadedActions?.path === path ? loadedActions.actions : [];
+
   if (!ticket && !project && !family.parent && !family.subnotes.length) return null;
-  // A ticket in several repos opens all its worktrees in one VS Code window.
-  const vscode = actions.some((a) => a.id === "open-vscode-ticket")
-    ? "open-vscode-ticket"
-    : "open-vscode";
-  const quick = actions.filter((a) => a.id === "open-ticket" || a.id === vscode);
+  // VS Code: one button for the worktree, or, for a ticket in several
+  // repos, a menu of all of them in one window and each on its own.
+  const vscode = actions.filter((a) => a.id.startsWith("open-vscode"));
+  const vscodeOrder = (id: string) =>
+    id === "open-vscode-ticket" ? 0 : id === "open-vscode" ? 1 : 2;
+  vscode.sort((a, b) => vscodeOrder(a.id) - vscodeOrder(b.id));
+  const vscodeOnly = vscode[0];
+  const jira = actions.find((a) => a.id === "open-ticket");
+  const quickCount = vscode.length + (jira ? 1 : 0);
+  const vscodeMenu = (e: React.MouseEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    useUi.getState().showMenu(
+      rect.left,
+      rect.bottom + 4,
+      vscode.map((a) => ({ label: a.label, action: () => void runAction(a, path) })),
+    );
+  };
   const summary = git?.exists ? gitSummary(git) : null;
 
   const actionsMenu = (e: React.MouseEvent) => {
@@ -214,17 +231,37 @@ export function NoteBar({ path }: { path: string }) {
           <LayoutList size={12} /> Project view
         </button>
       )}
-      {quick.map((a) => (
+      {jira && (
         <button
-          key={a.id}
           type="button"
           className="note-bar-button"
-          onClick={() => void runAction(a, path)}
+          onClick={() => void runAction(jira, path)}
         >
-          {a.id === "open-ticket" && <ExternalLink size={12} />} {a.label}
+          <ExternalLink size={12} /> {jira.label}
         </button>
-      ))}
-      {actions.length > quick.length && (
+      )}
+      {vscode.length === 1 && vscodeOnly && (
+        <button
+          type="button"
+          className="note-bar-button"
+          title={vscodeOnly.cwd}
+          onClick={() => void runAction(vscodeOnly, path)}
+        >
+          {vscodeOnly.label}
+        </button>
+      )}
+      {vscode.length > 1 && (
+        <button
+          type="button"
+          className="note-bar-button"
+          aria-haspopup="menu"
+          title="All of this ticket’s worktrees in one window, or one of them"
+          onClick={vscodeMenu}
+        >
+          Open in VS Code <ChevronDown size={12} />
+        </button>
+      )}
+      {actions.length > quickCount && (
         <button type="button" className="note-bar-button" onClick={actionsMenu}>
           Actions <ChevronDown size={12} />
         </button>

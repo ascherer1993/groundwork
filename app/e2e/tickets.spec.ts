@@ -276,6 +276,22 @@ test("a ticket spans repos in one workspace; its subnotes follow it; the Vault w
   await expect(header.locator(".terminals-name")).toHaveText("TEAM-200 Fix signup");
   await expect(bar(page).getByRole("button", { name: "Repos" })).toContainText("+1");
 
+  // VS Code: all its worktrees in one window, or one of them.
+  await bar(page).getByRole("button", { name: "Open in VS Code" }).click();
+  await expect(page.getByRole("menuitem")).toHaveText([
+    "Open all worktrees in VS Code",
+    "Open Acme platform in VS Code",
+    "Open Acme infra in VS Code",
+  ]);
+  await page.keyboard.press("Escape");
+  // Another note in the same tab doesn't keep the ticket's buttons.
+  await page.keyboard.press("Control+Meta+1");
+  await quickOpen(page, "Projects/Acme/Acme.md");
+  await expect(bar(page).getByRole("button", { name: "Project view" })).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: /VS Code/ })).toHaveCount(0);
+  await quickOpen(page, "TEAM-200 Fix signup");
+  await page.keyboard.press("Control+Meta+2");
+
   // New terminals pick their worktree; the default is starred.
   await header.getByRole("button", { name: "New terminal in…" }).click();
   const platform = page.getByRole("menuitem", { name: /New terminal in Acme platform/ });
@@ -341,7 +357,10 @@ test("a ticket spans repos in one workspace; its subnotes follow it; the Vault w
     .poll(async () => (await screen(page)).replace(/\n/g, ""))
     .toContain("fake claude: unsupported: --add-dir /");
   // All its worktrees in one VS Code window.
-  await expect(bar(page).getByRole("button", { name: "Open ticket in VS Code" })).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: "Open in VS Code" })).toHaveAttribute(
+    "aria-haspopup",
+    "menu",
+  );
 
   // The default can change.
   await header.getByRole("button", { name: "New terminal in…" }).click();

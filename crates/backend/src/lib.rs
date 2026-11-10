@@ -883,11 +883,55 @@ impl Backend {
                     .current_dir(&action.cwd)
                     .stdin(std::process::Stdio::null())
                     .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::piped())
                     .spawn()
                     .map_err(|e| {
                         ApiError::new(ErrorCode::Internal, format!("{}: {e}", action.label))
                     })?;
+                // Keep what it says on stderr (the start of it), so a command
+                // that fails straight away (not installed, a bad path) says
+                // why instead of looking as if it started.
+                let said = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+                if let Some(mut err) = child.stderr.take() {
+                    let said = said.clone();
+                    std::thread::spawn(move || {
+                        use std::io::Read;
+                        let mut buf = [0u8; 4096];
+                        while let Ok(n) = err.read(&mut buf) {
+                            if n == 0 {
+                                break;
+                            }
+                            let mut said = said.lock().unwrap();
+                            if said.len() < 4096 {
+                                said.extend_from_slice(&buf[..n]);
+                            }
+                        }
+                    });
+                }
+                let started = std::time::Instant::now();
+                while started.elapsed() < std::time::Duration::from_secs(3) {
+                    match child.try_wait() {
+                        Ok(Some(status)) if status.success() => return Ok(Value::Null),
+                        Ok(Some(status)) => {
+                            std::thread::sleep(std::time::Duration::from_millis(50));
+                            let said = String::from_utf8_lossy(&said.lock().unwrap())
+                                .trim()
+                                .to_string();
+                            let why = if said.is_empty() {
+                                status.to_string()
+                            } else {
+                                said
+                            };
+                            return Err(ApiError::new(
+                                ErrorCode::Internal,
+                                format!("{} failed: {why}", action.label),
+                            ));
+                        }
+                        Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+                        Err(_) => break,
+                    }
+                }
+                // Still going: let it run.
                 std::thread::spawn(move || child.wait());
                 Ok(Value::Null)
             }
