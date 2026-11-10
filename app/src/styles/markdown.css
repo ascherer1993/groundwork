@@ -542,6 +542,16 @@ summary.callout-title {
   cursor: pointer;
 }
 
+/* A bare URL: a plain click edits it, ⌘-click opens it. Over the muted URL highlight. */
+.cm-url,
+.cm-url * {
+  color: var(--link);
+}
+
+.cm-url:hover {
+  text-decoration: underline;
+}
+
 .cm-wikilink:hover,
 .cm-md-link:hover {
   text-decoration: underline;

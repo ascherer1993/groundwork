@@ -32,6 +32,7 @@ import {
   splitWikilink,
   toggleTaskLine,
   today,
+  urlAt,
 } from "../markdown/syntax";
 import { useUi } from "../state/ui";
 import { message } from "../state/vault";
@@ -128,6 +129,14 @@ function clickTarget(view: EditorView, event: MouseEvent): boolean {
     return true;
   }
 
+  // Bare URLs open in the browser on ⌘-click; a plain click edits them.
+  const url = el.closest<HTMLElement>(".cm-url");
+  if (url?.dataset.href && newTab) {
+    event.preventDefault();
+    void openExternalUrl(url.dataset.href);
+    return true;
+  }
+
   // In source mode (or with the cursor in a link), Cmd-click follows the link.
   if (newTab) {
     const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
@@ -142,6 +151,12 @@ function clickTarget(view: EditorView, event: MouseEvent): boolean {
         void useWorkspace.getState().openLink(source, href, { newTab: true });
         return true;
       }
+    }
+    const bare = urlAt(line.text, offset);
+    if (bare && !/\]\([^)]*$/.test(line.text.slice(0, offset))) {
+      event.preventDefault();
+      void openExternalUrl(bare);
+      return true;
     }
     for (const m of line.text.matchAll(/\[[^\]\n]*\]\(([^)\s]+)\)/g)) {
       if (offset >= m.index && offset <= m.index + m[0].length) {

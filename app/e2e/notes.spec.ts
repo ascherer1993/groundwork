@@ -404,3 +404,34 @@ test("clicks land on the clicked line, even below late-rendering blocks", async 
     await page.locator(".inline-title").click();
   }
 });
+
+test("bare URLs are links: ⌘-click opens them, a plain click edits", async ({ page }) => {
+  const note = "Bare URL.md";
+  writeFileSync(
+    join(VAULT, note),
+    "Intro line\nDocs at https://example.com/docs. And www.example.org too.\n",
+  );
+  await quickOpen(page, "Bare URL");
+  const cm = editor(page);
+  await cm.locator(".cm-line").first().click();
+  const urls = cm.locator(".cm-url");
+  await expect(urls).toHaveText(["https://example.com/docs", "www.example.org"]);
+  await expect(urls.nth(1)).toHaveAttribute("data-href", "https://www.example.org");
+  const link = await page.evaluate(
+    "getComputedStyle(document.querySelector('.cm-url span, .cm-url')).color",
+  );
+  const line = await page.evaluate("getComputedStyle(document.querySelector('.cm-line')).color");
+  expect(link).not.toBe(line);
+
+  // A plain click opens nothing.
+  let popups = 0;
+  page.on("popup", () => popups++);
+  await urls.first().click();
+  await page.waitForTimeout(300);
+  expect(popups).toBe(0);
+
+  const popup = page.waitForEvent("popup");
+  await urls.first().click({ modifiers: ["Meta"] });
+  expect((await popup).url()).toBe("https://example.com/docs");
+  rmSync(join(VAULT, note));
+});

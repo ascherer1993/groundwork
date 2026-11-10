@@ -18,7 +18,7 @@ import {
 } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import { daySpanAt, isDayBlock } from "../markdown/daySpan";
-import { hasScheme, isImage, splitTarget, splitWikilink } from "../markdown/syntax";
+import { hasScheme, isImage, splitTarget, splitWikilink, urlHref } from "../markdown/syntax";
 import { hasMeta, parseTaskMeta, taskMetaHtml } from "../markdown/tasks";
 import { notePath, refreshPreview } from "./context";
 import {
@@ -164,6 +164,21 @@ function buildInline(view: EditorView): DecorationSet {
               }).range(marks[0]!.to, marks[1]!.from),
             );
             decos.push(hidden.range(marks[1]!.from, ref.to));
+            return false;
+          }
+
+          // A bare URL (`https://…`, `www.…`, an email) or `<https://…>`;
+          // those inside `[text](url)` are the Link case's.
+          case "URL": {
+            const href = urlHref(state.sliceDoc(ref.from, ref.to));
+            if (href) {
+              decos.push(
+                Decoration.mark({
+                  class: "cm-url",
+                  attributes: { "data-href": href, title: `⌘-click to open ${href}` },
+                }).range(ref.from, ref.to),
+              );
+            }
             return false;
           }
 
