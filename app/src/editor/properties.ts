@@ -198,8 +198,8 @@ export function openPeoplePicker(
 
 /**
  * The vault's projects under `anchor`; picking one adds a link to its
- * overview note (or its name, when it has none). The first is the note's
- * home project.
+ * overview note (or its name, when it has none). A ticket is grouped under
+ * its first.
  */
 export function openProjectPicker(
   view: EditorView,

@@ -292,6 +292,13 @@ test("a ticket spans repos in one workspace; its subnotes follow it; the Vault w
       return (await screen(page)).replace(/\n/g, "");
     })
     .toContain(INFRA_WORKTREE);
+  // Every worktree has the same folder name, so each tab says its repo (the
+  // second is Acme infra's setup).
+  await expect(terminalTabs(page).locator(".terminal-tab-repo")).toContainText([
+    "Acme platform",
+    "Acme infra",
+    "Acme infra",
+  ]);
 
   // A repo the vault doesn't list yet is added from its checkout.
   const reposYml = join(VAULT, ".groundwork/repos.yml");

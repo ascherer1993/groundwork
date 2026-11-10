@@ -432,6 +432,11 @@ input {
   opacity: 0.75;
 }
 
+/* A terminal's repo: quieter than a note's, which is part of its name. */
+.note-tab-under.terminal-tab-repo {
+  color: var(--text-faint);
+}
+
 .watermark {
   display: flex;
   flex-direction: column;

@@ -116,7 +116,7 @@ function TicketForm({ draft }: { draft: NewTicket }) {
         )}
         {projects.length > 0 && (
           <fieldset className="dialog-field ticket-choices">
-            <legend>Projects (the first is its home)</legend>
+            <legend>Projects</legend>
             {projects.map((p) => (
               <label key={p.id} className="check">
                 <input
@@ -125,7 +125,9 @@ function TicketForm({ draft }: { draft: NewTicket }) {
                   onChange={(e) => setChosen(toggle(chosen, p.id, e.target.checked))}
                 />
                 {p.name}
-                {chosen[0] === p.id && chosen.length > 1 && <span className="muted"> · home</span>}
+                {chosen[0] === p.id && chosen.length > 1 && (
+                  <span className="muted"> · grouped under</span>
+                )}
               </label>
             ))}
           </fieldset>

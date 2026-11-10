@@ -243,6 +243,25 @@ export async function restoreTicket(path: string): Promise<void> {
   }
 }
 
+/**
+ * The repo a folder on this Mac is in (its main checkout or its worktrees
+ * folder, the innermost if they nest), by name. `null` outside every
+ * located repo.
+ */
+export function repoOfFolder(folder: string | undefined): string | null {
+  if (!folder) return null;
+  const inside = (root: string) =>
+    folder === root || folder.startsWith(root.endsWith("/") ? root : `${root}/`);
+  let best: { id: string; length: number } | null = null;
+  for (const r of useTickets.getState().repos) {
+    for (const root of [r.location?.path, r.location?.worktrees]) {
+      if (root && inside(root) && (!best || root.length > best.length))
+        best = { id: r.id, length: root.length };
+    }
+  }
+  return best ? repoName(best.id) : null;
+}
+
 /** A repo's name, as `repos.yml` gives it. */
 export function repoName(id: string): string {
   return useTickets.getState().repos.find((r) => r.id === id)?.name ?? id;
