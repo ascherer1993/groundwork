@@ -473,6 +473,86 @@ impl Session {
             .collect())
     }
 
+    /// Adds a repo to `.groundwork/repos.yml` from its checkout on this Mac
+    /// (any folder in it), named after its folder unless `name` is given,
+    /// with the base branch git reports; then records where it is. The rest
+    /// (setup, components, actions) can be added to the file later.
+    pub fn add_repo(
+        &self,
+        path: &str,
+        name: Option<&str>,
+        worktrees: Option<&str>,
+    ) -> Result<RepoInfo> {
+        let dir = crate::workspaces::expand_home(path.trim());
+        if !dir.is_absolute() || !git::is_repo(&dir) {
+            return Err(CoreError::InvalidPath(format!(
+                "no git repo at {}",
+                dir.display()
+            )));
+        }
+        let checkout = git::toplevel(&dir).unwrap_or(dir);
+        let folder = checkout
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let name = name
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .unwrap_or(&folder)
+            .to_string();
+        let id = slugify(&name);
+        if id.is_empty() {
+            return Err(CoreError::InvalidPath("give the repo a name".into()));
+        }
+        let config = self.config()?;
+        let real = std::fs::canonicalize(&checkout).unwrap_or(checkout.clone());
+        if let Some((known, _)) = self
+            .repos()
+            .all()
+            .into_iter()
+            .find(|(r, l)| config.repos.contains_key(r) && Path::new(&l.path) == real)
+        {
+            return Err(CoreError::Conflict(format!(
+                "{} is already the {known} repo",
+                real.display()
+            )));
+        }
+        if config.repos.contains_key(&id) {
+            return Err(CoreError::Conflict(format!(
+                "there's already a repo called {id} in .groundwork/repos.yml"
+            )));
+        }
+        let base = git::default_branch(&checkout).unwrap_or_else(|| "main".into());
+
+        let file = self.vault().root().join(".groundwork/repos.yml");
+        let mut text = std::fs::read_to_string(&file).unwrap_or_default();
+        if text.is_empty() {
+            text.push_str(
+                "# Code repos used by this vault's projects. Where each is checked out\n\
+                 # is kept on each machine, not here.\n",
+            );
+        } else if !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push_str(&format!(
+            "{id}:\n  name: {}\n  git:\n    base_branch: {}\n",
+            frontmatter::scalar(&name, false),
+            frontmatter::scalar(&base, false),
+        ));
+        if let Some(dir) = file.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        crate::session::atomic_write(&file, &text)?;
+        self.forget_config();
+        // Its location goes too, if it can't be recorded.
+        self.repos()
+            .locate(&id, &checkout.display().to_string(), worktrees)?;
+        self.repo_list()?
+            .into_iter()
+            .find(|r| r.id == id)
+            .ok_or(CoreError::NotFound(id))
+    }
+
     pub fn project_list(&self) -> Result<Vec<ProjectInfo>> {
         Ok(self
             .config()?
@@ -2711,5 +2791,74 @@ mod tests {
             ws.cwd,
             fs::canonicalize(&net).unwrap().display().to_string()
         );
+    }
+
+    #[test]
+    fn repos_are_added_from_a_checkout() {
+        let s = Setup::new();
+        let dir = s.dir.path().join("other");
+        fs::create_dir_all(&dir).unwrap();
+        let checkout = git::tests::repo_with_origin(&dir);
+        fs::create_dir_all(checkout.join("src")).unwrap();
+
+        let info = s
+            .session
+            .add_repo(
+                checkout.join("src").to_str().unwrap(),
+                Some("Billing API"),
+                None,
+            )
+            .unwrap();
+        assert_eq!(info.id, "billing-api");
+        assert_eq!(info.name, "Billing API");
+        assert_eq!(info.location.unwrap().path, checkout.display().to_string());
+        let yml = s.read(".groundwork/repos.yml");
+        assert!(
+            yml.starts_with("# Code repos"),
+            "kept what was there: {yml}"
+        );
+        assert!(
+            yml.ends_with("billing-api:\n  name: Billing API\n  git:\n    base_branch: main\n"),
+            "{yml}"
+        );
+        assert_eq!(
+            s.session
+                .config()
+                .unwrap()
+                .repo("billing-api")
+                .unwrap()
+                .git
+                .base_branch,
+            "main"
+        );
+        assert!(s.session.config().unwrap().repo("acme-platform").is_ok());
+
+        // Not twice, by name or by checkout; not somewhere that isn't a repo.
+        assert!(
+            s.session
+                .add_repo(checkout.to_str().unwrap(), None, None)
+                .is_err()
+        );
+        let again = s
+            .session
+            .add_repo(checkout.to_str().unwrap(), Some("Other name"), None)
+            .unwrap_err()
+            .to_string();
+        assert!(again.contains("already the billing-api repo"), "{again}");
+        assert!(
+            s.session
+                .add_repo(s.dir.path().to_str().unwrap(), None, None)
+                .is_err()
+        );
+
+        // A ticket can use it straight away.
+        let created = s
+            .session
+            .create_ticket(&NewTicket {
+                repos: vec!["billing-api".into()],
+                ..new_ticket("TEAM-800", "Bill it")
+            })
+            .unwrap();
+        assert!(Path::new(created.ticket.worktree_path.as_deref().unwrap()).is_dir());
     }
 }

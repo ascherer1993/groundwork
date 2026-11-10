@@ -28,6 +28,7 @@ import { newTicketFromJira, triageTodos } from "../state/claude";
 import { allCommands, keyLabel } from "../state/keys";
 import { choiceCommand, openQuickAdd, runChoice, useQuickAdd } from "../state/quickadd";
 import {
+  addRepo,
   addTicketRepo,
   closeTicket,
   locateRepo,
@@ -343,6 +344,7 @@ function commands(): Command[] {
       run: () => closeTicket(ws.activePath!),
     },
     { id: "locate-repo", label: "Locate repo…", run: pickRepoToLocate },
+    { id: "add-repo", label: "Add a repo from its checkout…", run: () => void addRepo() },
     { id: "tickets", label: "Show tickets", run: () => ui.setSidebarView("tickets") },
     {
       id: "close-tab",
@@ -423,18 +425,24 @@ function noteProject(path: string, projects: ProjectInfo[]): ProjectInfo | undef
 async function newWorktreeIn() {
   await useTickets.getState().load();
   const { repos } = useTickets.getState();
-  if (!repos.length) {
-    useUi.getState().notify("No repos yet. Add them to .groundwork/repos.yml.");
-    return;
-  }
   useUi.getState().openPalette({
     placeholder: "New worktree in…",
-    items: repos.map((r) => ({
-      id: r.id,
-      label: r.name,
-      detail: r.id,
-      run: () => useTickets.getState().newTicket({ repo: r.id }),
-    })),
+    items: [
+      ...repos.map((r) => ({
+        id: r.id,
+        label: r.name,
+        detail: r.id,
+        run: () => useTickets.getState().newTicket({ repo: r.id }),
+      })),
+      {
+        id: "new-repo",
+        label: "Another repo, from its checkout…",
+        run: async () => {
+          const id = await addRepo();
+          if (id) await useTickets.getState().newTicket({ repo: id });
+        },
+      },
+    ],
   });
 }
 
@@ -442,7 +450,7 @@ async function pickRepoToLocate() {
   await useTickets.getState().load();
   const { repos } = useTickets.getState();
   if (!repos.length) {
-    useUi.getState().notify("No repos yet. Add them to .groundwork/repos.yml.");
+    await addRepo();
     return;
   }
   useUi.getState().openPalette({

@@ -1,7 +1,7 @@
 import { Star } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { NewTicket } from "../api/generated/NewTicket";
-import { createTicket, useTickets } from "../state/tickets";
+import { addRepo, createTicket, useTickets } from "../state/tickets";
 
 /** "New ticket": key, title, projects, its repos (one starred as the default) and the components it touches. */
 export function TicketDialog() {
@@ -130,47 +130,57 @@ function TicketForm({ draft }: { draft: NewTicket }) {
             ))}
           </fieldset>
         )}
-        {repos.length > 0 && (
-          <fieldset className="dialog-field ticket-choices">
-            <legend>{several ? "Repos (★ is the default)" : "Repos"}</legend>
-            {repos.map((r) => {
-              const on = repoIds.includes(r.id);
-              const isDefault = several && repoIds[0] === r.id;
-              return (
-                <div key={r.id} className="repo-choice">
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={on}
-                      disabled={!!adopting && !on && repoIds.length > 0}
-                      onChange={(e) => setPicked(toggle(repoIds, r.id, e.target.checked))}
-                    />
-                    {r.name}
-                    {!r.location && <span className="muted"> · not located yet</span>}
-                  </label>
-                  {on && several && (
-                    <button
-                      type="button"
-                      className={`icon repo-star${isDefault ? " is-default" : ""}`}
-                      aria-pressed={isDefault}
-                      aria-label={
-                        isDefault ? `${r.name} is the default` : `Make ${r.name} the default`
-                      }
-                      title={
-                        isDefault
-                          ? "The default: its worktree is where terminals start"
-                          : "Make this the default"
-                      }
-                      onClick={() => setPicked([r.id, ...repoIds.filter((x) => x !== r.id)])}
-                    >
-                      <Star size={12} />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </fieldset>
-        )}
+        <fieldset className="dialog-field ticket-choices">
+          <legend>{several ? "Repos (★ is the default)" : "Repos"}</legend>
+          {repos.map((r) => {
+            const on = repoIds.includes(r.id);
+            const isDefault = several && repoIds[0] === r.id;
+            return (
+              <div key={r.id} className="repo-choice">
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={!!adopting && !on && repoIds.length > 0}
+                    onChange={(e) => setPicked(toggle(repoIds, r.id, e.target.checked))}
+                  />
+                  {r.name}
+                  {!r.location && <span className="muted"> · not located yet</span>}
+                </label>
+                {on && several && (
+                  <button
+                    type="button"
+                    className={`icon repo-star${isDefault ? " is-default" : ""}`}
+                    aria-pressed={isDefault}
+                    aria-label={
+                      isDefault ? `${r.name} is the default` : `Make ${r.name} the default`
+                    }
+                    title={
+                      isDefault
+                        ? "The default: its worktree is where terminals start"
+                        : "Make this the default"
+                    }
+                    onClick={() => setPicked([r.id, ...repoIds.filter((x) => x !== r.id)])}
+                  >
+                    <Star size={12} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          {!adopting && (
+            <button
+              type="button"
+              className="link-button"
+              onClick={async () => {
+                const id = await addRepo();
+                if (id) setPicked([...repoIds, id]);
+              }}
+            >
+              Another repo…
+            </button>
+          )}
+        </fieldset>
         {chosenRepos.some((r) => r.components.length > 0) && (
           <fieldset className="dialog-field ticket-choices">
             <legend>Touches</legend>

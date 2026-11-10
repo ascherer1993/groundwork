@@ -260,18 +260,25 @@ export async function addTicketRepo(path: string, repo?: string): Promise<void> 
   if (!repo) {
     const have = new Set(ticket.worktree ? ticket.repos.map((r) => r.id) : []);
     const choices = useTickets.getState().repos.filter((r) => !have.has(r.id));
-    if (!choices.length) {
-      useUi.getState().notify("It has a worktree in every repo already.");
-      return;
-    }
     useUi.getState().openPalette({
       placeholder: `Add a repo to “${ticket.title}”…`,
-      items: choices.map((r) => ({
-        id: r.id,
-        label: r.name,
-        detail: r.location ? (r.description ?? undefined) : "not located on this Mac yet",
-        run: () => addTicketRepo(path, r.id),
-      })),
+      items: [
+        ...choices.map((r) => ({
+          id: r.id,
+          label: r.name,
+          detail: r.location ? (r.description ?? undefined) : "not located on this Mac yet",
+          run: () => addTicketRepo(path, r.id),
+        })),
+        {
+          id: "new-repo",
+          label: "Another repo, from its checkout…",
+          detail: "adds it to the vault’s repos",
+          run: async () => {
+            const id = await addRepo();
+            if (id) await addTicketRepo(path, id);
+          },
+        },
+      ],
     });
     return;
   }
@@ -296,6 +303,34 @@ export async function addTicketRepo(path: string, repo?: string): Promise<void> 
       if (!missing) useUi.getState().notify(message(err));
       return;
     }
+  }
+}
+
+/**
+ * Adds a repo the vault doesn't know yet (`repos.yml`), from its checkout on
+ * this Mac. Resolves its id once added.
+ */
+export async function addRepo(): Promise<string | null> {
+  const values = await formDialog({
+    title: "Add a repo",
+    message:
+      "Choose its checkout on this Mac. It's added to the vault's repos (.groundwork/repos.yml), where setup and components can be added later.",
+    fields: [
+      { label: "Checkout", value: "~/", type: "folder" },
+      { label: "Name", placeholder: "its folder’s name" },
+    ],
+    confirmLabel: "Add repo",
+  });
+  const [checkout, name] = values ?? [];
+  if (!checkout?.trim() || checkout.trim() === "~/") return null;
+  try {
+    const repo = await api.addRepo(checkout.trim(), name?.trim() || undefined);
+    await useTickets.getState().load();
+    useUi.getState().notify(`Added ${repo.name}`);
+    return repo.id;
+  } catch (err) {
+    useUi.getState().notify(message(err));
+    return null;
   }
 }
 

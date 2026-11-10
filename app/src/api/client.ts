@@ -140,6 +140,7 @@ interface Results {
   "workspace.forNote": Workspace;
   "repo.list": RepoInfo[];
   "repo.locate": RepoLocation;
+  "repo.add": RepoInfo;
   "project.list": ProjectInfo[];
   "project.view": ProjectView;
   "people.list": Person[];
@@ -315,6 +316,7 @@ export const api = {
   repos: () => call("repo.list"),
   locateRepo: (id: string, path: string, worktrees?: string) =>
     call("repo.locate", { id, path, worktrees }),
+  addRepo: (path: string, name?: string) => call("repo.add", { path, name }),
   projects: () => call("project.list"),
   /** Notes found by meaning (qmd); fails unless smart search is set up. */
   smartSearch: (query: string, limit?: number) => call("search.smart", { query, limit }),

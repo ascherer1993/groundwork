@@ -1,5 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
@@ -43,6 +50,20 @@ const INFRA_WORKTREE = join(CODE, "infra-worktrees", "TEAM-200-fix-signup");
   git(INFRA, "commit", "-q", "-m", "first");
   git(INFRA, "remote", "add", "origin", join(CODE, "infra-origin.git"));
   git(INFRA, "push", "-q", "-u", "origin", "main");
+}
+
+/** A repo the vault doesn't list yet. */
+const BILLING = join(CODE, "billing");
+{
+  const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, stdio: "pipe" });
+  mkdirSync(BILLING, { recursive: true });
+  git(BILLING, "init", "-q", "-b", "trunk");
+  git(BILLING, "config", "user.email", "test@example.com");
+  git(BILLING, "config", "user.name", "Test");
+  git(BILLING, "config", "commit.gpgsign", "false");
+  writeFileSync(join(BILLING, "README.md"), "\n");
+  git(BILLING, "add", ".");
+  git(BILLING, "commit", "-q", "-m", "first");
 }
 
 const TICKET = "Projects/Acme/Work/TEAM-200 Fix signup.md";
@@ -272,10 +293,31 @@ test("a ticket spans repos in one workspace; its subnotes follow it; the Vault w
     })
     .toContain(INFRA_WORKTREE);
 
+  // A repo the vault doesn't list yet is added from its checkout.
+  const reposYml = join(VAULT, ".groundwork/repos.yml");
+  const listed = readFileSync(reposYml, "utf8");
+  await bar(page).getByRole("button", { name: "Repos" }).click();
+  await page.getByRole("menuitem", { name: "Add repo…" }).click();
+  await page.getByRole("option", { name: /Another repo, from its checkout/ }).click();
+  const add = page.getByRole("dialog", { name: "Add a repo" });
+  await add.getByLabel("Checkout").fill(BILLING);
+  await add.getByLabel("Name").fill("Billing");
+  await add.getByRole("button", { name: "Add repo" }).click();
+  await expect(page.getByText("Added Billing to “TEAM-200 Fix signup”")).toBeVisible();
+  expect(readFileSync(reposYml, "utf8")).toContain(
+    "billing:\n  name: Billing\n  git:\n    base_branch: trunk\n",
+  );
+  expect(existsSync(join(CODE, "billing-worktrees", "TEAM-200-fix-signup", "README.md"))).toBe(
+    true,
+  );
+  await expectFile(VAULT, TICKET, (t) => t.includes("repos: [acme-platform, acme-infra, billing]"));
+  // Leave the vault's repos as they were for the other specs.
+  writeFileSync(reposYml, listed);
+
   // The default can change.
   await header.getByRole("button", { name: "New terminal in…" }).click();
   await page.getByRole("menuitem", { name: "Make Acme infra the default" }).click();
-  await expectFile(VAULT, TICKET, (t) => t.includes("repos: [acme-infra, acme-platform]"));
+  await expectFile(VAULT, TICKET, (t) => t.includes("repos: [acme-infra, acme-platform, billing]"));
   await expect(bar(page).getByRole("button", { name: "Repos" })).toContainText("Acme infra");
 
   // A subnote follows the ticket's workspace, not the project's.

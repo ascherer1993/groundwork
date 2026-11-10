@@ -350,6 +350,18 @@ enum RepoCommand {
     List,
     /// A repo's components (paths, commands, docs) and the projects using each.
     Show { repo: String },
+    /// Add a repo to `.groundwork/repos.yml` from its checkout here (any
+    /// folder in it), and record where it is. Add setup and components to
+    /// the file afterwards if it has any.
+    Add {
+        path: String,
+        /// Default: the checkout's folder name. Its id is made from this.
+        #[arg(long)]
+        name: Option<String>,
+        /// Where its worktrees go. Default: `<checkout>-worktrees` beside it.
+        #[arg(long)]
+        worktrees: Option<String>,
+    },
     /// Record where a repo is checked out on this machine (once per machine).
     Locate {
         repo: String,
@@ -1392,6 +1404,23 @@ fn repo(session: &Session, cmd: RepoCommand, json: bool) -> Fallible<()> {
                 if !users.is_empty() {
                     println!("    used by: {}", users.join(", "));
                 }
+            }
+            Ok(())
+        }
+        RepoCommand::Add {
+            path,
+            name,
+            worktrees,
+        } => {
+            let info = session
+                .add_repo(&path, name.as_deref(), worktrees.as_deref())
+                .map_err(err)?;
+            if json {
+                return print_json(&info);
+            }
+            println!("{} · {}", info.id, info.name);
+            if let Some(l) = &info.location {
+                println!("  {}\n  worktrees: {}", l.path, l.worktrees);
             }
             Ok(())
         }

@@ -44,7 +44,7 @@ color?: string,
 /**
  * Kept at the top of the list.
  */
-pinned?: boolean, } } | { "method": "workspace.move", "params": { id: string, before?: string, } } | { "method": "workspace.saveLayout", "params": { id: string, layout: unknown, } } | { "method": "workspace.delete", "params": { id: string, } } | { "method": "workspace.forNote", "params": { path: string, } } | { "method": "repo.list" } | { "method": "repo.locate", "params": { id: string, path: string, worktrees?: string, } } | { "method": "inbox.list" } | { "method": "inbox.history" } | { "method": "inbox.ask", "params": { text: string, choices: Array<string>, link?: string, tab?: string, } } | { "method": "inbox.notify", "params": { text: string, link?: string, tab?: string, 
+pinned?: boolean, } } | { "method": "workspace.move", "params": { id: string, before?: string, } } | { "method": "workspace.saveLayout", "params": { id: string, layout: unknown, } } | { "method": "workspace.delete", "params": { id: string, } } | { "method": "workspace.forNote", "params": { path: string, } } | { "method": "repo.list" } | { "method": "repo.locate", "params": { id: string, path: string, worktrees?: string, } } | { "method": "repo.add", "params": { path: string, name?: string, worktrees?: string, } } | { "method": "inbox.list" } | { "method": "inbox.history" } | { "method": "inbox.ask", "params": { text: string, choices: Array<string>, link?: string, tab?: string, } } | { "method": "inbox.notify", "params": { text: string, link?: string, tab?: string, 
 /**
  * Nothing to do about it: straight to the history (Earlier), with
  * a passing notification but no badge. `groundwork done`'s summary.

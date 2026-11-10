@@ -229,6 +229,7 @@ groundwork project list | show <project>   # show: folders, code, tickets, event
 groundwork project create <folder>     # makes a folder (new or existing) a project
 groundwork repo list | show <repo>
 groundwork repo locate <repo> <path> [--worktrees <dir>]
+groundwork repo add <checkout> [--name "Billing API"] [--worktrees <dir>]   # a repo not in repos.yml yet
 groundwork ticket create [--key INT-123|<url>] [--title "Fix login"] [--slug fix-login] [--project <p>]... [--code repo:component]... [--repo <r>]... [--note <existing note>] [--no-worktree] [--no-setup]
 groundwork ticket add-repo <note> <repo> [--no-setup]   # a worktree in another repo, on the ticket's branch
 groundwork ticket default-repo <note> <repo>            # where its workspace's terminals start

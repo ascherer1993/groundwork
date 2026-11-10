@@ -43,6 +43,26 @@ pub fn toplevel(dir: &Path) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// The branch new work starts from: the remote's default (`origin/HEAD`),
+/// else `main` or `master` if there's one, else the branch checked out.
+pub fn default_branch(dir: &Path) -> Option<String> {
+    if let Ok(head) = git(
+        dir,
+        &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+    ) && let Some(branch) = head.strip_prefix("origin/")
+    {
+        return Some(branch.to_string());
+    }
+    for name in ["main", "master"] {
+        if has_ref(dir, &format!("refs/heads/{name}")) {
+            return Some(name.to_string());
+        }
+    }
+    git(dir, &["branch", "--show-current"])
+        .ok()
+        .filter(|b| !b.is_empty())
+}
+
 pub fn is_repo(dir: &Path) -> bool {
     dir.is_dir() && toplevel(dir).is_some()
 }

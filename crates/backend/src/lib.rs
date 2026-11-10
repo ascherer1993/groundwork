@@ -652,6 +652,15 @@ impl Backend {
                 session.config()?.repo(&id)?;
                 to_value(session.repos().locate(&id, &path, worktrees.as_deref())?)
             }
+            Request::RepoAdd {
+                path,
+                name,
+                worktrees,
+            } => to_value(self.session()?.add_repo(
+                &path,
+                name.as_deref(),
+                worktrees.as_deref(),
+            )?),
             Request::InboxList => to_value(self.agents.open()),
             Request::InboxHistory => to_value(self.agents.history()),
             Request::InboxAsk {

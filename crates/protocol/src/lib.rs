@@ -527,6 +527,17 @@ pub enum Request {
         #[ts(optional)]
         worktrees: Option<String>,
     },
+    /// → `RepoInfo`: adds a repo to `.groundwork/repos.yml` from its checkout
+    /// here (any folder in it), named after its folder unless `name` is
+    /// given, and records where it is.
+    #[serde(rename = "repo.add")]
+    RepoAdd {
+        path: String,
+        #[ts(optional)]
+        name: Option<String>,
+        #[ts(optional)]
+        worktrees: Option<String>,
+    },
     /// → `InboxItem[]`: what's open in the inbox, oldest first.
     #[serde(rename = "inbox.list")]
     InboxList,
