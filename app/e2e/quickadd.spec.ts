@@ -129,6 +129,7 @@ test("a Quick add todo suggests @dates and !priorities and keeps them", async ({
   await page.keyboard.press("Shift+Meta+a");
   await page.keyboard.type("todo");
   await page.keyboard.press("Enter");
+  await expect(field).toBeFocused();
   await page.keyboard.type("Email Bob !p0");
   await expect(suggestions).toContainText("highest");
   await settle(page);
