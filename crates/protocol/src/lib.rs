@@ -191,6 +191,14 @@ pub enum Request {
     /// → `string`: creates `Untitled.md` (or `Untitled 1.md`…) in `folder`.
     #[serde(rename = "file.createUntitled")]
     FileCreateUntitled { folder: String },
+    /// → `string`: saves a pasted or dropped file (base64 `data`) for the note
+    /// `source` in its attachment folder, named after `name`. Returns the path.
+    #[serde(rename = "file.saveAttachment")]
+    FileSaveAttachment {
+        source: String,
+        name: String,
+        data: String,
+    },
     /// → `string`: creates the note an unresolved `[[target]]` in `source`
     /// points to: daily note names in the daily folder, otherwise where
     /// Obsidian's new-note setting says. Returns the path (existing or new).

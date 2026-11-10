@@ -39,6 +39,7 @@ import { useWorkspace } from "../state/workspace";
 import { openExternalUrl } from "../lib/fileUrl";
 import { enterLink, leaveLink } from "../lib/linkPreview";
 import { wikilinkCompletions } from "./autocomplete";
+import { imageInput } from "./images";
 import { popupTheme } from "./popupTheme";
 import { createdStamps, todoCompletions } from "./todoInput";
 import { type NoteContext, noteContext, notePath } from "./context";
@@ -256,6 +257,7 @@ export function editorExtensions(host: EditorHost, mode: EditorMode): Extension[
     structure,
     modeCompartment.of(modeExtensions(mode)),
     handlers,
+    imageInput,
     hoverPreview,
     theme,
     popupTheme,

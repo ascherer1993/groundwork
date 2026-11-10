@@ -424,6 +424,56 @@ impl Session {
         }
     }
 
+    /// The folder new attachments for `source` go in, per Obsidian's
+    /// attachment setting; `attachments` when the vault hasn't set one.
+    pub fn attachment_folder(&self, source: &str) -> String {
+        let setting = self.index().settings().attachment_folder.clone();
+        let dir = source.rsplit_once('/').map_or("", |(dir, _)| dir);
+        match setting.as_deref().map(str::trim) {
+            None => "attachments".to_string(),
+            Some(s) if s == "." || s.starts_with("./") => {
+                let sub = s.trim_start_matches('.').trim_matches('/');
+                [dir, sub]
+                    .iter()
+                    .filter(|p| !p.is_empty())
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .join("/")
+            }
+            Some(s) => s.trim_matches('/').to_string(),
+        }
+    }
+
+    /// Saves a pasted or dropped file (an image, say) for the note `source`
+    /// in its attachment folder, named `name` (made safe, and numbered if
+    /// taken). Returns the new file's path.
+    pub fn save_attachment(
+        &self,
+        source: &str,
+        name: &str,
+        bytes: &[u8],
+    ) -> Result<(String, Vec<FileChange>)> {
+        let name = safe_file_name(name);
+        let (base, ext) = match name.rfind('.') {
+            Some(i) if i > 0 => (&name[..i], &name[i..]),
+            _ => (name.as_str(), ""),
+        };
+        if matches!(classify(&name, false), NodeKind::Note | NodeKind::Page) {
+            return Err(CoreError::InvalidPath(format!(
+                "{name} isn't an attachment"
+            )));
+        }
+        let folder = self.attachment_folder(source);
+        let _guard = self.write_lock.lock().unwrap();
+        let path = self.available_path(&folder, base, ext);
+        validate_new_path(&path)?;
+        self.ensure_parent(&path)?;
+        atomic_write(&self.vault.root().join(&path), bytes)?;
+        let changes = self.reindex(&[&path], false);
+        self.log_changes(&changes, self.source);
+        Ok((path, changes))
+    }
+
     /// Creates the note an unresolved link points to (see [`Self::path_for_link`]).
     /// Daily notes get the daily template. If the note already exists,
     /// returns its path without changes.
@@ -1369,7 +1419,7 @@ fn is_encrypted_file(full: &Path) -> bool {
     crypt::is_encrypted(&head)
 }
 
-pub(crate) fn atomic_write(path: &Path, text: &str) -> Result<()> {
+pub(crate) fn atomic_write(path: &Path, text: impl AsRef<[u8]>) -> Result<()> {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy())
@@ -1399,6 +1449,28 @@ fn move_to_trash(path: &Path) -> Result<()> {
 }
 
 /// Characters that break links or aren't allowed in file names on some platforms.
+/// `name` as a file name `validate_new_path` accepts: forbidden characters
+/// become `-`, leading dots go, and an empty result becomes `attachment`.
+fn safe_file_name(name: &str) -> String {
+    let name = name.rsplit('/').next().unwrap_or(name);
+    let cleaned: String = name
+        .chars()
+        .map(|c| {
+            if FORBIDDEN.contains(&c) || c.is_control() {
+                '-'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let cleaned = cleaned.trim().trim_start_matches('.').trim();
+    if cleaned.is_empty() {
+        "attachment".to_string()
+    } else {
+        cleaned.to_string()
+    }
+}
+
 const FORBIDDEN: &[char] = &['\\', ':', '*', '?', '"', '<', '>', '|', '[', ']', '#', '^'];
 
 /// The heading new todos go under.
@@ -2016,6 +2088,61 @@ mod tests {
         assert!(names.contains(&"Note.md".to_string()), "{names:?}");
         // Links are case-insensitive, so nothing needed rewriting.
         assert_eq!(v.read("A.md"), "[[note]]");
+    }
+
+    #[test]
+    fn attachments_go_where_obsidian_says() {
+        let v = TestVault::new(&[("Projects/Acme/Acme.md", "")]);
+        let note = "Projects/Acme/Acme.md";
+        let set = |json: &str| {
+            fs::create_dir_all(v.dir.path().join(".obsidian")).unwrap();
+            fs::write(v.dir.path().join(".obsidian/app.json"), json).unwrap();
+            v.session.index.write().unwrap().reload_settings();
+        };
+        // Unset: Groundwork's own `attachments` folder.
+        assert_eq!(v.session.attachment_folder(note), "attachments");
+        set(r#"{"attachmentFolderPath": "/"}"#);
+        assert_eq!(v.session.attachment_folder(note), "");
+        set(r#"{"attachmentFolderPath": "./"}"#);
+        assert_eq!(v.session.attachment_folder(note), "Projects/Acme");
+        set(r#"{"attachmentFolderPath": "./assets"}"#);
+        assert_eq!(v.session.attachment_folder(note), "Projects/Acme/assets");
+        assert_eq!(v.session.attachment_folder("Top.md"), "assets");
+        set(r#"{"attachmentFolderPath": "Files/Images/"}"#);
+        assert_eq!(v.session.attachment_folder(note), "Files/Images");
+    }
+
+    #[test]
+    fn saving_attachments_numbers_and_cleans_names() {
+        let v = TestVault::new(&[("Acme.md", "")]);
+        let (a, changes) = v
+            .session
+            .save_attachment("Acme.md", "shot.png", b"\x89PNG")
+            .unwrap();
+        assert_eq!(a, "attachments/shot.png");
+        assert!(!changes.is_empty());
+        assert_eq!(fs::read(v.dir.path().join(&a)).unwrap(), b"\x89PNG");
+        let (b, _) = v
+            .session
+            .save_attachment("Acme.md", "shot.png", b"2")
+            .unwrap();
+        assert_eq!(b, "attachments/shot 1.png");
+        let (c, _) = v
+            .session
+            .save_attachment("Acme.md", "../a:b?.png", b"3")
+            .unwrap();
+        assert_eq!(c, "attachments/a-b-.png");
+        let (d, _) = v
+            .session
+            .save_attachment("Acme.md", ".hidden.png", b"4")
+            .unwrap();
+        assert_eq!(d, "attachments/hidden.png");
+        assert!(
+            v.session
+                .save_attachment("Acme.md", "evil.md", b"x")
+                .is_err()
+        );
+        assert!(v.session.index().get("attachments/shot.png").is_some());
     }
 
     #[test]

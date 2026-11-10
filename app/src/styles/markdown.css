@@ -593,6 +593,34 @@ summary.callout-title {
   vertical-align: bottom;
 }
 
+/* An image's corner handle: drag it to set the image's width. */
+.cm-embed-image {
+  position: relative;
+}
+
+.cm-image-resize {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 12px;
+  height: 12px;
+  border-right: 3px solid var(--accent);
+  border-bottom: 3px solid var(--accent);
+  border-radius: 0 0 3px 0;
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.cm-embed-image:hover .cm-image-resize,
+.cm-embed-image.is-resizing .cm-image-resize {
+  opacity: 1;
+}
+
+.cm-embed-image.is-resizing img {
+  outline: 2px solid var(--accent-soft);
+}
+
 .cm-embed .embed-note,
 .cm-embed .embed-page {
   display: block;

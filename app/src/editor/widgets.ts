@@ -9,11 +9,14 @@ import { CONTENT_RESIZED, setOwn, TODOS_REFRESH } from "../markdown/todos";
 import {
   escapeHtml,
   imageSize,
+  isImage,
   joinTarget,
+  splitTarget,
   type WikiTarget,
   wikiDisplay,
 } from "../markdown/syntax";
 import { notePath } from "./context";
+import { addResizeHandle } from "./images";
 import { attachPropertyEditing, PEOPLE_PROPERTIES } from "./properties";
 
 /**
@@ -57,7 +60,7 @@ function isInteractive(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&
     !!target.closest(
-      "a, input, button, summary, .embed-note, .embed-page, .todos-view, .tickets-view",
+      "a, input, button, summary, .cm-image-resize, .embed-note, .embed-page, .todos-view, .tickets-view",
     )
   );
 }
@@ -238,6 +241,7 @@ export class EmbedWidget extends WidgetType {
       if (height) img.height = height;
       img.addEventListener("load", () => view.requestMeasure());
       wrap.append(img);
+      addResizeHandle(view, wrap);
       return wrap;
     }
     const placeholder = document.createElement("span");
@@ -249,6 +253,8 @@ export class EmbedWidget extends WidgetType {
       wrap.classList.add("cm-embed-block");
       wrap.append(editSourceButton(view, wrap));
       wrap.addEventListener("mousedown", keepEditorStill);
+    } else if (isImage(splitTarget(this.target).target)) {
+      addResizeHandle(view, wrap);
     }
     hydrateWidget(view, wrap, this.source);
     attachContentHandlers(wrap);

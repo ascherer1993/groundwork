@@ -135,7 +135,7 @@ async function renderEmbed(
   if (isImage(path)) {
     const img = document.createElement("img");
     img.src = vaultFileUrl(path);
-    img.alt = alias && !/^\d/.test(alias) ? alias : target;
+    img.alt = alias?.replace(/(?:^|\|)\s*\d+(?:x\d+)?\s*$/, "") || target;
     const { width, height } = imageSize(alias);
     if (width) img.width = width;
     if (height) img.height = height;

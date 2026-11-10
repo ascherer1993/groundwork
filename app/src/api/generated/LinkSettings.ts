@@ -5,4 +5,10 @@ import type { NewFileLocation } from "./NewFileLocation";
 /**
  * Link and new-note preferences from `.obsidian/app.json`.
  */
-export type LinkSettings = { format: LinkFormat, markdownLinks: boolean, newFileLocation: NewFileLocation, newFileFolder: string, };
+export type LinkSettings = { format: LinkFormat, markdownLinks: boolean, newFileLocation: NewFileLocation, newFileFolder: string, 
+/**
+ * Obsidian's "Default location for new attachments" as written:
+ * `/` the vault root, `./` beside the note, `./x` a folder beside the
+ * note, anything else a vault folder. `None` when unset.
+ */
+attachmentFolder?: string, };

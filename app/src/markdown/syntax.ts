@@ -65,7 +65,8 @@ export function hasScheme(href: string): boolean {
 
 /** `|300` or `|300x200` on an image embed sets its size. */
 export function imageSize(alias?: string): { width?: number; height?: number } {
-  const m = alias?.match(/^(\d+)(?:x(\d+))?$/);
+  // `300`, `300x200`, or after alt text: `diagram|300`.
+  const m = alias?.match(/(?:^|\|)\s*(\d+)(?:x(\d+))?\s*$/);
   if (!m) return {};
   return { width: Number(m[1]), height: m[2] ? Number(m[2]) : undefined };
 }

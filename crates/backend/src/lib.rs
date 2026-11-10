@@ -262,6 +262,17 @@ impl Backend {
                 self.emit(changes);
                 to_value(path)
             }
+            Request::FileSaveAttachment { source, name, data } => {
+                use base64::Engine;
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(data.as_bytes())
+                    .map_err(|e| {
+                        ApiError::new(ErrorCode::BadRequest, format!("bad attachment data: {e}"))
+                    })?;
+                let (path, changes) = self.session()?.save_attachment(&source, &name, &bytes)?;
+                self.emit(changes);
+                to_value(path)
+            }
             Request::FileCreateFromLink { source, target } => {
                 let (path, changes) = self.session()?.create_from_link(&source, &target)?;
                 self.emit(changes);

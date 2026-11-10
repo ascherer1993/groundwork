@@ -88,6 +88,7 @@ interface Results {
   "file.create": string;
   "file.createUntitled": string;
   "file.createFromLink": string;
+  "file.saveAttachment": string;
   "file.createFromTemplate": CreatedNote;
   "template.list": string[];
   "template.prompts": string[];
@@ -236,6 +237,8 @@ export const api = {
     call("crypt.changePassword", { path, oldPassword, password, hint }),
   createFile: (path: string, text?: string) => call("file.create", { path, text }),
   createUntitled: (folder: string) => call("file.createUntitled", { folder }),
+  saveAttachment: (source: string, name: string, data: string) =>
+    call("file.saveAttachment", { source, name, data }),
   createFromLink: (source: string, target: string) =>
     call("file.createFromLink", { source, target }),
   rename: (from: string, to: string) => call("file.rename", { from, to }),

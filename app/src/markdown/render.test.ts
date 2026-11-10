@@ -44,6 +44,16 @@ describe("renderMarkdown", () => {
     expect(d.querySelector("img")!.getAttribute("data-src-link")).toBe("img/a.png");
   });
 
+  it("sizes markdown images from their alt text", () => {
+    const d = dom("![Chart|300](a.png) ![](b.png) ![120x80](c.png)");
+    const [a, b, c] = [...d.querySelectorAll("img")];
+    expect(a!.getAttribute("width")).toBe("300");
+    expect(a!.getAttribute("alt")).toBe("Chart");
+    expect(b!.hasAttribute("width")).toBe(false);
+    expect(c!.getAttribute("width")).toBe("120");
+    expect(c!.getAttribute("height")).toBe("80");
+  });
+
   it("does not treat code as links or tags", () => {
     const d = dom("`[[Code]] #tag`\n\n```\n[[Fenced]]\n```");
     expect(d.querySelectorAll("a").length).toBe(0);
