@@ -552,6 +552,10 @@ summary.callout-title {
   text-decoration: underline;
 }
 
+.cm-meta-held .cm-url {
+  cursor: pointer;
+}
+
 .cm-wikilink:hover,
 .cm-md-link:hover {
   text-decoration: underline;

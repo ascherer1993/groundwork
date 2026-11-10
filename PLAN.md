@@ -374,7 +374,7 @@ You type `!p1` and it turns into the marker. The CLI and agents always use the `
   - tables
   - frontmatter shown as a properties panel. In the editor, a `people:` property has a **+** that opens a searchable picker of the vault's contacts (§5.13's people: `type: person` or `contact`, or in `Contacts/`; API `people.list`), leaving out those already there, and each person has an **×** that takes them out. The list is rewritten in place (`frontmatter.setList`, through `frontmatter.rs`), keeping other properties and comments, and the change goes through the editor so it can be undone.
 - **Navigation:** Cmd-click a link to open it in a new tab, hold ⌘ over a link to preview it (the preview closes once the pointer leaves both the link and the preview), and get autocomplete for `[[`.
-  - Bare URLs (`https://…`, `www.…`, email addresses, `<https://…>`) show as links in live preview; ⌘-click opens them in the browser and a plain click edits them, so a pasted link stays easy to change. In source mode ⌘-click opens them too. Reading view links them as usual.
+  - Bare URLs (`https://…`, `www.…`, email addresses, `<https://…>`) show as links in live preview; ⌘-click opens them in the browser (holding ⌘ shows the hand over them) and a plain click edits them, so a pasted link stays easy to change. In source mode ⌘-click opens them too. Reading view links them as usual.
 
 ### 5.3 Templates & daily notes
 

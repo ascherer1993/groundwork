@@ -423,6 +423,15 @@ test("bare URLs are links: ⌘-click opens them, a plain click edits", async ({ 
   const line = await page.evaluate("getComputedStyle(document.querySelector('.cm-line')).color");
   expect(link).not.toBe(line);
 
+  // The hand shows only while ⌘ is held.
+  const cursor = () => page.evaluate("getComputedStyle(document.querySelector('.cm-url')).cursor");
+  await urls.first().hover();
+  expect(await cursor()).not.toBe("pointer");
+  await page.keyboard.down("Meta");
+  await expect.poll(cursor).toBe("pointer");
+  await page.keyboard.up("Meta");
+  await expect.poll(cursor).not.toBe("pointer");
+
   // A plain click opens nothing.
   let popups = 0;
   page.on("popup", () => popups++);

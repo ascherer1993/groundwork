@@ -23,6 +23,7 @@ import {
   keymap,
   placeholder,
   rectangularSelection,
+  ViewPlugin,
 } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import { GFM } from "@lezer/markdown";
@@ -210,6 +211,30 @@ const handlers = EditorView.domEventHandlers({
   },
 });
 
+/**
+ * Marks the editor `cm-meta-held` while ⌘ (or Ctrl) is down, so links that
+ * open on ⌘-click show the hand. The pointer moving says so too, for ⌘
+ * pressed while another window had focus.
+ */
+const metaHeld = ViewPlugin.fromClass(
+  class {
+    constructor(readonly view: EditorView) {
+      for (const type of ["keydown", "keyup", "mousemove"] as const)
+        window.addEventListener(type, this.track, true);
+      window.addEventListener("blur", this.clear);
+    }
+    track = (e: KeyboardEvent | MouseEvent) => {
+      this.view.dom.classList.toggle("cm-meta-held", e.metaKey || e.ctrlKey);
+    };
+    clear = () => this.view.dom.classList.remove("cm-meta-held");
+    destroy() {
+      for (const type of ["keydown", "keyup", "mousemove"] as const)
+        window.removeEventListener(type, this.track, true);
+      window.removeEventListener("blur", this.clear);
+    }
+  },
+);
+
 /** Live preview vs. source, switchable without recreating the editor. */
 export const modeCompartment = new Compartment();
 
@@ -272,6 +297,7 @@ export function editorExtensions(host: EditorHost, mode: EditorMode): Extension[
     structure,
     modeCompartment.of(modeExtensions(mode)),
     handlers,
+    metaHeld,
     imageInput,
     hoverPreview,
     theme,
