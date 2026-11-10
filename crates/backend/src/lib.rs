@@ -799,6 +799,24 @@ impl Backend {
                 (self.events)(Event::WorkspacesChanged);
                 to_value(created)
             }
+            Request::TicketRemoveRepo { path, repo, force } => {
+                let removed =
+                    self.session()?
+                        .remove_ticket_repo(&path, &repo, force.unwrap_or(false))?;
+                self.emit(removed.changes.clone());
+                if let Some(wt) = &removed.worktree {
+                    self.terminals.kill_inside(Path::new(wt));
+                }
+                if removed.workspace.is_some() {
+                    (self.events)(Event::WorkspacesChanged);
+                }
+                to_value(removed)
+            }
+            Request::TicketGather => {
+                let (moved, changes) = self.session()?.gather_tickets()?;
+                self.emit(changes);
+                to_value(moved)
+            }
             Request::TicketSetDefaultRepo { path, repo } => {
                 let (ticket, workspace, changes) =
                     self.session()?.set_ticket_default_repo(&path, &repo)?;

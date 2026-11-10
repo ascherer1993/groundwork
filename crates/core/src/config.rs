@@ -13,14 +13,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::{CoreError, Result};
 
-/// Where tickets go when no project claims them.
-const DEFAULT_WORK_FOLDER: &str = "Work";
+/// Where ticket notes go: one folder for the vault, whatever their projects.
+const DEFAULT_TICKETS_FOLDER: &str = "Tickets";
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 struct ConfigFile {
     trackers: Vec<Tracker>,
-    work_folder: Option<String>,
+    tickets_folder: Option<String>,
     actions: Vec<ActionDef>,
 }
 
@@ -110,7 +110,7 @@ pub struct Repo {
     pub setup: Vec<String>,
     /// Where agents should start reading, relative to the repo.
     pub docs: Vec<String>,
-    /// The project tickets with no single project go to.
+    /// The project a new ticket in this repo belongs to when none is given.
     pub home_project: Option<String>,
     pub components: BTreeMap<String, Component>,
     pub actions: Vec<ActionDef>,
@@ -141,7 +141,6 @@ struct ProjectFile {
     id: Option<String>,
     name: Option<String>,
     overview: Option<String>,
-    work_folder: Option<String>,
     code: Vec<String>,
     tickets: TicketSettings,
     actions: Vec<ActionDef>,
@@ -172,8 +171,6 @@ pub struct Project {
     pub folder: String,
     /// Vault path of the overview note, if it has one.
     pub overview: Option<String>,
-    /// Vault path of the folder its tickets go in.
-    pub work_folder: String,
     /// What its work touches: `repo` or `repo:component`.
     pub code: Vec<String>,
     pub tickets: TicketSettings,
@@ -186,8 +183,8 @@ pub struct Project {
 #[derive(Debug, Clone, Default)]
 pub struct Config {
     pub trackers: Vec<Tracker>,
-    /// Vault path of the default folder for tickets.
-    pub work_folder: String,
+    /// Vault path of the folder every ticket note goes in.
+    pub tickets_folder: String,
     pub actions: Vec<ActionDef>,
     pub repos: BTreeMap<String, Repo>,
     /// By folder.
@@ -209,9 +206,11 @@ impl Config {
         projects.sort_by(|a, b| a.folder.cmp(&b.folder));
         Ok(Self {
             trackers: file.trackers,
-            work_folder: file
-                .work_folder
-                .unwrap_or_else(|| DEFAULT_WORK_FOLDER.into()),
+            tickets_folder: file
+                .tickets_folder
+                .map(|f| f.trim_matches('/').to_string())
+                .filter(|f| !f.is_empty())
+                .unwrap_or_else(|| DEFAULT_TICKETS_FOLDER.into()),
             actions: file.actions,
             repos,
             projects,
@@ -356,7 +355,6 @@ fn project(folder: &str, file: ProjectFile) -> Project {
     Project {
         id: file.id.unwrap_or_else(|| slugify(base)),
         overview: file.overview.as_deref().map(inside),
-        work_folder: inside(file.work_folder.as_deref().unwrap_or(DEFAULT_WORK_FOLDER)),
         folder: folder.to_string(),
         name,
         code: file.code,
@@ -387,7 +385,7 @@ mod tests {
     #[test]
     fn reads_the_fixture_config() {
         let config = Config::load(Path::new(FIXTURE)).unwrap();
-        assert_eq!(config.work_folder, "Work");
+        assert_eq!(config.tickets_folder, "Tickets");
         let tracker = &config.trackers[0];
         assert_eq!(tracker.id, "jira-team");
         assert_eq!(
@@ -413,7 +411,6 @@ mod tests {
         assert_eq!(acme.name, "Acme");
         assert_eq!(acme.folder, "Projects/Acme");
         assert_eq!(acme.overview.as_deref(), Some("Projects/Acme/Acme.md"));
-        assert_eq!(acme.work_folder, "Projects/Acme/Work");
         assert_eq!(
             acme.code,
             ["acme-platform:web", "acme-platform:auth-lambda"]
@@ -438,9 +435,17 @@ mod tests {
         fs::write(dir.path().join("Trip/.groundwork.yml"), "").unwrap();
         let config = Config::load(dir.path()).unwrap();
         assert_eq!(config.projects[0].id, "trip");
-        assert_eq!(config.projects[0].work_folder, "Trip/Work");
 
         fs::create_dir_all(dir.path().join(".groundwork")).unwrap();
+        fs::write(
+            dir.path().join(".groundwork/config.yml"),
+            "tickets_folder: /Work/Tickets/\n",
+        )
+        .unwrap();
+        assert_eq!(
+            Config::load(dir.path()).unwrap().tickets_folder,
+            "Work/Tickets"
+        );
         fs::write(dir.path().join(".groundwork/repos.yml"), "a: [").unwrap();
         let err = Config::load(dir.path()).unwrap_err().to_string();
         assert!(err.contains("repos.yml"), "{err}");

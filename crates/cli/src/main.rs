@@ -434,6 +434,20 @@ enum TicketCommand {
         #[arg(long)]
         no_setup: bool,
     },
+    /// Take a repo off a ticket: remove its worktree and end the terminals
+    /// working in it. The branch stays, so adding the repo again brings the
+    /// committed work back. Refuses when it has uncommitted changes.
+    RemoveRepo {
+        note: String,
+        repo: String,
+        /// Remove anyway, discarding uncommitted changes.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Move every ticket note that's outside the vault's tickets folder
+    /// (`tickets_folder` in config.yml, default `Tickets`) into it, rewriting
+    /// links. Tickets keep the projects their old folder gave them.
+    Gather,
     /// Make one of a ticket's repos its default: where its workspace's
     /// terminals start.
     DefaultRepo { note: String, repo: String },
@@ -1314,7 +1328,6 @@ fn project(session: &Session, cmd: ProjectCommand, json: bool) -> Fallible<()> {
             if let Some(o) = &p.overview {
                 println!("  overview: {o}");
             }
-            println!("  tickets go in: {}", p.work_folder);
             if !p.code.is_empty() {
                 println!("  code: {}", p.code.join(", "));
             }
@@ -1587,6 +1600,56 @@ fn ticket(session: &Session, cmd: TicketCommand, json: bool) -> Fallible<()> {
             let path = resolve_note(session, &note)?;
             let created = session.add_ticket_repo(&path, &repo).map_err(err)?;
             report_created(&created, no_setup, json)
+        }
+        TicketCommand::RemoveRepo { note, repo, force } => {
+            let path = resolve_note(session, &note)?;
+            let removed = session
+                .remove_ticket_repo(&path, &repo, force)
+                .map_err(|e| {
+                    let msg = err(e);
+                    if msg.contains(" not removed: ") {
+                        format!("{msg} Use --force to remove it anyway.")
+                    } else {
+                        msg
+                    }
+                })?;
+            let ended = removed
+                .worktree
+                .as_deref()
+                .map_or(0, |w| end_terminals_in(Path::new(w)));
+            if json {
+                return print_json(&serde_json::json!({
+                    "ticket": removed.ticket,
+                    "worktree": removed.worktree,
+                    "terminalsEnded": ended,
+                }));
+            }
+            match &removed.worktree {
+                Some(wt) => println!("removed {wt}"),
+                None => println!("took {repo} off the ticket"),
+            }
+            if ended > 0 {
+                println!(
+                    "  ended {ended} terminal{}",
+                    if ended == 1 { "" } else { "s" }
+                );
+            }
+            println!("{}", ticket_line(&removed.ticket));
+            print_worktrees(&removed.ticket);
+            Ok(())
+        }
+        TicketCommand::Gather => {
+            let (moved, _) = session.gather_tickets().map_err(err)?;
+            if json {
+                return print_json(&moved);
+            }
+            if moved.is_empty() {
+                println!("every ticket is already in its folder");
+            }
+            for m in &moved {
+                println!("{} → {}", m.from, m.to);
+            }
+            Ok(())
         }
         TicketCommand::DefaultRepo { note, repo } => {
             let path = resolve_note(session, &note)?;

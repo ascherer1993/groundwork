@@ -75,6 +75,7 @@ My Vault/
     page-state/                   # state for single-file .html pages
   Templates/                      # respected from Obsidian/Templater settings
   Daily/
+  Tickets/                        # every ticket note, whatever its projects (§5.6)
   Contacts/                       # convention: one note per person (type: person)
   Events/                         # convention: one note per event or meeting (type: event)
   Notes/                          # shared ideas and concepts, linked from any project
@@ -82,13 +83,10 @@ My Vault/
     Integrations/                 # a project for the shared, repo-wide work
       .groundwork.yml             # ← marks this folder as a Project
       Integrations.md             # overview note (any name; referenced in config)
-      Work/                       # tickets that don't belong to one integration
     Lincoln/
       .groundwork.yml             # code: the lincoln-web and lincoln-lambda components
       Lincoln.md
       Meetings/  Decisions/  ...  # any structure you like
-      Work/                       # the project's ticket folder (name configurable)
-        INT-123 Fix login.md      # one note per ticket
       demos/
         login-flow.page/          # an HTML bundle (folder with .page suffix)
           index.html
@@ -100,7 +98,7 @@ My Vault/
       .groundwork.yml
 ```
 
-A project is any folder containing `.groundwork.yml`. Inside a project, any subfolder structure is allowed. Only the overview note and the work folder are special.
+A project is any folder containing `.groundwork.yml`. Inside a project, any subfolder structure is allowed. Only the overview note is special. Tickets aren't kept in project folders (§5.6).
 
 **Projects, repos and notes are separate things.** A project is a body of knowledge: meetings, people, decisions, tickets. A repo is code. A project may use code from one or more repos, or none. A repo may serve many projects: in a monorepo, each project usually maps to a few of its components. Notes link freely across all of this, as in Obsidian; a concept note shared by two projects lives once and is linked from both.
 
@@ -129,7 +127,7 @@ integrations:
     - npm install
     - cp "{{repo.path}}/.env" .env
   docs: [CLAUDE.md, docs/architecture.md]   # where agents should start reading
-  home_project: Integrations        # where tickets with no single project go (optional)
+  home_project: Integrations        # the project a new ticket here gets when none is given (optional)
   components:                       # optional; parts of the repo that work differently
     shared:
       path: packages/shared
@@ -159,7 +157,6 @@ integrations:
 ```yaml
 name: Lincoln
 overview: Lincoln.md
-work_folder: Work
 code:                             # optional: what this project's work touches
   - integrations:lincoln-web
   - integrations:lincoln-lambda
@@ -235,7 +232,7 @@ people: ["[[Jane Doe]]"]
 projects: ["[[Lincoln]]"]
 ```
 
-**People and events live in top-level folders** (`Contacts/`, `Events/`), never inside a project, so a note made mid-meeting never needs moving. They belong to projects through `projects:`, which Quick add fills in from what you're working on (§5.13).
+**People, events and tickets live in top-level folders** (`Contacts/`, `Events/`, `Tickets/`), never inside a project, so a note made mid-meeting never needs moving, and a ticket that gains or loses a project stays put. They belong to projects through `projects:`, which Quick add fills in from what you're working on (§5.13).
 
 **Project membership** of any note (tickets, meetings, people, concepts, todos): the projects linked in its `projects:` frontmatter, plus the project folder it sits in. `projects:` holds ordinary links to the projects' overview notes, so a project's overview shows all its tickets and related notes as backlinks, in Obsidian too.
 
@@ -464,8 +461,11 @@ Daily notes follow Groundwork's own settings, then Obsidian's. **Settings › Da
   - **Open ticket in VS Code** (the note bar, for a ticket in several repos) opens all its worktrees in one new window, each repo's changes apart in Source Control. The main checkout or one worktree, opened alone, shows only its own changes.
   - The Tickets view groups a ticket by its default repo; its git state adds up all its worktrees.
   - Subnotes follow their note's workspace (§5.5), so a ticket's per-repo notes (`INT-123 Fix login.web.md`) use the ticket's workspace.
-- **Where a ticket's note goes:** the work folder of its home project (the first in `projects:`). A ticket that belongs to no single project goes to the repo's `home_project` if it has one, otherwise to the vault's default work folder (`Work/`, set in `config.yml`).
-- **Ad-hoc tickets.** Projects and tracker keys are both optional. A spike or quick fix can be just a repo plus a slug: `groundwork ticket create --repo integrations --slug try-new-cache`. It gets a branch and worktree (name formats skip `{{key}}` and its separator when there's no key), a workspace and a note in the default work folder, and you can attach it to projects or a Jira key later by editing frontmatter.
+- **Where a ticket's note goes** (decided 2026-11-10, replacing each home project's work folder): the vault's one tickets folder, `Tickets/` (`tickets_folder` in `config.yml`). A ticket spans repos and may belong to several projects, so no project's folder is the right place for it, and moving the note whenever its projects changed would churn its links. Its projects are only `projects:` links (the first is its home, which the Workspaces view groups it under); a new ticket with none given gets its repo's `home_project`. A ticket has one workspace, whatever its projects and repos.
+  - **Editing a ticket's projects and repos** is picking, never typing keys. The properties panel has a picker for `projects:` (the vault's projects; it writes links to their overview notes) and, on a ticket, for `repos:`, each value with × to remove it. A ticket shows empty `projects` and `repos` rows until it has some. Adding a repo there is "Add repo…" (a worktree on the ticket's branch); removing one is **Remove repo** below. `workspace:` shows the workspace's name, not its id.
+  - **Remove repo** (the properties' ×, the Repos menu's "Remove <repo>…", the palette, `groundwork ticket remove-repo`), added 2026-11-10: removes that repo's worktree, ends terminals working in it and drops it from `repos:`. The branch stays, so adding the repo again brings its commits back; only uncommitted changes would be lost, so only those need a second yes (`--force`). Removing the default makes the next repo the default and moves the workspace's folder there; removing the last leaves no `repos:` (the branch and worktree names stay for the next one) and the workspace in the note's folder.
+  - **Older vaults** kept tickets in project work folders. "Move tickets into the tickets folder…" (palette; `groundwork ticket gather`) moves every ticket note outside `Tickets/` into it with its subnotes, rewriting links. One that belonged to a project only by sitting in its folder gets that project in `projects:` first. Folders it leaves empty go to the Trash. A project's `work_folder:` is no longer read.
+- **Ad-hoc tickets.** Projects and tracker keys are both optional. A spike or quick fix can be just a repo plus a slug: `groundwork ticket create --repo integrations --slug try-new-cache`. It gets a branch and worktree (name formats skip `{{key}}` and its separator when there's no key), a workspace and a note in `Tickets/`, and you can attach it to projects or a Jira key later by editing frontmatter.
 - **Starting a worktree** works from wherever you are:
   - a project: its overview note, its folder in the tree, or the tickets view filtered to it (defaults to that project and its repo, or asks which repo when it uses several)
   - a repo: the tickets view grouped by repo, or "New worktree in…" in the command palette
@@ -768,16 +768,16 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
   1. **The model, API and CLI** *(built)*: config, repo locations, git worktrees, tickets, context, `code who`, actions.
   2. **The app** *(built)*: note workspaces and view modes, ticket creation, the tickets view and block, actions on ticket notes, close and restore.
 - Built in the first part:
-  - **Config** (`crates/core/src/config.rs`) is read fresh when needed, so edits in Obsidian or by Claude apply at once. A file that doesn't parse is an error naming it. Projects are found by walking the vault for `.groundwork.yml` (an empty one is fine). `config.yml` takes `work_folder` (default `Work`) for tickets no project claims.
+  - **Config** (`crates/core/src/config.rs`) is read fresh when needed, so edits in Obsidian or by Claude apply at once. A file that doesn't parse is an error naming it. Projects are found by walking the vault for `.groundwork.yml` (an empty one is fine). `config.yml` takes `tickets_folder` (default `Tickets`) for every ticket note (until 2026-11-10, `work_folder` for tickets no project claimed, with each project's own work folder for the rest).
   - **Repo locations** are kept per vault in the data folder (`vaults/<key>/repos.json`, beside `workspaces.json`) rather than one `machine.json`. Locating takes any folder in the checkout and finds its top; worktrees default to `<checkout>-worktrees` beside it, or (from 2026-11-10) `worktrees` beside it when the checkout is in a folder of its own name (`dev/api/api` → `dev/api/worktrees`), so a repo's folder holds its checkout, its worktrees and, outside git, a `CLAUDE.md` that Claude Code reads in all of them. Paths may start with `~`.
   - **Git** goes through the `git` command (`crates/core/src/git.rs`). A new worktree uses the local branch if there is one, else tracks `origin/<branch>`, else branches from `origin/<base>` (or the local base). Git state: uncommitted changes, commits on no remote, whether the branch is on the remote, commits behind the base.
   - **Tickets** (`crates/core/src/tickets.rs`): `create` works out the key (from a URL with a tracker's pattern), projects, code and repo from each other (the one repo the code or projects use; else it asks which), makes the worktree, writes the note from the template (the home project's `tickets.template`, else the tracker's, else `Templates/Ticket.md`) with `ticket.key`, `ticket.title`, `jira.url`, `project.name` tags, sets the frontmatter, and makes a workspace linked to the note. Setup isn't run by `create`: the CLI runs it in its output, and the app will run it in the workspace's first terminal, where it's visible. Frontmatter is edited in place (`crates/core/src/frontmatter.rs`), leaving other properties and comments as written.
-  - **Routing:** `tickets.match` rules aren't applied yet, since Groundwork can't read Jira itself; the agent flow (Phase 6) proposes projects. A ticket with no project goes to its repo's `home_project`, else the vault's work folder.
+  - **Routing:** `tickets.match` rules aren't applied yet, since Groundwork can't read Jira itself; the agent flow (Phase 6) proposes projects. A ticket with no project gets its repo's `home_project`, if it has one.
   - **Close** refuses, unless forced, when the worktree has uncommitted changes, unpushed commits or a branch missing from the remote. It ends terminals whose shell is inside the worktree, removes the worktree, deletes the workspace and drops `workspace:`, and sets `status: closed` and `closed:`. **Restore** brings the worktree back and makes a new workspace. **Strays** are worktrees of located repos that no ticket names; `create --adopt <path>` makes a note for one.
   - **Context** for a note, or for a folder in a worktree, a checkout or the vault. **Actions** are resolved per context: built-ins (Open in VS Code with a worktree on disk, Open Jira ticket), then the vault's, the projects', the repo's and the components' (`component:` on a repo action scopes it), then each component's `commands` as terminal actions. `{{worktree.path}}`, `{{repo.path}}`, `{{component.path}}`, `{{component.commands.x}}`, `{{ticket.key}}`, `{{jira.url}}`, `{{project.folder}}`, `{{vault.path}}` are filled in; an action whose variables don't apply here is left out. `shell` actions run in the background through a login shell (`action.run`), `terminal` and `url` ones in the app. `agent` actions wait for Phase 6. `show_on` isn't used yet: every action shows wherever it applies.
   - **Making projects:** a folder's menu has "New project…" (a new folder with an overview note named after it) and, on a folder that isn't one, "Make this a project" (its own note, like `Trip/Trip.md`, becomes the overview if it has one). Both write `.groundwork.yml` with the name (`project.create`, `groundwork project create <folder>`). Project folders have their own icon in the file tree.
   - **Workspaces** can belong to a note (`note` in the record, `workspace:` in the note). Deleting one removes the note's `workspace:`.
-  - **CLI:** `context`, `project list|show`, `repo list|show|locate`, `ticket create|list|show|close|restore|strays`, `code who`. The SessionStart hook adds `groundwork context` output when the terminal is in a ticket's worktree, a checkout or a project folder.
+  - **CLI:** `context`, `project list|show`, `repo list|show|locate`, `ticket create|list|show|add-repo|remove-repo|default-repo|close|restore|strays|gather`, `code who`. The SessionStart hook adds `groundwork context` output when the terminal is in a ticket's worktree, a checkout or a project folder.
 - Built in the second part:
   - **The note bar** sits above the title of a ticket: key, status, branch and git state (refreshed every 15 seconds and on focus), Open Jira ticket and Open in VS Code, an Actions menu, and Close ticket… or Restore. A new ticket opens in Split.
   - **New ticket** (palette, the Tickets view's +, a project folder's menu with the project chosen, "New worktree in…" with a repo chosen) is one dialog: key or Jira link, title, branch name, projects, repo (worked out from the projects and components unless chosen) and the components it touches. "Add worktree…" on any note makes that note the ticket, where it is. When the repo hasn't been located on this machine the app asks for its checkout and carries on. The setup runs in the workspace's first terminal.

@@ -296,8 +296,31 @@ pub struct ProjectInfo {
     pub name: String,
     pub folder: String,
     pub overview: Option<String>,
-    pub work_folder: String,
     pub code: Vec<String>,
+}
+
+/// What `remove_ticket_repo` did.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct RemovedTicketRepo {
+    pub ticket: Ticket,
+    /// The workspace, when it moved to another worktree.
+    pub workspace: Option<Workspace>,
+    /// The worktree taken away, whose terminals should end.
+    pub worktree: Option<String>,
+    #[serde(skip)]
+    #[ts(skip)]
+    pub changes: Vec<FileChange>,
+}
+
+/// A note moved by `gather_tickets`.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MovedNote {
+    pub from: String,
+    pub to: String,
 }
 
 /// How many recently changed project notes `context` lists.
@@ -305,6 +328,18 @@ const RECENT_NOTES: usize = 5;
 
 /// `Session::note_projects`, with the index already in hand.
 pub(crate) fn note_projects_in(index: &Index, config: &Config, path: &str) -> Vec<String> {
+    let mut ids = linked_projects_in(index, config, path);
+    if let Some(p) = config.project_of_folder(path)
+        && !ids.contains(&p.id)
+    {
+        ids.push(p.id.clone());
+    }
+    ids
+}
+
+/// The projects a note's `projects:` frontmatter links to, leaving out the
+/// folder it's in.
+fn linked_projects_in(index: &Index, config: &Config, path: &str) -> Vec<String> {
     let fm = index.note(path).and_then(|n| n.frontmatter.as_ref());
     let mut ids: Vec<String> = Vec::new();
     for item in fm_list(fm, "projects") {
@@ -327,11 +362,6 @@ pub(crate) fn note_projects_in(index: &Index, config: &Config, path: &str) -> Ve
         {
             ids.push(p.id.clone());
         }
-    }
-    if let Some(p) = config.project_of_folder(path)
-        && !ids.contains(&p.id)
-    {
-        ids.push(p.id.clone());
     }
     ids
 }
@@ -563,7 +593,6 @@ impl Session {
                 name: p.name,
                 folder: p.folder,
                 overview: p.overview,
-                work_folder: p.work_folder,
                 code: p.code,
             })
             .collect())
@@ -972,54 +1001,53 @@ impl Session {
         // The note.
         let mut changes = Vec::new();
         let mut cursor = None;
-        let path = match &existing_note {
-            Some(note) => {
-                self.vault().resolve(note)?;
-                note.clone()
-            }
-            None => {
-                let folder = home.map_or(config.work_folder.as_str(), |p| p.work_folder.as_str());
-                let name = match tracker {
-                    Some(t) if !t.note_name.is_empty() => {
-                        name_format(&t.note_name, key.as_deref(), &slug, &title)
-                    }
-                    _ => name_format("{{key}} {{title}}", key.as_deref(), &slug, &title),
-                };
-                let path = self.available_path(folder, &safe_name(&name), ".md");
-                let template = home
-                    .and_then(|p| p.tickets.template.clone())
-                    .or_else(|| tracker.and_then(|t| t.template.clone()))
-                    .unwrap_or_else(|| "Templates/Ticket.md".into());
-                let vars: HashMap<String, String> = [
-                    ("ticket.key", key.clone().unwrap_or_default()),
-                    ("ticket.title", title.clone()),
-                    ("ticket.slug", slug.clone()),
-                    ("jira.url", url.clone().unwrap_or_default()),
-                    (
-                        "project.name",
-                        home.map(|p| p.name.clone()).unwrap_or_default(),
-                    ),
-                    ("repo.id", repo_id.clone().unwrap_or_default()),
-                ]
-                .into_iter()
-                .map(|(k, v)| (k.to_string(), v))
-                .collect();
-                if self.vault().resolve(&template)?.is_file() {
-                    let (c, ch) = self.create_from_template_with(&template, &path, vars)?;
-                    cursor = c;
-                    changes.extend(ch);
-                } else {
-                    let text = format!("# {}\n\n", file_stem(&path));
-                    changes.extend(
-                        self.create_file(
+        let path =
+            match &existing_note {
+                Some(note) => {
+                    self.vault().resolve(note)?;
+                    note.clone()
+                }
+                None => {
+                    let folder = config.tickets_folder.as_str();
+                    let name = match tracker {
+                        Some(t) if !t.note_name.is_empty() => {
+                            name_format(&t.note_name, key.as_deref(), &slug, &title)
+                        }
+                        _ => name_format("{{key}} {{title}}", key.as_deref(), &slug, &title),
+                    };
+                    let path = self.available_path(folder, &safe_name(&name), ".md");
+                    let template = home
+                        .and_then(|p| p.tickets.template.clone())
+                        .or_else(|| tracker.and_then(|t| t.template.clone()))
+                        .unwrap_or_else(|| "Templates/Ticket.md".into());
+                    let vars: HashMap<String, String> = [
+                        ("ticket.key", key.clone().unwrap_or_default()),
+                        ("ticket.title", title.clone()),
+                        ("ticket.slug", slug.clone()),
+                        ("jira.url", url.clone().unwrap_or_default()),
+                        (
+                            "project.name",
+                            home.map(|p| p.name.clone()).unwrap_or_default(),
+                        ),
+                        ("repo.id", repo_id.clone().unwrap_or_default()),
+                    ]
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v))
+                    .collect();
+                    if self.vault().resolve(&template)?.is_file() {
+                        let (c, ch) = self.create_from_template_with(&template, &path, vars)?;
+                        cursor = c;
+                        changes.extend(ch);
+                    } else {
+                        let text = format!("# {}\n\n", file_stem(&path));
+                        changes.extend(self.create_file(
                             &path,
                             Some(&crate::session::with_created_property(&text)),
-                        )?,
-                    );
+                        )?);
+                    }
+                    path
                 }
-                path
-            }
-        };
+            };
 
         // The workspace.
         let cwd = match worktree.as_ref().and_then(|(_, _, paths)| paths.first()) {
@@ -1279,7 +1307,7 @@ impl Session {
         let mut changes = self.set_properties(path, &props)?;
 
         // The first worktree is where the workspace starts.
-        let first = !has_worktrees;
+        let first = !has_worktrees || ticket.repos.is_empty();
         let cwd = paths[0].display().to_string();
         let workspace = match ticket
             .workspace
@@ -1307,6 +1335,158 @@ impl Session {
             cursor: None,
             changes,
         })
+    }
+
+    /// Takes a repo off a ticket: removes its worktree (refusing, unless
+    /// `force`, when it has uncommitted changes; the branch stays, so adding
+    /// the repo again brings the committed work back) and drops it from `repos:`. When it
+    /// was the default, the next repo becomes the default and the workspace
+    /// starts there, or in the note's folder when none is left. Returns the
+    /// workspace if it changed, and the removed worktree's path, whose
+    /// terminals the caller ends.
+    pub fn remove_ticket_repo(
+        &self,
+        path: &str,
+        repo: &str,
+        force: bool,
+    ) -> Result<RemovedTicketRepo> {
+        let config = self.config()?;
+        let ticket = self.ticket(path)?;
+        let Some(index) = ticket.repos.iter().position(|r| r.id == repo.trim()) else {
+            return Err(CoreError::NotFound(format!(
+                "{} has no worktree in {}",
+                ticket.title,
+                repo.trim()
+            )));
+        };
+        let removed = ticket.repos[index].clone();
+        let worktree = removed
+            .worktree_path
+            .as_deref()
+            .map(Path::new)
+            .filter(|wt| ticket.is_active() && wt.exists());
+        if let Some(wt) = worktree {
+            // Its commits stay on the branch, so only changes not yet
+            // committed would be lost.
+            // (`repos.yml` may no longer list the repo: whether it's dirty
+            // doesn't depend on the base branch.)
+            let base = config
+                .repo(&removed.id)
+                .map_or_else(|_| "main".to_string(), |r| r.git.base_branch.clone());
+            if !force && git::state(wt, &base).dirty {
+                return Err(CoreError::Conflict(format!(
+                    "{} not removed: it has uncommitted changes.",
+                    removed.id
+                )));
+            }
+            let location = self.repos().require(&removed.id)?;
+            git::remove_worktree(location.path(), wt, force)?;
+        }
+
+        let rest: Vec<String> = ticket
+            .repos
+            .iter()
+            .filter(|r| r.id != removed.id)
+            .map(|r| r.id.clone())
+            .collect();
+        let list = (!rest.is_empty()).then_some(Prop::List(rest));
+        let changes = self.set_properties(path, &[("repos", list), ("repo", None)])?;
+
+        let workspace = match &ticket.workspace {
+            Some(id) if index == 0 && ticket.is_active() => {
+                let cwd = ticket
+                    .repos
+                    .get(1)
+                    .and_then(|r| r.worktree_path.clone())
+                    .filter(|wt| Path::new(wt).is_dir())
+                    .unwrap_or_else(|| self.default_folder(path));
+                if self.workspaces().list().iter().any(|w| &w.id == id) {
+                    Some(self.workspaces().update(
+                        id,
+                        &crate::workspaces::WorkspaceChange {
+                            cwd: Some(&cwd),
+                            ..Default::default()
+                        },
+                    )?)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        Ok(RemovedTicketRepo {
+            ticket: self.ticket(path)?,
+            workspace,
+            worktree: worktree.map(|wt| wt.display().to_string()),
+            changes,
+        })
+    }
+
+    /// Moves every ticket note that isn't in the vault's tickets folder into
+    /// it, with its subnotes, rewriting links to them. A ticket that belonged
+    /// to a project only by sitting in its folder gets that project in
+    /// `projects:` first, so it stays in it. Folders the move leaves empty
+    /// go to the Trash.
+    pub fn gather_tickets(&self) -> Result<(Vec<MovedNote>, Vec<FileChange>)> {
+        let config = self.config()?;
+        let folder = config.tickets_folder.clone();
+        let prefix = format!("{folder}/");
+        let mut paths: Vec<String> = self
+            .tickets(&TicketFilter {
+                status: Some("all".into()),
+                ..Default::default()
+            })?
+            .into_iter()
+            .map(|t| t.path)
+            .filter(|p| !p.starts_with(&prefix))
+            .collect();
+        paths.sort();
+        let mut moved = Vec::new();
+        let mut changes = Vec::new();
+        let mut left: Vec<String> = Vec::new();
+        for path in paths {
+            if let Some(project) = config.project_of_folder(&path) {
+                let linked = linked_projects_in(&self.index(), &config, &path);
+                if !linked.contains(&project.id) {
+                    let mut values: Vec<String> = {
+                        let index = self.index();
+                        let fm = index.note(&path).and_then(|n| n.frontmatter.as_ref());
+                        fm_list(fm, "projects")
+                    };
+                    values.push(self.project_link(project, &path));
+                    changes.extend(
+                        self.set_properties(&path, &[("projects", Some(Prop::List(values)))])?,
+                    );
+                }
+            }
+            let to = self.available_path(&folder, file_stem(&path), ".md");
+            let (_, ch) = self.rename(&path, &to)?;
+            changes.extend(ch);
+            if let Some((parent, _)) = path.rsplit_once('/')
+                && !left.iter().any(|l| l == parent)
+            {
+                left.push(parent.to_string());
+            }
+            moved.push(MovedNote { from: path, to });
+        }
+        // The emptied folders, innermost first, stopping at a project's own.
+        left.sort_by_key(|f| std::cmp::Reverse(f.len()));
+        for mut dir in left {
+            loop {
+                let full = self.vault().root().join(&dir);
+                let empty = std::fs::read_dir(&full)
+                    .is_ok_and(|entries| entries.flatten().all(|e| e.file_name() == ".DS_Store"));
+                if !empty || config.projects.iter().any(|p| p.folder == dir) {
+                    break;
+                }
+                changes.extend(self.delete(&dir)?);
+                match dir.rsplit_once('/') {
+                    Some((parent, _)) => dir = parent.to_string(),
+                    None => break,
+                }
+            }
+        }
+        Ok((moved, changes))
     }
 
     /// Makes one of the ticket's repos its default: first in `repos:`, and
@@ -2260,7 +2440,6 @@ mod tests {
             p.overview.as_deref(),
             Some("Projects/Test Project/Test Project.md")
         );
-        assert_eq!(p.work_folder, "Projects/Test Project/Work");
         assert!(changes.iter().any(|c| c.path == "Projects/Test Project"));
         assert!(
             t.read("Projects/Test Project/Test Project.md")
@@ -2361,7 +2540,7 @@ mod tests {
         assert_eq!(fs::read_to_string(copied.join(".env")).unwrap(), "PORT=1\n");
         assert!(copied.join("config/local/keys.json").is_file());
         assert!(!copied.join("CLAUDE.local.md").exists());
-        assert_eq!(t.path, "Projects/Acme/Work/TEAM-200 Fix signup.md");
+        assert_eq!(t.path, "Tickets/TEAM-200 Fix signup.md");
         assert_eq!(t.key.as_deref(), Some("TEAM-200"));
         assert_eq!(
             t.url.as_deref(),
@@ -2460,11 +2639,11 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
-        assert_eq!(adhoc.ticket.path, "Work/Try new cache.md");
+        assert_eq!(adhoc.ticket.path, "Tickets/Try new cache.md");
         assert_eq!(adhoc.ticket.branch.as_deref(), Some("try-new-cache"));
         assert!(adhoc.ticket.projects.is_empty() && adhoc.ticket.key.is_none());
 
-        // No repo: a note and a workspace in the project folder.
+        // No repo: a note in the tickets folder, a workspace in the project's.
         let plain = s
             .session
             .create_ticket(&NewTicket {
@@ -2474,7 +2653,8 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
-        assert_eq!(plain.ticket.path, "Projects/Acme/Work/Plan offsite.md");
+        assert_eq!(plain.ticket.path, "Tickets/Plan offsite.md");
+        assert_eq!(plain.ticket.projects, ["acme"]);
         assert!(plain.ticket.worktree.is_none());
         assert!(
             plain
@@ -2531,7 +2711,7 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
-        assert_eq!(adopted.ticket.path, "Work/TEAM-300 Hotfix.md");
+        assert_eq!(adopted.ticket.path, "Tickets/TEAM-300 Hotfix.md");
         assert_eq!(adopted.ticket.worktree.as_deref(), Some("TEAM-300-hotfix"));
         assert!(adopted.setup.is_empty());
         assert!(s.session.stray_worktrees().unwrap().is_empty());
@@ -2934,5 +3114,178 @@ mod tests {
             })
             .unwrap();
         assert!(Path::new(created.ticket.worktree_path.as_deref().unwrap()).is_dir());
+    }
+
+    #[test]
+    fn repos_are_removed_from_a_ticket() {
+        let s = Setup::new();
+        s.locate();
+        let infra = s.infra();
+        let created = s
+            .session
+            .create_ticket(&NewTicket {
+                repos: vec!["acme-platform".into(), "acme-infra".into()],
+                ..new_ticket("TEAM-900", "Both repos")
+            })
+            .unwrap();
+        let path = created.ticket.path.clone();
+        let ws = created.workspace.unwrap();
+        let web = s.worktrees().join("TEAM-900-both-repos");
+        let net = infra.join("TEAM-900-both-repos");
+
+        // Work that would be lost stops it, unless forced.
+        fs::write(web.join("scratch.txt"), "x").unwrap();
+        let err = s
+            .session
+            .remove_ticket_repo(&path, "acme-platform", false)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("acme-platform not removed: it has uncommitted changes"),
+            "{err}"
+        );
+        assert!(web.is_dir());
+        assert!(s.session.remove_ticket_repo(&path, "nope", false).is_err());
+
+        // The default goes: the next repo is the default, and the workspace
+        // starts there. The branch stays.
+        let removed = s
+            .session
+            .remove_ticket_repo(&path, "acme-platform", true)
+            .unwrap();
+        assert!(!web.exists() && net.is_dir());
+        assert_eq!(removed.worktree.as_deref(), Some(web.to_str().unwrap()));
+        let ids: Vec<_> = removed.ticket.repos.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["acme-infra"]);
+        assert!(s.read(&path).contains("repos: [acme-infra]\n"));
+        let moved = removed.workspace.unwrap();
+        assert_eq!(moved.id, ws.id);
+        assert_eq!(moved.cwd, net.display().to_string());
+        let branch = std::process::Command::new("git")
+            .args([
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                "refs/heads/TEAM-900-both-repos",
+            ])
+            .current_dir(&s.repo)
+            .status()
+            .unwrap();
+        assert!(branch.success(), "the branch stays");
+
+        // The last one: no `repos:` left, the workspace in the note's folder,
+        // and adding a repo back makes it the default again.
+        let removed = s
+            .session
+            .remove_ticket_repo(&path, "acme-infra", false)
+            .unwrap();
+        assert!(!net.exists() && removed.ticket.repos.is_empty());
+        let text = s.read(&path);
+        assert!(!text.contains("repos:"), "{text}");
+        assert!(text.contains("branch: TEAM-900-both-repos"), "{text}");
+        assert!(removed.workspace.unwrap().cwd.ends_with("vault/Tickets"));
+        let back = s.session.add_ticket_repo(&path, "acme-platform").unwrap();
+        assert!(web.is_dir() && !web.join("scratch.txt").exists());
+        assert_eq!(
+            back.workspace.unwrap().cwd,
+            fs::canonicalize(&web).unwrap().display().to_string()
+        );
+    }
+
+    #[test]
+    fn tickets_are_gathered_into_the_tickets_folder() {
+        let s = Setup::new();
+        // Belongs to Acme only by its folder; its subnote goes with it.
+        let only_folder = "Projects/Acme/Work/TEAM-50 Old.md";
+        fs::write(
+            s.session.vault().root().join(only_folder),
+            "---\ntype: ticket\nticket: TEAM-50\nstatus: closed\n---\n# Old\n",
+        )
+        .unwrap();
+        fs::write(
+            s.session
+                .vault()
+                .root()
+                .join("Projects/Acme/Work/TEAM-50 Old.web.md"),
+            "web notes\n",
+        )
+        .unwrap();
+        fs::write(
+            s.session.vault().root().join("Welcome 2.md"),
+            "See [[TEAM-50 Old]] and [[Projects/Acme/Work/TEAM-123 Fix login|login]].\n",
+        )
+        .unwrap();
+        s.session.apply_external(&[
+            only_folder.into(),
+            "Projects/Acme/Work/TEAM-50 Old.web.md".into(),
+            "Welcome 2.md".into(),
+        ]);
+        let before = s
+            .session
+            .note_projects(&s.session.config().unwrap(), only_folder);
+        assert_eq!(before, ["acme"]);
+
+        let (moved, _) = s.session.gather_tickets().unwrap();
+        let mut pairs: Vec<_> = moved
+            .iter()
+            .map(|m| (m.from.as_str(), m.to.as_str()))
+            .collect();
+        pairs.sort();
+        assert_eq!(
+            pairs,
+            [
+                (
+                    "Projects/Acme/Work/TEAM-123 Fix login.md",
+                    "Tickets/TEAM-123 Fix login.md"
+                ),
+                (
+                    "Projects/Acme/Work/TEAM-50 Old.md",
+                    "Tickets/TEAM-50 Old.md"
+                ),
+            ]
+        );
+        let root = s.session.vault().root().to_path_buf();
+        assert!(root.join("Tickets/TEAM-50 Old.web.md").is_file());
+        assert!(
+            !root.join("Projects/Acme/Work").exists(),
+            "emptied folder goes"
+        );
+        assert!(root.join("Projects/Acme").is_dir(), "the project's stays");
+
+        // Still in Acme, now by link; the one already linked is unchanged.
+        let config = s.session.config().unwrap();
+        assert_eq!(
+            s.session.note_projects(&config, "Tickets/TEAM-50 Old.md"),
+            ["acme"]
+        );
+        assert!(
+            s.read("Tickets/TEAM-50 Old.md")
+                .contains("projects: [\"[[Acme]]\"]")
+        );
+        let login = s.read("Tickets/TEAM-123 Fix login.md");
+        assert_eq!(login.matches("[[Acme]]").count(), 1, "{login}");
+        assert_eq!(
+            s.session
+                .note_projects(&config, "Tickets/TEAM-123 Fix login.md"),
+            ["acme"]
+        );
+        // Links to them still resolve.
+        let welcome = s.read("Welcome 2.md");
+        assert!(welcome.contains("[[TEAM-50 Old]]"), "{welcome}");
+        assert!(
+            welcome.contains("[[TEAM-123 Fix login|login]]"),
+            "{welcome}"
+        );
+        let index = s.session.index();
+        assert_eq!(
+            index
+                .resolve("TEAM-123 Fix login", "Welcome 2.md")
+                .as_deref(),
+            Some("Tickets/TEAM-123 Fix login.md")
+        );
+        drop(index);
+
+        // Nothing left to move.
+        assert!(s.session.gather_tickets().unwrap().0.is_empty());
     }
 }

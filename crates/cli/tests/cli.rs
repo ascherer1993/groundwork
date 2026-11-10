@@ -808,14 +808,14 @@ fn tickets_from_create_to_close() {
     assert_eq!(
         created,
         format!(
-            "Projects/Acme/Work/TEAM-7 Fix signup.md\n  branch: TEAM-7-fix-signup\n  worktree: {} [acme-platform]\n",
+            "Tickets/TEAM-7 Fix signup.md\n  branch: TEAM-7-fix-signup\n  worktree: {} [acme-platform]\n",
             wt.display()
         )
     );
     assert!(wt.join("apps/web/index.js").is_file());
     let list = v.ok(&["ticket", "list", "--project", "Acme"]);
     assert!(
-        list.contains("TEAM-7 Fix signup · Projects/Acme/Work/TEAM-7 Fix signup.md"),
+        list.contains("TEAM-7 Fix signup · Tickets/TEAM-7 Fix signup.md"),
         "{list}"
     );
 
@@ -885,7 +885,7 @@ fn tickets_from_create_to_close() {
     let switched = v.ok(&["ticket", "default-repo", "TEAM-7 Fix signup", "acme-infra"]);
     assert!(switched.contains("[acme-infra] (default)"), "{switched}");
     assert!(
-        v.read("Projects/Acme/Work/TEAM-7 Fix signup.md")
+        v.read("Tickets/TEAM-7 Fix signup.md")
             .contains("repos: [acme-infra, acme-platform]\n")
     );
     let (ok, _, err) = v.run(&["ticket", "close", "TEAM-7 Fix signup"]);
@@ -899,7 +899,7 @@ fn tickets_from_create_to_close() {
     );
     assert!(!wt.exists() && !infra_wt.exists());
     assert!(
-        v.read("Projects/Acme/Work/TEAM-7 Fix signup.md")
+        v.read("Tickets/TEAM-7 Fix signup.md")
             .contains("status: closed\n")
     );
     assert!(!v.ok(&["ticket", "list"]).contains("TEAM-7"));
@@ -910,6 +910,29 @@ fn tickets_from_create_to_close() {
 
     v.ok(&["ticket", "restore", "TEAM-7 Fix signup", "--no-setup"]);
     assert!(wt.is_dir() && infra_wt.is_dir());
+
+    // A repo comes off; its branch stays for adding it back.
+    let removed = v.ok(&["ticket", "remove-repo", "TEAM-7 Fix signup", "acme-infra"]);
+    assert!(
+        removed.starts_with(&format!("removed {}\n", infra_wt.display())),
+        "{removed}"
+    );
+    assert!(!infra_wt.exists() && wt.is_dir());
+    assert!(
+        v.read("Tickets/TEAM-7 Fix signup.md")
+            .contains("repos: [acme-platform]\n")
+    );
+
+    // The fixture's ticket, still in its project's work folder, moves.
+    let gathered = v.ok(&["ticket", "gather"]);
+    assert_eq!(
+        gathered,
+        "Projects/Acme/Work/TEAM-123 Fix login.md → Tickets/TEAM-123 Fix login.md\n"
+    );
+    assert_eq!(
+        v.ok(&["ticket", "gather"]),
+        "every ticket is already in its folder\n"
+    );
 }
 
 #[test]

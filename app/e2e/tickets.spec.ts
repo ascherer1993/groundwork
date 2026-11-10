@@ -66,7 +66,7 @@ const BILLING = join(CODE, "billing");
   git(BILLING, "commit", "-q", "-m", "first");
 }
 
-const TICKET = "Projects/Acme/Work/TEAM-200 Fix signup.md";
+const TICKET = "Tickets/TEAM-200 Fix signup.md";
 
 test.beforeEach(async ({ page }) => {
   page.on("pageerror", (e) => console.log("pageerror:", e.message));
@@ -331,11 +331,34 @@ test("a ticket spans repos in one workspace; its subnotes follow it; the Vault w
   await expectFile(VAULT, TICKET, (t) => t.includes("repos: [acme-infra, acme-platform, billing]"));
   await expect(bar(page).getByRole("button", { name: "Repos" })).toContainText("Acme infra");
 
-  // A subnote follows the ticket's workspace, not the project's.
-  writeFileSync(
-    join(VAULT, "Projects/Acme/Work/TEAM-200 Fix signup.infra.md"),
-    "# The infra part\n",
+  // Repos and projects are picked in the properties, not typed. Removing a
+  // repo takes its worktree away (the branch stays).
+  const props = page.locator(`${NOTES} .cm-properties`).first();
+  await props.locator(".property-value", { hasText: "billing" }).hover();
+  await props.getByRole("button", { name: "Remove billing" }).click();
+  const confirm = page.getByRole("dialog", { name: /Remove billing from/ });
+  await expect(confirm).toContainText("The branch TEAM-200-fix-signup stays");
+  await confirm.getByRole("button", { name: "Remove repo" }).click();
+  await expectFile(VAULT, TICKET, (t) => t.includes("repos: [acme-infra, acme-platform]\n"));
+  await expect
+    .poll(() => existsSync(join(CODE, "billing-worktrees", "TEAM-200-fix-signup")))
+    .toBe(false);
+  await props.locator(`.property[data-key="projects"] .property-value`).hover();
+  await props.getByRole("button", { name: "Remove [[Acme]]" }).click();
+  await expectFile(VAULT, TICKET, (t) => t.includes("projects: []\n"));
+  await props.getByRole("button", { name: "Add a project to projects" }).click();
+  const picker = page.getByRole("dialog", { name: "Add a project" });
+  await expect(picker.getByRole("option")).toHaveText([/Acme\s*Projects\/Acme/]);
+  await page.keyboard.press("Enter");
+  await expectFile(VAULT, TICKET, (t) => t.includes('projects: ["[[Acme]]"]\n'));
+  await page.keyboard.press("Escape");
+  // The workspace shows by name, not its id.
+  await expect(props.locator(".property").filter({ hasText: "workspace" })).toContainText(
+    "TEAM-200 Fix signup",
   );
+
+  // A subnote follows the ticket's workspace, not the project's.
+  writeFileSync(join(VAULT, "Tickets/TEAM-200 Fix signup.infra.md"), "# The infra part\n");
   await quickOpen(page, "Jane Doe");
   await expect(header.locator(".terminals-name")).toHaveText("Jane Doe");
   await quickOpen(page, "TEAM-200 Fix signup.infra");

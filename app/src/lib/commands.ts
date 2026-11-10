@@ -31,10 +31,12 @@ import {
   addRepo,
   addTicketRepo,
   closeTicket,
+  gatherTickets,
   locateRepo,
   noteWorkspace,
   openProjectView,
   pickAction,
+  removeTicketRepo,
   repoName,
   setDefaultTicketRepo,
   showSplit,
@@ -332,6 +334,17 @@ function commands(): Command[] {
       run: () => addTicketRepo(ws.activePath!),
     },
     {
+      id: "remove-ticket-repo",
+      label: "Remove a repo from this ticket…",
+      when: () => (ticketAt(ws.activePath)?.repos.length ?? 0) > 0,
+      run: () => pickRepoToRemove(ws.activePath!),
+    },
+    {
+      id: "gather-tickets",
+      label: "Move tickets into the tickets folder…",
+      run: () => void gatherTickets(),
+    },
+    {
       id: "default-ticket-repo",
       label: "Change this ticket’s default repo…",
       when: () => (ticketAt(ws.activePath)?.repos.length ?? 0) > 1,
@@ -531,6 +544,20 @@ function pickDefaultRepo(path: string) {
       label: i === 0 ? `${repoName(r.id)} ★` : repoName(r.id),
       detail: r.worktreePath ?? undefined,
       run: () => (i === 0 ? undefined : setDefaultTicketRepo(path, r.id)),
+    })),
+  });
+}
+
+function pickRepoToRemove(path: string) {
+  const ticket = ticketAt(path);
+  if (!ticket) return;
+  useUi.getState().openPalette({
+    placeholder: `Remove a repo from “${ticket.title}”…`,
+    items: ticket.repos.map((r, i) => ({
+      id: r.id,
+      label: i === 0 && ticket.repos.length > 1 ? `${repoName(r.id)} ★` : repoName(r.id),
+      detail: r.worktreePath ?? undefined,
+      run: () => removeTicketRepo(path, r.id),
     })),
   });
 }

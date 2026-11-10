@@ -664,6 +664,21 @@ pub enum Request {
     /// (its first, for a ticket with none). Setup is for that worktree only.
     #[serde(rename = "ticket.addRepo")]
     TicketAddRepo { path: String, repo: String },
+    /// → `RemovedTicketRepo`: removes its worktree in `repo` (refusing,
+    /// unless `force`, when it has uncommitted changes) and takes the repo off the
+    /// ticket. The branch stays. Ends terminals working in the worktree.
+    #[serde(rename = "ticket.removeRepo")]
+    TicketRemoveRepo {
+        path: String,
+        repo: String,
+        #[serde(default)]
+        #[ts(optional)]
+        force: Option<bool>,
+    },
+    /// → `MovedNote[]`: moves every ticket note outside the vault's tickets
+    /// folder into it, keeping the projects its old folder gave it.
+    #[serde(rename = "ticket.gather")]
+    TicketGather,
     /// → `Ticket`: makes one of its repos the default, where its workspace
     /// starts.
     #[serde(rename = "ticket.setDefaultRepo")]

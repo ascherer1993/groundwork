@@ -217,7 +217,7 @@ A typical flow: build the page, ask the user to open it in Groundwork and tell y
 
 ## Projects, repos and tickets
 
-- **A project** is any folder with a `.groundwork.yml` (name, overview note, work folder, the `code` it uses). Make one with `groundwork project create`. A note belongs to the projects linked in its `projects:` frontmatter (`projects: ["[[Acme]]"]`, links to overview notes) plus the project folder it's in.
+- **A project** is any folder with a `.groundwork.yml` (name, overview note, the `code` it uses). Make one with `groundwork project create`. A note belongs to the projects linked in its `projects:` frontmatter (`projects: ["[[Acme]]"]`, links to overview notes) plus the project folder it's in.
 - **Repos** are defined once in `.groundwork/repos.yml`, with optional components (a part of a monorepo with its own path, setup, commands and docs). Code is named `repo` or `repo:component`. Where a repo is checked out is per machine: `groundwork repo locate`.
 - **A ticket** is a note with `type: ticket` frontmatter (`ticket`, `jira`, `projects`, `code`, `repos`, `worktree`, `branch`, `status`, `workspace`; older tickets have `repo` instead of `repos`). It usually has a git worktree in each repo it touches, all on one branch with one folder name, and one workspace in the app whose terminals open in any of them. The first of `repos` is the default, where the workspace starts.
 - **Find your bearings with `groundwork context`** before working on code or a ticket: run in a worktree, it names the ticket, its projects, the components involved with their commands and docs to read first, the actions, and notes worth reading. The repo's own `CLAUDE.md` and READMEs stay the source of truth for how its code works.
@@ -232,7 +232,9 @@ groundwork repo locate <repo> <path> [--worktrees <dir>]
 groundwork repo add <checkout> [--name "Billing API"] [--worktrees <dir>]   # a repo not in repos.yml yet
 groundwork ticket create [--key INT-123|<url>] [--title "Fix login"] [--slug fix-login] [--project <p>]... [--code repo:component]... [--repo <r>]... [--note <existing note>] [--no-worktree] [--no-setup]
 groundwork ticket add-repo <note> <repo> [--no-setup]   # a worktree in another repo, on the ticket's branch
+groundwork ticket remove-repo <note> <repo> [--force]  # remove that worktree (the branch stays); refuses with uncommitted changes
 groundwork ticket default-repo <note> <repo>            # where its workspace's terminals start
+groundwork ticket gather                                # move ticket notes kept in project folders into Tickets/
 groundwork ticket list [--repo r] [--project p] [--status active|closed|all] [--component repo:c]
 groundwork ticket show <note>          # details, each worktree, and their git state
 groundwork ticket close <note> [--force]   # removes every worktree; refuses if work would be lost
@@ -241,9 +243,9 @@ groundwork ticket strays               # worktrees without a ticket note (adopt 
 groundwork code who <path|repo:path>   # components, projects and open tickets touching it
 ```
 
-The first project in `--project` is the ticket's home: its note goes in that project's work folder. A ticket that affects two projects gets both. Ask the user which projects and components a ticket touches when the request doesn't say.
+Every ticket note goes in the vault's tickets folder (`Tickets/`), whatever its projects; never move one into a project folder. The first project in `--project` is the ticket's home. A ticket that affects two projects gets both, and projects can be added or taken out of its `projects:` later. Ask the user which projects and components a ticket touches when the request doesn't say.
 
-Run in one of a multi-repo ticket's worktrees, `groundwork context` lists every worktree's path; read the others' code there when the repos meet (an API contract, a shared schema), asking for access with `/add-dir` if you don't have it. A ticket that changes several repos gets a worktree in each: pass every `--repo` (the first is the default), or `--code` components from each repo, which picks the repos from them. When a ticket turns out to need another repo later, use `ticket add-repo`, never a second ticket. Notes about one repo's part can be subnotes of the ticket (`INT-123 Fix login.web.md`, beside the ticket), which share the ticket's workspace.
+Run in one of a multi-repo ticket's worktrees, `groundwork context` lists every worktree's path; read the others' code there when the repos meet (an API contract, a shared schema), asking for access with `/add-dir` if you don't have it. A ticket that changes several repos gets a worktree in each: pass every `--repo` (the first is the default), or `--code` components from each repo, which picks the repos from them. When a ticket turns out to need another repo later, use `ticket add-repo`, never a second ticket; when it no longer needs one, `ticket remove-repo`. A ticket always has exactly one workspace. Notes about one repo's part can be subnotes of the ticket (`INT-123 Fix login.web.md`, beside the ticket), which share the ticket's workspace.
 
 ## Asking the user
 

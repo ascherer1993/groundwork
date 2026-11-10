@@ -15,7 +15,6 @@ const project = (folder: string, overview: string | null): ProjectInfo => ({
   name: folder,
   folder,
   overview,
-  workFolder: `${folder}/Work`,
   code: [],
 });
 

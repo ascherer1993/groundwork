@@ -17,7 +17,13 @@ import {
 } from "../markdown/syntax";
 import { notePath } from "./context";
 import { attachImage } from "./images";
-import { attachPropertyEditing, PEOPLE_PROPERTIES } from "./properties";
+import {
+  ADD_LABEL,
+  attachPropertyEditing,
+  displayValue,
+  missingTicketRows,
+  pickKind,
+} from "./properties";
 
 /**
  * Fills in a widget's links, embeds and diagrams. They change its height
@@ -383,8 +389,9 @@ export class PropertiesWidget extends WidgetType {
 
 /**
  * Renders frontmatter YAML as a two-column table; values may contain links.
- * `editable` adds the controls for list properties people are picked into
- * (see `./properties`), for the editor's panel.
+ * `editable` adds the controls for list properties that are picked rather
+ * than typed (people, projects, a ticket's repos; see `./properties`), and a
+ * ticket's empty projects and repos rows, for the editor's panel.
  */
 export function propertiesHtml(yaml: string, editable = false): string {
   let data: unknown;
@@ -396,24 +403,30 @@ export function propertiesHtml(yaml: string, editable = false): string {
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     return `<div class="properties-empty">No properties</div>`;
   }
-  const rows = Object.entries(data as Record<string, unknown>).map(([key, value]) => {
+  const record = data as Record<string, unknown>;
+  const entries: [string, unknown][] = Object.entries(record);
+  if (editable) for (const key of missingTicketRows(record)) entries.push([key, null]);
+  const rows = entries.map(([key, value]) => {
     const values = Array.isArray(value) ? value : [value];
-    const picked = editable && PEOPLE_PROPERTIES.has(key);
+    const kind = editable ? pickKind(key, record) : null;
     const cells = values
       .map((v, i) => ({ v, i }))
       .filter(({ v }) => v !== null && v !== undefined && v !== "")
       .map(({ v, i }) => {
-        const remove = picked
-          ? `<button type="button" class="property-remove" data-index="${i}" title="Remove" aria-label="Remove ${escapeHtml(formatValue(v))}">×</button>`
+        const text = displayValue(key, kind, formatValue(v));
+        const remove = kind
+          ? `<button type="button" class="property-remove" data-index="${i}" title="Remove" aria-label="Remove ${escapeHtml(text)}">×</button>`
           : "";
-        return `<span class="property-value">${renderInline(formatValue(v))}${remove}</span>`;
+        const shown = text === formatValue(v) ? renderInline(text) : escapeHtml(text);
+        return `<span class="property-value">${shown}${remove}</span>`;
       })
       .join("");
-    const add = picked
-      ? `<button type="button" class="property-add" data-key="${escapeHtml(key)}" title="Add a person" aria-label="Add a person to ${escapeHtml(key)}">+</button>`
+    const add = kind
+      ? `<button type="button" class="property-add" title="${ADD_LABEL[kind]}" aria-label="${ADD_LABEL[kind]} to ${escapeHtml(key)}">+</button>`
       : "";
     const empty = add ? "" : '<span class="muted">—</span>';
-    return `<div class="property"><div class="property-key">${escapeHtml(key)}</div><div class="property-values">${cells || empty}${add}</div></div>`;
+    const attrs = kind ? ` data-key="${escapeHtml(key)}" data-kind="${kind}"` : "";
+    return `<div class="property"${attrs}><div class="property-key">${escapeHtml(key)}</div><div class="property-values">${cells || empty}${add}</div></div>`;
   });
   return `<div class="properties-title">Properties</div>${rows.join("")}`;
 }

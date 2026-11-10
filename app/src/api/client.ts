@@ -23,6 +23,8 @@ import type { InboxItem } from "./generated/InboxItem";
 import type { RepoInfo } from "./generated/RepoInfo";
 import type { RepoLocation } from "./generated/RepoLocation";
 import type { StrayWorktree } from "./generated/StrayWorktree";
+import type { RemovedTicketRepo } from "./generated/RemovedTicketRepo";
+import type { MovedNote } from "./generated/MovedNote";
 import type { Ticket } from "./generated/Ticket";
 import type { TicketFilter } from "./generated/TicketFilter";
 import type { CreatedNote } from "./generated/CreatedNote";
@@ -169,6 +171,8 @@ interface Results {
   "ticket.close": Ticket;
   "ticket.restore": CreatedTicket;
   "ticket.addRepo": CreatedTicket;
+  "ticket.removeRepo": RemovedTicketRepo;
+  "ticket.gather": MovedNote[];
   "ticket.setDefaultRepo": Ticket;
   "ticket.strays": StrayWorktree[];
   "context.get": Context;
@@ -347,6 +351,9 @@ export const api = {
   closeTicket: (path: string, force?: boolean) => call("ticket.close", { path, force }),
   restoreTicket: (path: string) => call("ticket.restore", { path }),
   addTicketRepo: (path: string, repo: string) => call("ticket.addRepo", { path, repo }),
+  removeTicketRepo: (path: string, repo: string, force?: boolean) =>
+    call("ticket.removeRepo", { path, repo, force }),
+  gatherTickets: () => call("ticket.gather"),
   setDefaultTicketRepo: (path: string, repo: string) =>
     call("ticket.setDefaultRepo", { path, repo }),
   strayWorktrees: () => call("ticket.strays"),

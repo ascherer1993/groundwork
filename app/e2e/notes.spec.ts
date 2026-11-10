@@ -61,6 +61,8 @@ test("people are picked from the contacts into the properties", async ({ page })
     note,
     (t) => t === '---\ntype: event\n# who came\npeople: ["[[Sam Lee]]"]\n---\nNotes.\n',
   );
+  // The panel stays a panel, rather than turning into the YAML.
+  await expect(props.getByRole("button", { name: "Add a person to people" })).toBeVisible();
   rmSync(join(VAULT, note));
 });
 

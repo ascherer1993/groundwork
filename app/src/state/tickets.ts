@@ -334,6 +334,80 @@ export async function addRepo(): Promise<string | null> {
   }
 }
 
+/**
+ * Takes a repo off a ticket, after asking: its worktree goes and the
+ * terminals working in it end; the branch stays, so adding the repo again
+ * brings its commits back. Uncommitted changes need a second, explicit yes.
+ */
+export async function removeTicketRepo(path: string, repo: string): Promise<void> {
+  const ticket = ticketAt(path);
+  const name = repoName(repo);
+  const worktree = ticket?.repos.find((r) => r.id === repo)?.worktreePath;
+  const active = ticket?.status !== "closed";
+  const ok = await confirmDialog({
+    title: `Remove ${name} from “${ticket?.title ?? path}”?`,
+    message:
+      active && worktree
+        ? `Its worktree is removed and terminals working in it end. The branch ${ticket?.branch ?? ""} stays, so adding ${name} again brings its commits back.`
+        : `${name} is taken off the ticket.`,
+    confirmLabel: "Remove repo",
+  });
+  if (!ok) return;
+  let force = false;
+  for (;;) {
+    try {
+      const removed = await api.removeTicketRepo(path, repo, force);
+      await Promise.all([useTickets.getState().load(), useWorkspaces.getState().refresh()]);
+      useUi.getState().notify(`Removed ${name} from “${removed.ticket.title}”`);
+      return;
+    } catch (err) {
+      const text = message(err);
+      if (!force && /not removed: it has uncommitted changes/.test(text)) {
+        force = await confirmDialog({
+          title: `${name} has uncommitted changes`,
+          message: "They're lost if its worktree is removed. Remove it anyway?",
+          confirmLabel: "Remove anyway",
+          danger: true,
+        });
+        if (force) continue;
+        return;
+      }
+      useUi.getState().notify(text);
+      return;
+    }
+  }
+}
+
+/**
+ * Moves ticket notes kept in project folders into the vault's tickets
+ * folder, after asking. Links to them are rewritten, and each keeps the
+ * projects its old folder gave it.
+ */
+export async function gatherTickets(): Promise<void> {
+  const ok = await confirmDialog({
+    title: "Move tickets into the tickets folder?",
+    message:
+      "Ticket notes in other folders (such as a project’s Work folder) move into the vault’s tickets folder, with their subnotes. Links to them are updated, and a ticket that belonged to a project only by its folder gets that project in its properties. Folders left empty go to the Trash.",
+    confirmLabel: "Move tickets",
+  });
+  if (!ok) return;
+  try {
+    const moved = await api.gatherTickets();
+    await useTickets.getState().load();
+    useUi
+      .getState()
+      .notify(
+        moved.length === 0
+          ? "Every ticket is already in the tickets folder"
+          : moved.length === 1
+            ? `Moved “${moved[0]!.from}” to ${moved[0]!.to}`
+            : `Moved ${moved.length} tickets into the tickets folder`,
+      );
+  } catch (err) {
+    useUi.getState().notify(message(err));
+  }
+}
+
 /** Makes one of a ticket's repos its default, where its workspace's terminals start. */
 export async function setDefaultTicketRepo(path: string, repo: string): Promise<void> {
   try {
@@ -470,6 +544,11 @@ export function repoMenuItems(ticket: Ticket) {
       });
   if (ticket.status !== "closed")
     items.push({ label: "Add repo…", action: () => void addTicketRepo(ticket.path) });
+  for (const r of repos)
+    items.push({
+      label: `Remove ${repoName(r.id)}…`,
+      action: () => void removeTicketRepo(ticket.path, r.id),
+    });
   return items;
 }
 
