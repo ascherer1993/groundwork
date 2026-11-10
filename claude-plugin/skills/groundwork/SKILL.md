@@ -243,7 +243,7 @@ groundwork code who <path|repo:path>   # components, projects and open tickets t
 
 The first project in `--project` is the ticket's home: its note goes in that project's work folder. A ticket that affects two projects gets both. Ask the user which projects and components a ticket touches when the request doesn't say.
 
-A ticket that changes several repos gets a worktree in each: pass every `--repo` (the first is the default), or `--code` components from each repo, which picks the repos from them. When a ticket turns out to need another repo later, use `ticket add-repo`, never a second ticket. Notes about one repo's part can be subnotes of the ticket (`INT-123 Fix login.web.md`, beside the ticket), which share the ticket's workspace.
+Run in one of a multi-repo ticket's worktrees, `groundwork context` lists every worktree's path; read the others' code there when the repos meet (an API contract, a shared schema), asking for access with `/add-dir` if you don't have it. A ticket that changes several repos gets a worktree in each: pass every `--repo` (the first is the default), or `--code` components from each repo, which picks the repos from them. When a ticket turns out to need another repo later, use `ticket add-repo`, never a second ticket. Notes about one repo's part can be subnotes of the ticket (`INT-123 Fix login.web.md`, beside the ticket), which share the ticket's workspace.
 
 ## Asking the user
 

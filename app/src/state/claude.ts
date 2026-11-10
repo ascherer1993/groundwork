@@ -6,6 +6,7 @@
  */
 import { api } from "../api/client";
 import { useTerminals } from "./terminals";
+import { addDirsFor } from "./tickets";
 import { formDialog, type MenuEntry, promptDialog, useUi } from "./ui";
 import { message, useVault } from "./vault";
 import { type TerminalParams, useWorkspace } from "./workspace";
@@ -46,9 +47,10 @@ export async function forkSession(terminal: string) {
   const session = sessionOf(terminal);
   if (!session) return;
   const cwd = useTerminals.getState().byId[terminal]?.cwd ?? paramsOf(terminal)?.cwd;
+  const dirs = addDirsFor(cwd, tabOf(terminal)?.area);
   await useWorkspace.getState().openTerminal(cwd, {
     beside: terminal,
-    run: `claude --resume ${session} --fork-session`,
+    run: `claude --resume ${session} --fork-session${dirs}`,
   });
 }
 
@@ -58,7 +60,9 @@ export async function resumeConversation(terminal: string) {
   if (!session) return;
   useWorkspace.getState().showTerminal(terminal);
   try {
-    await api.terminalInput(terminal, `claude --resume ${session}\r`);
+    const cwd = useTerminals.getState().byId[terminal]?.cwd ?? paramsOf(terminal)?.cwd;
+    const dirs = addDirsFor(cwd, tabOf(terminal)?.area);
+    await api.terminalInput(terminal, `claude --resume ${session}${dirs}\r`);
   } catch (err) {
     useUi.getState().notify(message(err));
   }
@@ -132,11 +136,13 @@ export async function launchAgent(
     opts.inputs.forEach((input, i) => (vars[`input.${input.name}`] = values[i]?.trim() ?? ""));
   }
   try {
-    const command = await api.agentCommand(which, vars);
+    const cwd = opts.cwd ?? useVault.getState().vault?.path;
+    const dirs = addDirsFor(cwd, opts.workspace);
+    const command = (await api.agentCommand(which, vars)).replace(/^claude /, `claude${dirs} `);
     const ws = useWorkspace.getState();
     if (opts.workspace && ws.docks[opts.workspace]) ws.showWorkspace(opts.workspace);
     else if (ws.view === "note") ws.setView("split");
-    await ws.openTerminal(opts.cwd ?? useVault.getState().vault?.path, { run: command });
+    await ws.openTerminal(cwd, { run: command });
     return true;
   } catch (err) {
     useUi.getState().notify(message(err));

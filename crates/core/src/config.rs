@@ -102,6 +102,10 @@ pub struct Repo {
     pub name: Option<String>,
     pub description: Option<String>,
     pub git: GitSettings,
+    /// Files or folders git ignores (`.env`, `CLAUDE.local.md`) copied from
+    /// the main checkout into every new worktree, before setup; missing ones
+    /// are skipped.
+    pub copy: Vec<String>,
     /// Run at the root of every new worktree.
     pub setup: Vec<String>,
     /// Where agents should start reading, relative to the repo.

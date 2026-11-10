@@ -1218,6 +1218,7 @@ impl Session {
                 return Err(e);
             }
             made.push((location.path().to_path_buf(), path.clone()));
+            copy_ignored(repo, location.path(), path);
             setup.extend(setup_steps(config, repo, code, &location.path, path));
         }
         Ok((planned.into_iter().map(|(_, _, p)| p).collect(), setup))
@@ -1722,6 +1723,26 @@ impl Session {
                 source: "built-in".into(),
             });
         }
+        // A ticket in several repos: all its worktrees in one window, each
+        // with its own changes in Source Control.
+        let on_disk: Vec<&String> = ticket
+            .iter()
+            .flat_map(|t| &t.repos)
+            .filter_map(|r| r.worktree_path.as_ref())
+            .filter(|p| Path::new(p).is_dir())
+            .collect();
+        if on_disk.len() > 1 {
+            let folders: Vec<String> = on_disk.iter().map(|p| shell_quote(p)).collect();
+            actions.push(Action {
+                id: "open-vscode-ticket".into(),
+                label: "Open ticket in VS Code".into(),
+                kind: "shell".into(),
+                run: format!("code -n {}", folders.join(" ")),
+                inputs: Vec::new(),
+                cwd: on_disk[0].clone(),
+                source: "built-in".into(),
+            });
+        }
         // A ticket's other worktrees.
         for r in ticket.iter().flat_map(|t| &t.repos) {
             let Some(wt) = r.worktree_path.as_ref().filter(|p| Path::new(p).is_dir()) else {
@@ -1993,6 +2014,42 @@ impl Session {
             return Ok(Vec::new());
         }
         Ok(self.write_file(path, &updated)?.1)
+    }
+}
+
+/// Copies the repo's `copy:` files and folders from its checkout into a new
+/// worktree, leaving anything already there. Missing ones, and paths that
+/// would leave the checkout, are skipped.
+fn copy_ignored(repo: &Repo, checkout: &Path, worktree: &Path) {
+    fn copy(from: &Path, to: &Path) -> std::io::Result<()> {
+        if from.is_dir() {
+            std::fs::create_dir_all(to)?;
+            for entry in std::fs::read_dir(from)? {
+                let entry = entry?;
+                copy(&entry.path(), &to.join(entry.file_name()))?;
+            }
+        } else if !to.exists() {
+            if let Some(dir) = to.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            std::fs::copy(from, to)?;
+        }
+        Ok(())
+    }
+    for rel in &repo.copy {
+        let rel = Path::new(rel.trim());
+        if rel.as_os_str().is_empty()
+            || rel.is_absolute()
+            || rel
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            continue;
+        }
+        let from = checkout.join(rel);
+        if from.exists() {
+            let _ = copy(&from, &worktree.join(rel));
+        }
     }
 }
 
@@ -2294,8 +2351,16 @@ mod tests {
             Err(CoreError::RepoNotLocated(r)) if r == "acme-platform"
         ));
         s.locate();
+        // Files git ignores, copied in (CLAUDE.local.md is missing: skipped).
+        fs::write(s.repo.join(".env"), "PORT=1\n").unwrap();
+        fs::create_dir_all(s.repo.join("config/local")).unwrap();
+        fs::write(s.repo.join("config/local/keys.json"), "{}").unwrap();
         let created = s.session.create_ticket(&new).unwrap();
         let t = &created.ticket;
+        let copied = PathBuf::from(t.worktree_path.as_ref().unwrap());
+        assert_eq!(fs::read_to_string(copied.join(".env")).unwrap(), "PORT=1\n");
+        assert!(copied.join("config/local/keys.json").is_file());
+        assert!(!copied.join("CLAUDE.local.md").exists());
         assert_eq!(t.path, "Projects/Acme/Work/TEAM-200 Fix signup.md");
         assert_eq!(t.key.as_deref(), Some("TEAM-200"));
         assert_eq!(
@@ -2681,6 +2746,15 @@ mod tests {
             ctx.actions.iter().any(
                 |a| a.id == "open-vscode:acme-infra" && a.label == "Open Acme infra in VS Code"
             )
+        );
+        let both = ctx
+            .actions
+            .iter()
+            .find(|a| a.id == "open-vscode-ticket")
+            .unwrap();
+        assert_eq!(
+            both.run,
+            format!("code -n {} {}", web.display(), net.display())
         );
         let inside = s.session.context(None, Some(&net)).unwrap();
         assert_eq!(inside.note.as_deref(), Some(t.path.as_str()));

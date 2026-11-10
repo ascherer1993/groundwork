@@ -109,6 +109,8 @@ export function NoteBar({ path }: { path: string }) {
 
   const isTicket = !!ticket;
   const worktreePath = ticket?.worktreePath;
+  // Its actions change with its repos (one more worktree, a new default).
+  const repoKey = ticket?.repos.map((r) => r.id).join(",");
   useEffect(() => {
     if (!isTicket) return;
     let cancelled = false;
@@ -133,10 +135,14 @@ export function NoteBar({ path }: { path: string }) {
       clearInterval(timer);
       window.removeEventListener("focus", load);
     };
-  }, [path, isTicket, worktreePath, active]);
+  }, [path, isTicket, worktreePath, active, repoKey]);
 
   if (!ticket && !project && !family.parent && !family.subnotes.length) return null;
-  const quick = actions.filter((a) => a.id === "open-ticket" || a.id === "open-vscode");
+  // A ticket in several repos opens all its worktrees in one VS Code window.
+  const vscode = actions.some((a) => a.id === "open-vscode-ticket")
+    ? "open-vscode-ticket"
+    : "open-vscode";
+  const quick = actions.filter((a) => a.id === "open-ticket" || a.id === vscode);
   const summary = git?.exists ? gitSummary(git) : null;
 
   const actionsMenu = (e: React.MouseEvent) => {

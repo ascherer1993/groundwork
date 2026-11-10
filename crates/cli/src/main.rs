@@ -1170,9 +1170,17 @@ fn print_context_to(w: &mut impl std::io::Write, c: &Context) {
         if let Some(b) = &t.branch {
             out!("  branch {b}");
         }
-        if t.repos.len() > 1 {
-            let ids: Vec<&str> = t.repos.iter().map(|r| r.id.as_str()).collect();
-            out!("  repos: {} (the first is the default)", ids.join(", "));
+        // Every worktree, so an agent in one knows where the others are.
+        for (i, r) in t.repos.iter().enumerate() {
+            let default = if i == 0 && t.repos.len() > 1 {
+                ", the default"
+            } else {
+                ""
+            };
+            match &r.worktree_path {
+                Some(w) if Path::new(w).is_dir() => out!("  worktree [{}{default}]: {w}", r.id),
+                _ => out!("  worktree [{}{default}]: not on this machine", r.id),
+            }
         }
     } else if let Some(n) = &c.note {
         out!("Note: {n}");

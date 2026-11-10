@@ -314,6 +314,17 @@ test("a ticket spans repos in one workspace; its subnotes follow it; the Vault w
   // Leave the vault's repos as they were for the other specs.
   writeFileSync(reposYml, listed);
 
+  // Claude in a worktree can read the ticket's other repos. (The test's fake
+  // `claude` names the options it doesn't know; long lines can come out garbled
+  // as the terminal resizes, so only the start is checked.)
+  await header.getByRole("button", { name: "New terminal in…" }).click();
+  await page.getByRole("menuitem", { name: /New Claude in Acme infra/ }).click();
+  await expect
+    .poll(async () => (await screen(page)).replace(/\n/g, ""))
+    .toContain("fake claude: unsupported: --add-dir /");
+  // All its worktrees in one VS Code window.
+  await expect(bar(page).getByRole("button", { name: "Open ticket in VS Code" })).toBeVisible();
+
   // The default can change.
   await header.getByRole("button", { name: "New terminal in…" }).click();
   await page.getByRole("menuitem", { name: "Make Acme infra the default" }).click();

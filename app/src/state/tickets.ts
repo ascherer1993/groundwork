@@ -111,14 +111,14 @@ export async function locateRepo(id: string): Promise<boolean> {
   const values = await formDialog({
     title: `Where is ${repo?.name ?? id}?`,
     message:
-      "Its main checkout on this Mac (any folder in it). Worktrees go in a folder beside it unless you choose one.",
+      "Its main checkout on this Mac (any folder in it). Unless you choose a folder, worktrees go beside it: in “worktrees” when it’s checked out as name/name (dev/api/api → dev/api/worktrees), else in “<checkout>-worktrees”.",
     fields: [
       { label: "Checkout", value: repo?.location?.path ?? "~/", type: "folder" },
       {
         label: "Worktrees folder",
         value: repo?.location?.worktrees ?? "",
         type: "folder",
-        placeholder: "<checkout>-worktrees",
+        placeholder: "beside the checkout",
       },
     ],
     confirmLabel: "Save",
@@ -351,6 +351,32 @@ export interface TerminalPlace {
   cwd: string;
   /** The ticket's default repo. */
   isDefault?: boolean;
+  /** One of the ticket's worktrees (not a component in one). */
+  worktree?: boolean;
+}
+
+const shellQuote = (s: string) =>
+  /^[\w/.+=:,@%-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`;
+
+/**
+ * `--add-dir` options for Claude Code started in `cwd`: the other worktrees
+ * of the ticket it's in (found by `cwd`, else by `workspace`'s note), so it
+ * can read the other repos' code. Empty outside a ticket in several repos.
+ */
+export function addDirsFor(cwd: string | undefined, workspace?: string | null): string {
+  const tickets = useTickets.getState().tickets;
+  const inside = (wt: string) => !!cwd && (cwd === wt || cwd.startsWith(`${wt}/`));
+  let ticket = tickets.find((t) => t.repos.some((r) => r.worktreePath && inside(r.worktreePath)));
+  if (!ticket && workspace) {
+    const note = useWorkspaces.getState().list.find((w) => w.id === workspace)?.note;
+    ticket = note ? ticketAt(note) : undefined;
+  }
+  if (!ticket?.worktree || ticket.status === "closed") return "";
+  return ticket.repos
+    .map((r) => r.worktreePath)
+    .filter((wt): wt is string => !!wt && !inside(wt))
+    .map((wt) => ` --add-dir ${shellQuote(wt)}`)
+    .join("");
 }
 
 /**
@@ -377,6 +403,7 @@ export async function terminalPlaces(
         detail: r.worktreePath,
         cwd: r.worktreePath,
         isDefault: i === 0 && repos.length > 1,
+        worktree: true,
       });
   });
   for (const c of context?.components ?? []) {
@@ -408,9 +435,27 @@ export async function newTerminalItems(
       starred: p.isDefault,
       action: () => open(p.cwd),
     });
+  // Claude in a worktree, able to read the ticket's other repos too.
+  const worktrees = places.filter((p) => p.worktree);
+  if (worktrees.length > 1) {
+    items.push("separator");
+    for (const p of worktrees)
+      items.push({
+        label: `New Claude in ${p.label}`,
+        starred: p.isDefault,
+        action: () => void claudeIn(area, p.cwd),
+      });
+  }
   const repos = ticket ? repoMenuItems(ticket) : [];
   if (repos.length) items.push("separator", ...repos);
   return items;
+}
+
+/** Starts Claude Code in a new tab of a workspace, seeing the ticket's other worktrees. */
+async function claudeIn(area: string, cwd: string) {
+  const ws = useWorkspace.getState();
+  if (ws.docks[area]) ws.showWorkspace(area, ws.view === "note" ? "split" : ws.view);
+  await ws.openTerminal(cwd, { run: `claude${addDirsFor(cwd, area)}` });
 }
 
 /** A menu's items for a ticket's repos: make one the default, or add another. */
