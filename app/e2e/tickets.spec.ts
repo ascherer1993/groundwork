@@ -299,6 +299,17 @@ test("a ticket spans repos in one workspace; its subnotes follow it; the Vault w
     "Acme infra",
     "Acme infra",
   ]);
+  // So do its terminals in the Workspaces view.
+  await page.getByRole("tab", { name: "Workspaces" }).click();
+  const ticket = page.locator(".area-item").filter({ hasText: "TEAM-200 Fix signup" });
+  await ticket.getByRole("button", { name: "Show TEAM-200 Fix signup’s terminals" }).click();
+  await expect(ticket.locator(".area-tab-repo")).toContainText([
+    "Acme platform",
+    "Acme infra",
+    "Acme infra",
+  ]);
+  // Back to the files, whose list the steps below read.
+  await page.getByRole("tab", { name: "Files" }).click();
 
   // A repo the vault doesn't list yet is added from its checkout.
   const reposYml = join(VAULT, ".groundwork/repos.yml");

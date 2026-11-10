@@ -1483,11 +1483,11 @@ button.terminals-name:hover {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 2px 4px;
+  min-height: 100%;
+  padding: 2px 6px 6px;
 }
 
-.workspaces-header,
-.sessions-header {
+.workspaces-header {
   display: flex;
   align-items: center;
 }
@@ -1508,13 +1508,19 @@ button.terminals-name:hover {
   padding: 0;
 }
 
+.area-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .area-row,
 .area-tab {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
-  padding: 4px 8px 4px 10px;
+  padding: 7px 10px 7px 10px;
   border: none;
   border-radius: 4px;
   background: transparent;
@@ -1559,13 +1565,13 @@ button.terminals-name:hover {
 }
 
 .area-row {
-  padding-left: 24px;
+  padding-left: 26px;
 }
 
 .area-toggle {
   position: absolute;
   top: 50%;
-  left: 6px;
+  left: 7px;
   display: flex;
   padding: 2px;
   border: none;
@@ -1616,22 +1622,36 @@ button.terminals-name:hover {
   background: var(--bg-selected);
 }
 
-.area-name {
-  flex: none;
-  max-width: 60%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
+/* A name, with a smaller, quieter line under it. */
+.area-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
 }
 
-.area-folder,
-.area-tab-title {
-  flex: 1;
+.area-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
+}
+
+.area-name,
+.area-folder,
+.area-tab-title,
+.area-tab-repo {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.area-name {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
 }
 
 .area-folder {
@@ -1639,10 +1659,33 @@ button.terminals-name:hover {
   color: var(--text-faint);
 }
 
+.area-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 4px;
+}
+
 .area-tab {
-  padding-left: 30px;
-  font-size: 12px;
+  padding: 5px 10px 5px 30px;
   color: var(--text-muted);
+}
+
+.area-tab > svg {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.area-tab-title {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+/* Which repo it's in: what tells a ticket's tabs apart. */
+.area-tab-repo {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
 }
 
 .area-row .badge,
@@ -1687,10 +1730,33 @@ button.terminals-name:hover {
   }
 }
 
+/* Folded at the foot of the panel until you open it. */
 .sessions {
-  margin-top: 10px;
+  margin-top: auto;
   padding-top: 6px;
   border-top: 1px solid var(--border);
+}
+
+button.sessions-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 4px;
+  text-align: left;
+}
+
+button.sessions-toggle:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+.sessions-toggle svg {
+  transition: transform 0.12s ease;
+}
+
+.sessions-toggle[aria-expanded="true"] svg {
+  transform: rotate(90deg);
 }
 
 .session {

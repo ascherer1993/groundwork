@@ -259,8 +259,10 @@ test("workspaces keep their own terminals, with badges and a session manager", a
     { timeout: 10_000 },
   );
 
-  // Every running terminal is listed with where it is.
+  // Every running terminal is listed with where it is, folded until you open it.
   const sessions = page.getByRole("region", { name: "Running terminals" });
+  await expect(sessions).toHaveCount(0);
+  await panel.getByRole("button", { name: /Running terminals/ }).click();
   await expect(sessions.locator(".session").filter({ hasText: "in Acme API" })).toHaveCount(1);
   await expect(sessions.locator(".session-meta").filter({ hasText: "in Acme API" })).toContainText(
     "vault/Projects/Acme",
