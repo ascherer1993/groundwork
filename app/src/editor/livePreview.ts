@@ -174,9 +174,16 @@ function buildInline(view: EditorView): DecorationSet {
             const external = hasScheme(href);
             const target = external ? href : safeDecode(href);
             const block = isBlockEmbed(target, external);
-            if (block ? within(state, ref.from, ref.to) : active(ref.from, ref.to)) return false;
             const marks = node.getChildren("LinkMark");
             const alt = marks.length >= 2 ? state.sliceDoc(marks[0]!.to, marks[1]!.from) : "";
+            if (block ? within(state, ref.from, ref.to) : active(ref.from, ref.to)) {
+              // An image stays in view below its source, as in Obsidian.
+              if (!block) {
+                const widget = new EmbedWidget(target, alt, source, external, false, true);
+                decos.push(Decoration.widget({ widget, side: 1 }).range(ref.to));
+              }
+              return false;
+            }
             const widget = new EmbedWidget(target, alt, source, external, block);
             decos.push(Decoration.replace({ widget }).range(ref.from, ref.to));
             return false;
@@ -189,6 +196,11 @@ function buildInline(view: EditorView): DecorationSet {
             const block = embed && isBlockEmbed(link.target, false);
             if (block ? within(state, ref.from, ref.to) : active(ref.from, ref.to)) {
               decos.push(Decoration.mark({ class: "cm-wikilink-source" }).range(ref.from, ref.to));
+              if (embed && !block && isImage(link.target)) {
+                const target = link.subpath ? `${link.target}#${link.subpath}` : link.target;
+                const widget = new EmbedWidget(target, link.alias, source, false, false, true);
+                decos.push(Decoration.widget({ widget, side: 1 }).range(ref.to));
+              }
               return false;
             }
             const widget = embed

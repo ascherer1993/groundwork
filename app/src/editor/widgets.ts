@@ -16,7 +16,7 @@ import {
   wikiDisplay,
 } from "../markdown/syntax";
 import { notePath } from "./context";
-import { addResizeHandle } from "./images";
+import { attachImage } from "./images";
 import { attachPropertyEditing, PEOPLE_PROPERTIES } from "./properties";
 
 /**
@@ -214,6 +214,8 @@ export class EmbedWidget extends WidgetType {
     readonly external = false,
     /** A note or page, filling its line; clicks on it don't edit. */
     readonly block = false,
+    /** An image shown below its source while the cursor is in it. */
+    readonly preview = false,
   ) {
     super();
   }
@@ -224,13 +226,14 @@ export class EmbedWidget extends WidgetType {
       other.alias === this.alias &&
       other.source === this.source &&
       other.external === this.external &&
-      other.block === this.block
+      other.block === this.block &&
+      other.preview === this.preview
     );
   }
 
   toDOM(view: EditorView) {
     const wrap = document.createElement("span");
-    wrap.className = "cm-embed";
+    wrap.className = this.preview ? "cm-embed cm-embed-preview" : "cm-embed";
     wrap.dataset.notePath = this.source;
     if (this.external) {
       const img = document.createElement("img");
@@ -241,7 +244,7 @@ export class EmbedWidget extends WidgetType {
       if (height) img.height = height;
       img.addEventListener("load", () => view.requestMeasure());
       wrap.append(img);
-      addResizeHandle(view, wrap);
+      attachImage(view, wrap);
       return wrap;
     }
     const placeholder = document.createElement("span");
@@ -254,7 +257,7 @@ export class EmbedWidget extends WidgetType {
       wrap.append(editSourceButton(view, wrap));
       wrap.addEventListener("mousedown", keepEditorStill);
     } else if (isImage(splitTarget(this.target).target)) {
-      addResizeHandle(view, wrap);
+      attachImage(view, wrap);
     }
     hydrateWidget(view, wrap, this.source);
     attachContentHandlers(wrap);
@@ -262,7 +265,8 @@ export class EmbedWidget extends WidgetType {
   }
 
   ignoreEvent(event: Event) {
-    if (this.block) return true;
+    // Images handle their own clicks and drags (see `./images`).
+    if (this.block || event.target instanceof HTMLImageElement) return true;
     return event.type !== "mousedown" || isInteractive(event.target);
   }
 }

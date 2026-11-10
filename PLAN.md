@@ -109,6 +109,7 @@ A project is any folder containing `.groundwork.yml`. Inside a project, any subf
 - `app.json`: `newLinkFormat` (shortest/relative/absolute), `useMarkdownLinks`, attachment folder
   - Images pasted or dropped into a note are saved to `attachmentFolderPath` (`/` the vault root, `./` beside the note, `./x` a folder beside it, else a vault folder) and embedded as `![[...]]` in the vault's link style. When the vault hasn't set it, Groundwork uses `attachments/` rather than Obsidian's default of the root. Pasted images are named as Obsidian names them (`Pasted image 20261110143012.png`); dropped ones keep their names, numbered if taken. Text copied with a picture of itself (spreadsheets, Word) pastes as text.
   - Dragging an embedded image's corner in live preview writes its width as Obsidian does: `![[x.png|400]]`, `![alt|400](x.png)`.
+  - Clicking an image in live preview shows its source with the image still below it, as in Obsidian. Dragging the image moves its embed: one alone on its line takes the line along, and one dropped at the start of a line gets its own.
 - `daily-notes.json`: folder, date format, template, unless Groundwork's own `daily_notes:` (in `.groundwork/config.yml`) sets them (§5.3)
 - `templates.json` and the Templater plugin `data.json`: templates folder
 

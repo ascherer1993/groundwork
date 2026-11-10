@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { FIXTURE_VAULT as VAULT } from "./fixtures";
@@ -97,5 +97,39 @@ test("dropping an image keeps its name", async ({ page }) => {
 
   await expectFile(VAULT, note, (t) => t.startsWith("Dropped here: ![[My chart.png]]"));
   expect(existsSync(join(VAULT, "attachments/My chart.png"))).toBe(true);
+  rmSync(join(VAULT, note));
+});
+
+test("a clicked image shows its source above it, and drags to a new place", async ({ page }) => {
+  const note = "Image move.md";
+  mkdirSync(join(VAULT, "attachments"), { recursive: true });
+  writeFileSync(
+    join(VAULT, "attachments/move.svg"),
+    '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60"><rect width="120" height="60" fill="teal"/></svg>',
+  );
+  writeFileSync(join(VAULT, note), "First line\n![[move.svg]]\nLast line\n");
+  await quickOpen(page, "Image move");
+  const cm = editor(page);
+  await cm.locator(".cm-line").first().click();
+  const img = cm.locator(".cm-embed-image img");
+  await expect(img).toBeVisible();
+
+  // Clicking shows the source, and the image stays, below it.
+  await img.click();
+  await expect(cm.locator(".cm-wikilink-source")).toHaveText("![[move.svg]]");
+  await expect(cm.locator(".cm-embed-preview img")).toBeVisible();
+  // Clicking the image again keeps it all.
+  await cm.locator(".cm-embed-preview img").click();
+  await expect(cm.locator(".cm-wikilink-source")).toHaveText("![[move.svg]]");
+  await expect(cm.locator(".cm-embed-preview img")).toBeVisible();
+
+  // Dragging it to the start of the first line moves it there, line and all.
+  await cm.locator(".cm-line", { hasText: "Last line" }).click();
+  const first = cm.locator(".cm-line", { hasText: "First line" });
+  const box = (await first.boundingBox())!;
+  await cm.locator(".cm-embed-image img").dragTo(first, {
+    targetPosition: { x: 1, y: box.height / 2 },
+  });
+  await expectFile(VAULT, note, (t) => t === "![[move.svg]]\nFirst line\nLast line\n");
   rmSync(join(VAULT, note));
 });

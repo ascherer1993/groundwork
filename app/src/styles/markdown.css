@@ -593,6 +593,22 @@ summary.callout-title {
   vertical-align: bottom;
 }
 
+/* An image under its source while the cursor is in it. */
+.cm-embed-preview {
+  display: block;
+  width: fit-content;
+  margin-top: 2px;
+}
+
+/* CodeMirror's line-end break after a widget: here it's an empty line. */
+.cm-embed-preview + br {
+  display: none;
+}
+
+.cm-embed-image img {
+  cursor: grab;
+}
+
 /* An image's corner handle: drag it to set the image's width. */
 .cm-embed-image {
   position: relative;

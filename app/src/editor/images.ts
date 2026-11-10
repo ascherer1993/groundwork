@@ -1,7 +1,9 @@
 /**
  * Images in the editor: pasting or dropping one saves it to the vault's
  * attachment folder and embeds it (`![[Pasted image ….png]]`); dragging an
- * embedded image's corner sets its width (`![[x.png|400]]`, as Obsidian does).
+ * embedded image's corner sets its width (`![[x.png|400]]`, as Obsidian does),
+ * and dragging the image itself moves its embed. Clicking an image shows its
+ * source, with the image still below it (see `livePreview.ts`).
  */
 import { EditorView } from "@codemirror/view";
 import { api } from "../api/client";
@@ -91,6 +93,14 @@ export const imageInput = EditorView.domEventHandlers({
     return true;
   },
   drop(event, view) {
+    if (moving?.view === view) {
+      const move = moving;
+      moving = null;
+      event.preventDefault();
+      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+      if (pos !== null) moveEmbed(view, move.from, move.to, pos);
+      return true;
+    }
     const files = imageFiles(event.dataTransfer?.files);
     if (!files.length) return false;
     event.preventDefault();
@@ -99,6 +109,10 @@ export const imageInput = EditorView.domEventHandlers({
     const names = files.map((f) => (f.name && f.name !== "image.png" ? f.name : pastedName(f)));
     void insertImages(view, files, names, pos);
     return true;
+  },
+  dragend() {
+    moving = null;
+    return false;
   },
 });
 
@@ -129,11 +143,102 @@ export function withWidth(text: string, width: number): { length: number; insert
   return null;
 }
 
+/** How long the image embed at the start of `text` is; 0 if it doesn't start with one. */
+export function embedLength(text: string): number {
+  return withWidth(text, 0)?.length ?? 0;
+}
+
+/** Where the embed ending at `to` starts, or `null`. */
+export function embedStartBefore(line: string, to: number): number | null {
+  for (let at = line.lastIndexOf("![", to - 1); at >= 0; at = line.lastIndexOf("![", at - 1)) {
+    if (at + embedLength(line.slice(at)) === to) return at;
+    if (at === 0) break;
+  }
+  return null;
+}
+
+/**
+ * The document range of the embed an image widget shows: a widget replacing
+ * the embed starts where it does; a preview below the source sits at its end.
+ */
+function embedRange(view: EditorView, wrap: HTMLElement): { from: number; to: number } | null {
+  const pos = view.posAtDOM(wrap);
+  const line = view.state.doc.lineAt(pos);
+  if (wrap.classList.contains("cm-embed-preview")) {
+    const start = embedStartBefore(line.text, pos - line.from);
+    return start === null ? null : { from: line.from + start, to: pos };
+  }
+  const length = embedLength(view.state.sliceDoc(pos, line.to));
+  return length ? { from: pos, to: pos + length } : null;
+}
+
+/** An image being dragged to a new place in its note. */
+let moving: { view: EditorView; from: number; to: number } | null = null;
+
+/**
+ * Moves the embed at `from..to` to `pos`. An embed that had its line to
+ * itself takes the line with it, and one dropped at the start of a line
+ * gets a line of its own.
+ */
+export function moveEmbed(view: EditorView, from: number, to: number, pos: number) {
+  const { doc } = view.state;
+  if (pos >= from && pos <= to) return;
+  const text = doc.sliceString(from, to);
+  const line = doc.lineAt(from);
+  let [cutFrom, cutTo] = [from, to];
+  if (line.text.trim() === text) {
+    cutFrom = line.from;
+    cutTo = line.number < doc.lines ? line.to + 1 : line.to;
+    if (cutTo === line.to && line.from > 0) cutFrom = line.from - 1;
+  }
+  if (pos > cutFrom && pos < cutTo) return;
+  const target = doc.lineAt(pos);
+  const insert = pos === target.from && target.length > 0 ? `${text}\n` : text;
+  const changes = view.state.changes([
+    { from: cutFrom, to: cutTo },
+    { from: pos, insert },
+  ]);
+  view.dispatch({
+    changes,
+    selection: { anchor: changes.mapPos(pos, 1) - (insert.length - text.length) },
+    userEvent: "move.drop",
+    scrollIntoView: true,
+  });
+  view.focus();
+}
+
+/**
+ * An image embed's behaviour in the editor: clicking it shows its source
+ * (the image stays, below), dragging it moves it, and its corner resizes it.
+ */
+export function attachImage(view: EditorView, wrap: HTMLElement) {
+  addResizeHandle(view, wrap);
+  wrap.addEventListener("click", (e) => {
+    if (!(e.target instanceof HTMLImageElement)) return;
+    e.preventDefault();
+    if (wrap.classList.contains("cm-embed-preview")) {
+      view.focus();
+      return;
+    }
+    const range = embedRange(view, wrap);
+    if (!range) return;
+    view.dispatch({ selection: { anchor: range.to } });
+    view.focus();
+  });
+  wrap.addEventListener("dragstart", (e) => {
+    const range = e.target instanceof HTMLImageElement ? embedRange(view, wrap) : null;
+    if (!range || !e.dataTransfer) return;
+    moving = { view, ...range };
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", view.state.sliceDoc(range.from, range.to));
+  });
+}
+
 /**
  * Adds a corner handle to an image embed's `wrap`. Dragging it scales the
  * image; letting go writes the width into the embed.
  */
-export function addResizeHandle(view: EditorView, wrap: HTMLElement) {
+function addResizeHandle(view: EditorView, wrap: HTMLElement) {
   wrap.classList.add("cm-embed-image");
   const handle = document.createElement("span");
   handle.className = "cm-image-resize";
@@ -162,12 +267,11 @@ export function addResizeHandle(view: EditorView, wrap: HTMLElement) {
       window.removeEventListener("mouseup", up);
       wrap.classList.remove("is-resizing");
       if (width === Math.round(startWidth)) return;
-      const from = view.posAtDOM(wrap);
-      const line = view.state.doc.lineAt(from);
-      const change = withWidth(view.state.sliceDoc(from, line.to), width);
-      if (!change) return;
+      const range = embedRange(view, wrap);
+      const change = range && withWidth(view.state.sliceDoc(range.from, range.to), width);
+      if (!range || !change) return;
       view.dispatch({
-        changes: { from, to: from + change.length, insert: change.insert },
+        changes: { from: range.from, to: range.to, insert: change.insert },
         userEvent: "input.resize",
       });
       view.requestMeasure();

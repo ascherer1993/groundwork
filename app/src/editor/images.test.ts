@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pastedName, withWidth } from "./images";
+import { embedStartBefore, pastedName, withWidth } from "./images";
 import { imageSize } from "../markdown/syntax";
 
 describe("withWidth", () => {
@@ -40,5 +40,15 @@ describe("pastedName", () => {
     );
     const jpeg = new File(["x"], "image", { type: "image/jpeg" });
     expect(pastedName(jpeg, new Date(2026, 0, 2, 3, 4, 5))).toBe("Pasted image 20260102030405.jpg");
+  });
+});
+
+describe("embedStartBefore", () => {
+  it("finds the embed that ends at a position", () => {
+    const line = "See ![[a.png|200]] and ![b](c.png) here";
+    expect(embedStartBefore(line, 18)).toBe(4);
+    expect(embedStartBefore(line, 34)).toBe(23);
+    expect(embedStartBefore(line, 10)).toBeNull();
+    expect(embedStartBefore("![[x.png]]", 10)).toBe(0);
   });
 });
