@@ -13,4 +13,9 @@ plugin: SetupItem,
 /**
  * The vault the CLI uses when nothing else says which.
  */
-vault: SetupItem, };
+vault: SetupItem, 
+/**
+ * The `CLAUDE.md` at the vault root, which every Claude Code session
+ * started in the vault reads.
+ */
+claudeMd: SetupItem, };

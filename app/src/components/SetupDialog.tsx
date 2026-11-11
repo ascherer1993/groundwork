@@ -52,7 +52,7 @@ const ICONS: Record<SetupState, typeof Circle> = {
   unavailable: XCircle,
 };
 
-type Action = "cli" | "plugin" | "vault";
+type Action = "cli" | "plugin" | "vault" | "claudeMd";
 
 export function SetupDialog() {
   const open = useUi((s) => s.setupOpen);
@@ -85,7 +85,9 @@ function SetupDialogBody() {
         ? api.installCli()
         : action === "plugin"
           ? api.installPlugin()
-          : api.useVaultForCli();
+          : action === "vault"
+            ? api.useVaultForCli()
+            : api.addVaultClaudeMd();
     call
       .then(setStatus)
       .catch((err) => setErrors((e) => ({ ...e, [action]: message(err) })))
@@ -130,6 +132,12 @@ function SetupDialogBody() {
           "Default vault for the command",
           status?.vault,
           status?.vault.state === "ok" ? null : "Use this vault",
+        )}
+        {row(
+          "claudeMd",
+          "CLAUDE.md in the vault",
+          status?.claudeMd,
+          status?.claudeMd.state === "missing" ? "Add" : null,
         )}
         <p className="muted setup-footnote">
           Updating Groundwork updates both the command and the plugin. If either gets out of step,

@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { FIXTURE_VAULT as VAULT } from "./fixtures";
@@ -37,7 +37,7 @@ test.describe("before setup has been opened", () => {
   });
 });
 
-test("sets up the command, the plugin and the default vault", async ({ page }) => {
+test("sets up the command, the plugin, the default vault and CLAUDE.md", async ({ page }) => {
   await openVault(page, VAULT);
   const dialog = await openSetup(page);
   const command = dialog.getByRole("region", { name: "The groundwork command" });
@@ -58,6 +58,17 @@ test("sets up the command, the plugin and the default vault", async ({ page }) =
   await vault.getByRole("button", { name: "Use this vault" }).click();
   await expect(vault).toContainText("This vault");
   await expect(vault.getByRole("button")).toHaveCount(0);
+
+  // A CLAUDE.md at the vault root, so Claude Code started anywhere in it
+  // knows to use the skill.
+  const claudeMd = dialog.getByRole("region", { name: "CLAUDE.md in the vault" });
+  await expect(claudeMd).toHaveAttribute("data-state", "missing");
+  await claudeMd.getByRole("button", { name: "Add" }).click();
+  await expect(claudeMd).toHaveAttribute("data-state", "ok");
+  await expect(claudeMd.getByRole("button")).toHaveCount(0);
+  expect(readFileSync(join(VAULT, "CLAUDE.md"), "utf8")).toContain("# This is a Groundwork vault");
+  // Leave the vault as it was for the other specs.
+  rmSync(join(VAULT, "CLAUDE.md"));
 
   await dialog.getByRole("button", { name: "Done" }).click();
   await expect(dialog).toBeHidden();

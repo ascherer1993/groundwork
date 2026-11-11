@@ -107,6 +107,7 @@ interface Results {
   "setup.installCli": SetupStatus;
   "setup.installPlugin": SetupStatus;
   "setup.useVault": SetupStatus;
+  "setup.addClaudeMd": SetupStatus;
   "search.query": SearchResult[];
   "todo.list": Todo[];
   "todo.day": DayView;
@@ -264,6 +265,7 @@ export const api = {
   installCli: () => call("setup.installCli"),
   installPlugin: () => call("setup.installPlugin"),
   useVaultForCli: () => call("setup.useVault"),
+  addVaultClaudeMd: () => call("setup.addClaudeMd"),
   todos: (filter: TodoFilter = { tags: [] }) => call("todo.list", { filter }),
   todoDay: (path: string, own?: [number, number]) => call("todo.day", { path, own }),
   /** `days` days from `from` (`YYYY-MM-DD`). */

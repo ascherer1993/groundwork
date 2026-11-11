@@ -64,7 +64,8 @@ pub enum Request {
     IndexSettings,
 
     /// → `SetupStatus`: whether the `groundwork` command, the Claude Code
-    /// plugin and the CLI's default vault are set up and current.
+    /// plugin, the CLI's default vault and the vault's `CLAUDE.md` are set
+    /// up and current.
     #[serde(rename = "setup.status")]
     SetupStatus,
 
@@ -80,6 +81,11 @@ pub enum Request {
     /// → `SetupStatus`: makes the open vault the CLI's default.
     #[serde(rename = "setup.useVault")]
     SetupUseVault,
+
+    /// → `SetupStatus`: adds Groundwork's `CLAUDE.md` to the open vault's
+    /// root, unless it has one already, which is left as it is.
+    #[serde(rename = "setup.addClaudeMd")]
+    SetupAddClaudeMd,
 
     /// → `TagCount[]`: every tag and how many notes use it.
     #[serde(rename = "index.tags")]

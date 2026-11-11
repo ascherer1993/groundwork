@@ -159,6 +159,10 @@ impl Backend {
                 setup::set_default_vault(&self.data_dir, session.vault().root())?;
                 to_value(self.setup_status())
             }
+            Request::SetupAddClaudeMd => {
+                setup::add_vault_claude_md(self.session()?.vault().root())?;
+                to_value(self.setup_status())
+            }
             Request::IndexTags => to_value(search::tags(&self.session()?.index())),
             Request::SearchQuery { query, limit } => to_value(search::search(
                 &self.session()?.index(),
