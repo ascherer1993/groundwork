@@ -881,6 +881,7 @@ fn run(cli: Cli) -> Fallible<()> {
             for f in files {
                 match f.kind {
                     NodeKind::Page | NodeKind::PageBundle => println!("{} (page)", f.path),
+                    NodeKind::Canvas => println!("{} (canvas)", f.path),
                     _ => println!("{}", f.path),
                 }
             }

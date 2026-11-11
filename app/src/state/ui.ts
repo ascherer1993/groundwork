@@ -2,7 +2,10 @@ import { create } from "zustand";
 
 export interface MenuItem {
   label: string;
-  action: () => void;
+  /** What choosing it does; an item with `items` opens them instead. */
+  action?: () => void;
+  /** A submenu, shown beside the item. */
+  items?: MenuEntry[];
   danger?: boolean;
   disabled?: boolean;
   /** A swatch of a workspace colour before the label. */

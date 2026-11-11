@@ -1,4 +1,4 @@
-import { Check, Star, X } from "lucide-react";
+import { Check, ChevronRight, Star, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { closePreview, enterPreview, leavePreview } from "../lib/linkPreview";
@@ -7,7 +7,7 @@ import { renderMarkdown } from "../markdown/render";
 import { escapeHtml, extractSubpath, splitFrontmatter } from "../markdown/syntax";
 import { startFromBar, useCommandBar } from "../state/commandBar";
 import { todoField } from "../editor/todoField";
-import { useUi } from "../state/ui";
+import { type MenuEntry, type MenuItem, useUi } from "../state/ui";
 import { CommandBar } from "./CommandBar";
 import { CommandLog } from "./CommandLog";
 import { FolderInput } from "./FolderInput";
@@ -42,6 +42,18 @@ function ContextMenu() {
   const close = useUi((s) => s.closeMenu);
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
+  /** The submenu that's open: its menu, its item's index, and where it goes. */
+  const [subState, setSub] = useState<{
+    menu: unknown;
+    index: number;
+    x: number;
+    y: number;
+    focus: boolean;
+  } | null>(null);
+  // One left open in an earlier menu doesn't count.
+  const sub = subState && subState.menu === menu ? subState : null;
+  const subRef = useRef<HTMLDivElement>(null);
+  const [subPos, setSubPos] = useState({ x: 0, y: 0 });
 
   useLayoutEffect(() => {
     if (!menu || !ref.current) return;
@@ -52,6 +64,20 @@ function ContextMenu() {
     });
     ref.current.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
   }, [menu]);
+
+  // A submenu goes to the right of its item, or the left when there's no room.
+  useLayoutEffect(() => {
+    if (!sub || !subRef.current || !ref.current) return;
+    const { width, height } = subRef.current.getBoundingClientRect();
+    const parent = ref.current.getBoundingClientRect();
+    const right = sub.x + width + 4 <= window.innerWidth;
+    setSubPos({
+      x: right ? sub.x : Math.max(4, parent.left - width),
+      y: Math.min(sub.y, window.innerHeight - height - 4),
+    });
+    if (sub.focus)
+      subRef.current.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+  }, [sub]);
 
   useEffect(() => {
     if (!menu) return;
@@ -65,6 +91,13 @@ function ContextMenu() {
   }, [menu, close]);
 
   if (!menu) return null;
+  const subItems = sub ? (menu.items[sub.index] as MenuItem | undefined)?.items : undefined;
+
+  const openSub = (index: number, button: HTMLElement, focus: boolean) => {
+    const box = button.getBoundingClientRect();
+    setSub({ menu, index, x: box.right + 2, y: box.top - 4, focus });
+  };
+
   return (
     <div
       className="menu-backdrop"
@@ -77,48 +110,113 @@ function ContextMenu() {
         role="menu"
         style={{ left: pos.x, top: pos.y }}
         onMouseDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => moveFocus(e, ref.current!)}
+      >
+        <MenuButtons
+          items={menu.items}
+          openIndex={sub?.index}
+          onChoose={(item) => {
+            close();
+            item.action?.();
+          }}
+          onHover={(index, button) => {
+            const item = menu.items[index];
+            if (item !== "separator" && item?.items) openSub(index, button, false);
+            else setSub(null);
+          }}
+          onOpen={(index, button) => openSub(index, button, true)}
+        />
+      </div>
+      {sub && subItems && (
+        <div
+          ref={subRef}
+          className="menu submenu"
+          role="menu"
+          aria-label={(menu.items[sub.index] as MenuItem).label}
+          style={{ left: subPos.x, top: subPos.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowLeft") {
+              e.preventDefault();
+              const index = sub.index;
+              setSub(null);
+              ref.current
+                ?.querySelector<HTMLButtonElement>(`button[data-index="${index}"]`)
+                ?.focus();
+              return;
+            }
+            moveFocus(e, subRef.current!);
+          }}
+        >
+          <MenuButtons
+            items={subItems}
+            onChoose={(item) => {
+              close();
+              item.action?.();
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** ↑ and ↓ move between a menu's items. */
+function moveFocus(e: { key: string; preventDefault(): void }, menu: HTMLElement) {
+  if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+  e.preventDefault();
+  const buttons = [...menu.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+  const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
+  const next =
+    e.key === "ArrowDown" ? (i + 1) % buttons.length : (i - 1 + buttons.length) % buttons.length;
+  buttons[next]?.focus();
+}
+
+function MenuButtons({
+  items,
+  openIndex,
+  onChoose,
+  onHover,
+  onOpen,
+}: {
+  items: MenuEntry[];
+  openIndex?: number;
+  onChoose: (item: MenuItem) => void;
+  onHover?: (index: number, button: HTMLElement) => void;
+  onOpen?: (index: number, button: HTMLElement) => void;
+}) {
+  return items.map((item, i) =>
+    item === "separator" ? (
+      <div key={i} className="menu-separator" role="separator" />
+    ) : (
+      <button
+        key={i}
+        role="menuitem"
+        data-index={i}
+        className={item.danger ? "danger" : item.items && openIndex === i ? "open" : undefined}
+        disabled={item.disabled}
+        aria-current={item.checked || undefined}
+        aria-haspopup={item.items ? "menu" : undefined}
+        aria-expanded={item.items ? openIndex === i : undefined}
+        onMouseEnter={(e) => onHover?.(i, e.currentTarget)}
+        onClick={(e) => (item.items ? onOpen?.(i, e.currentTarget) : onChoose(item))}
         onKeyDown={(e) => {
-          if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-          e.preventDefault();
-          const buttons = [
-            ...ref.current!.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"),
-          ];
-          const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
-          const next =
-            e.key === "ArrowDown"
-              ? (i + 1) % buttons.length
-              : (i - 1 + buttons.length) % buttons.length;
-          buttons[next]?.focus();
+          if (item.items && (e.key === "ArrowRight" || e.key === "Enter" || e.key === " ")) {
+            e.preventDefault();
+            e.stopPropagation();
+            onOpen?.(i, e.currentTarget);
+          }
         }}
       >
-        {menu.items.map((item, i) =>
-          item === "separator" ? (
-            <div key={i} className="menu-separator" role="separator" />
-          ) : (
-            <button
-              key={i}
-              role="menuitem"
-              className={item.danger ? "danger" : undefined}
-              disabled={item.disabled}
-              aria-current={item.checked || undefined}
-              onClick={() => {
-                close();
-                item.action();
-              }}
-            >
-              {item.color !== undefined && (
-                <span className="menu-swatch" data-color={item.color || undefined} />
-              )}
-              {item.label}
-              {item.checked && <Check size={13} className="menu-check" aria-hidden="true" />}
-              {item.starred && (
-                <Star size={12} className="menu-check menu-star" aria-label="default" />
-              )}
-            </button>
-          ),
+        {item.color !== undefined && (
+          <span className="menu-swatch" data-color={item.color || undefined} />
         )}
-      </div>
-    </div>
+        {item.label}
+        {item.checked && <Check size={13} className="menu-check" aria-hidden="true" />}
+        {item.starred && <Star size={12} className="menu-check menu-star" aria-label="default" />}
+        {item.items && <ChevronRight size={13} className="menu-check" aria-hidden="true" />}
+      </button>
+    ),
   );
 }
 

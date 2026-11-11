@@ -6,6 +6,7 @@ import {
   FolderGit2,
   GitBranch,
   LayoutList,
+  PencilRuler,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
@@ -215,10 +216,11 @@ export function NoteBar({ path }: { path: string }) {
           key={sub.node.path}
           type="button"
           className="note-bar-button"
-          title={`Subnote: ${sub.node.name.replace(/\.md$/i, "")}`}
+          title={`${sub.node.kind === "canvas" ? "Canvas subnote" : "Subnote"}: ${sub.node.name.replace(/\.(md|excalidraw)$/i, "")}`}
           onClick={(e) => openNote(sub.node.path, e)}
         >
-          <FileText size={12} /> {sub.key}
+          {sub.node.kind === "canvas" ? <PencilRuler size={12} /> : <FileText size={12} />}{" "}
+          {sub.key}
         </button>
       ))}
       {project && (

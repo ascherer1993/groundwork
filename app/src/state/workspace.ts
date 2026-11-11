@@ -11,7 +11,7 @@ import { api } from "../api/client";
 import type { FileChange } from "../api/generated/FileChange";
 import type { TabInfo } from "../api/generated/TabInfo";
 import type { TerminalInfo } from "../api/generated/TerminalInfo";
-import { displayName, isPagePath, projectOfView, TODO_BOARD } from "../lib/paths";
+import { displayName, isCanvasPath, isPagePath, projectOfView, TODO_BOARD } from "../lib/paths";
 import { splitTarget } from "../markdown/syntax";
 import { message, newNoteFolder, onVaultChange, useVault } from "./vault";
 import { useUi } from "./ui";
@@ -171,6 +171,7 @@ function titleOf(path: string): string {
   if (project) return project;
   if (path === TODO_BOARD) return "Todo board";
   const name = path.slice(path.lastIndexOf("/") + 1);
+  if (isCanvasPath(name)) return displayName(name, "canvas").base;
   const ext = name.toLowerCase().endsWith(".md") ? "" : null;
   return ext === null ? name : displayName(name, "note").base;
 }

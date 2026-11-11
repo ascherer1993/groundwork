@@ -67,6 +67,7 @@
   --kind-note: var(--text-muted);
   --kind-page: #2d8a6e;
   --kind-bundle: #a35fd0;
+  --kind-canvas: #c76a1f;
 
   --radius: 6px;
   --sidebar-width: 260px;
@@ -135,5 +136,6 @@
 
     --kind-page: #5cc5a3;
     --kind-bundle: #c995ee;
+    --kind-canvas: #eaa05f;
   }
 }

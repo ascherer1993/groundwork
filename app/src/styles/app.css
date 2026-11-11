@@ -335,6 +335,10 @@ input {
   color: var(--kind-bundle);
 }
 
+.kind-canvas {
+  color: var(--kind-canvas);
+}
+
 .tree-label {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -586,6 +590,130 @@ input {
 .page-view {
   display: flex;
   height: 100%;
+}
+
+/* A canvas (PLAN §5.17): Excalidraw fills the tab. Inside it, its own
+   variables (--island-bg-color…) follow the canvas's light or dark look. */
+.canvas-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.canvas-view {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  /* Excalidraw's own layers stay below the app's menus and dialogs. */
+  isolation: isolate;
+}
+
+.canvas-view .excalidraw {
+  --ui-font: var(--font-ui);
+}
+
+/* Links to Excalidraw's site: canvases stay offline. */
+.canvas-view .library-menu-browse-button {
+  display: none;
+}
+
+.canvas-tools {
+  position: relative;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--border-radius-lg);
+  background: var(--island-bg-color);
+  box-shadow: var(--shadow-island);
+}
+
+.canvas-tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--border-radius-md);
+  background: transparent;
+  color: var(--icon-fill-color);
+  cursor: pointer;
+}
+
+.canvas-tool:hover {
+  background: var(--button-hover-bg);
+}
+
+.canvas-tool.active {
+  background: var(--color-surface-primary-container);
+  color: var(--color-primary);
+}
+
+.icon-picker {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  max-height: min(420px, 60vh);
+  border-radius: var(--border-radius-lg);
+  background: var(--island-bg-color);
+  box-shadow: var(--shadow-island);
+  color: var(--text-primary-color);
+}
+
+.icon-picker-head {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 1px solid var(--default-border-color);
+}
+
+.icon-picker-head input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--input-border-color);
+  border-radius: var(--border-radius-md);
+  background: var(--input-bg-color);
+  color: var(--text-primary-color);
+  font: inherit;
+}
+
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
+  gap: 2px;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.icon-choice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: var(--border-radius-md);
+  background: transparent;
+  color: var(--icon-fill-color);
+  cursor: pointer;
+}
+
+.icon-choice:hover,
+.icon-choice:focus-visible {
+  background: var(--button-hover-bg);
+  outline: none;
+}
+
+.icon-picker-empty {
+  margin: 0;
+  padding: 12px;
+  color: var(--color-gray-50);
 }
 
 .page-view .page-frame {
@@ -3282,4 +3410,8 @@ button.link-button:hover:not(:disabled) {
 .ticket-repos {
   flex: none;
   white-space: nowrap;
+}
+
+.menu button.open {
+  background: var(--bg-hover);
 }

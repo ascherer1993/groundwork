@@ -93,6 +93,7 @@ My Vault/
           app.js
           state.json              # written by the page via the bridge API
         sketch.html               # a single-file HTML page
+        Architecture.excalidraw   # a canvas (§5.17)
     Empower/                      # same repo as Lincoln, different components
     Kyoto Trip/                   # a project with no code at all
       .groundwork.yml
@@ -652,7 +653,7 @@ These all work without the app running:
 - **Tabs:** a subnote's tab shows its key, with the note it's under in small accent text beneath ("transcript" over "2026-12-01 Standup"); a project's view shows "Project view" over the project's name, so neither looks like the note it sits under.
 - **Renaming or moving** a note takes its subnotes along, keeping their keys (`Session::rename`, one undo for all); links to them are rewritten like any other. The rename is refused before anything moves if a subnote's new name is taken. Renaming a subnote moves only it. **Deleting** a note from the tree trashes its subnotes too, and says so first.
 - **Events:** a subnote in `Events/` or a `Meetings` folder isn't an event of its own (unless its own `type:` says so), so a transcript doesn't show twice in the project view or the todo board.
-- The rules live in `crates/core/src/subnotes.rs`, mirrored for the tree in `app/src/lib/subnotes.ts`. Later, maybe: pages (`Name.key.html`) as subnotes too.
+- The rules live in `crates/core/src/subnotes.rs`, mirrored for the tree in `app/src/lib/subnotes.ts`. A canvas (`Name.key.excalidraw`, §5.17) can be a subnote too; only notes have subnotes. Later, maybe: pages (`Name.key.html`) as subnotes too.
 
 ### 5.16 Encrypted notes (built 2026-11-08)
 - **Encrypting:** right-click a note › **Encrypt…** (or the palette) asks for a password twice and an optional hint, warning that a forgotten password can't be recovered. The note stays a `.md` file at its path (links, renames and the tree work as before); on disk only `encrypted: groundwork-v1` and `hint:` are readable, then a notice and a ```` ```groundwork-encrypted ```` block. The whole note, its own frontmatter included, is sealed with XChaCha20-Poly1305 under an Argon2id key (64 MiB, 3 passes; the cost is stored in the file and authenticated). Format: `crates/core/src/crypt.rs`. Groundwork-only: Obsidian shows the ciphertext.
@@ -661,6 +662,17 @@ These all work without the app running:
 - **Also:** **Change password…** and **Remove encryption…** (both need the password). A lock icon marks encrypted notes in the tree.
 - **What can't see inside:** search (it finds them by name only), the index (no tags, links or todos), embeds and hover previews (a placeholder, even unlocked), and the CLI/Claude: the app socket refuses `crypt.*` except `crypt.lock`, and `Session::write_file` refuses to write over an encrypted note, so todos, quick add and agents can't clobber one. qmd still indexes the (meaningless) ciphertext.
 - Known limits: links inside an encrypted note aren't rewritten when their targets are renamed (the index can't see them); an encrypted note's activity is logged as a plain "modified".
+
+### 5.17 Canvases (built 2026-11-10)
+For drawing how things work, on a call with your screen shared, and pasting the result into Slack.
+- **The file:** `Name.excalidraw`, Excalidraw's own JSON (`"type": "excalidraw"`), so excalidraw.com and Obsidian's Excalidraw plugin open it too. A file kind of its own (`NodeKind::Canvas`); new ones start as an empty scene. Only the drawing, the background and the grid are saved, not where you've scrolled or zoomed, so panning doesn't touch the file. Pasted images are kept inside it (base64), as Excalidraw does. Links to it (`[[Name.excalidraw]]`) resolve and are rewritten on rename like any other.
+- **Making one:** a "specialty note". Right-click a folder › **New specialty note › Canvas…**, or a note › **New specialty subnote › Canvas…** for `Note.key.excalidraw` beside it (§5.15: listed under the note, moved and deleted with it, and its tab's note bar goes back up). The palette has **New canvas…** (where new notes go) and **New canvas subnote of this note…**. The context menu grew submenus for this (`MenuItem.items`); other specialty kinds go in the same submenu.
+- **The view** (`app/src/components/CanvasView.tsx`): Excalidraw 0.18 (MIT) fills the tab: an infinite canvas with shapes, arrows that stay bound to boxes, lines (editable: double-click to move or add points; round edges curve them), freehand, text, the eraser, the laser pointer, frames, a library and hand-drawn or clean styles. It loads with the first canvas opened (`React.lazy`), so the app's first load doesn't carry it. Edits save 300 ms after you stop, and on closing the tab; a change made elsewhere shows up if there's nothing unsaved here. ⌘Z in a canvas is the canvas's undo, not "undo the last file change". Excalidraw's main menu keeps only what fits (export dialog, find, command palette, help, clear, background).
+- **Icons:** the toolbar's icon button opens a picker of common software-engineering icons (servers, databases, clouds, users, locks, git…) and a search over all of Lucide's (`app/src/lib/canvasIcons.ts`). An icon goes in as ordinary shapes (lines, ellipses, rectangles in one group, in the current stroke colour), not a picture, so it follows dark mode and can be recoloured and resized. Branded icon packs (AWS, Azure, Kubernetes…) are for later.
+- **Copy and export** (`app/src/lib/canvas.ts`): **Copy as image** puts a PNG on the clipboard; **Export image** saves a PNG or JPEG (the desktop app asks where with the save dialog and writes it with the `save_image` Tauri command; the browser downloads it). Each takes the selection if there is one, else everything drawn, with 24 px around it, at 2× for Retina screens. Images are always light, on the canvas's background, whatever the canvas shows.
+- **Look:** Settings › Canvases › Look: follow the app (light or dark, as macOS is), always light, or always dark (`canvasTheme` in the app's settings).
+- **Offline:** nothing on a canvas reaches the web. Excalidraw's fonts are served by the app (`vite.config.ts` serves them in development and copies them into the build; `window.EXCALIDRAW_ASSET_PATH`), not its CDN; there's no collaboration, AI, share links or embedded web content (`validateEmbeddable` refuses all), and the library's "Browse libraries" link is hidden. Library items are kept in this browser's storage. e2e checks that opening a canvas makes no outside requests.
+- **Later:** showing a canvas inside a note as a picture (`![[Name.excalidraw]]`); branded icon packs; perhaps a canvas from a template.
 
 ## 6. Phases
 
@@ -883,6 +895,7 @@ Things built but not yet tried for real, to come back to:
 - Databases (Dataview/Bases-style or something richer); to be designed later
 - MCP server wrapper
 - Real Jira API integration (status and title sync)
+- Canvases (§5.17): show one in a note as a picture (`![[Name.excalidraw]]`), kept up to date; branded icon packs (AWS, Azure, Kubernetes…)
 - Graph view, themes, plugin system, other agents (Codex…)
 - **Clickable folder notes** (asked for 2026-11-09): a folder with its own note (`Acme/Acme.md`) is one row in the tree; clicking it opens the note, and its chevron opens the folder.
 - **A month view of the todo board** (§5.11), if the week isn't enough. `todo.board` already takes up to six weeks.

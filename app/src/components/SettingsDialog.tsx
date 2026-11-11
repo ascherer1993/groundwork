@@ -1,11 +1,13 @@
 import { ArrowDown, ArrowUp, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
+import type { CanvasTheme } from "../api/generated/CanvasTheme";
 import type { DailyFields } from "../api/generated/DailyFields";
 import type { DailyNoteSettings } from "../api/generated/DailyNoteSettings";
 import type { QuickAddChoice } from "../api/generated/QuickAddChoice";
 import { comboOf, displayCombo, usable } from "../lib/keyCombo";
 import { allCommands, bindingOf, type KeyCommand, useKeys } from "../state/keys";
+import { useCanvasSettings } from "../state/canvas";
 import { useLocks } from "../state/locks";
 import { choiceCommand, useQuickAdd } from "../state/quickadd";
 import { useUi } from "../state/ui";
@@ -22,6 +24,7 @@ const SECTIONS = [
   "Quick add",
   "Search",
   "Encrypted notes",
+  "Canvases",
   "Keyboard shortcuts",
 ] as const;
 export type Section = (typeof SECTIONS)[number];
@@ -89,6 +92,8 @@ function SettingsDialogBody() {
             <SearchSettings />
           ) : section === "Encrypted notes" ? (
             <EncryptionSettings />
+          ) : section === "Canvases" ? (
+            <CanvasSettings />
           ) : (
             <ShortcutSettings />
           )}
@@ -264,6 +269,37 @@ function EncryptionSettings() {
           onBlur={commit}
           onKeyDown={(e) => e.key === "Enter" && commit()}
         />
+      </label>
+    </>
+  );
+}
+
+// ---- Canvases --------------------------------------------------------------
+
+/** Settings › Canvases: how drawings look (PLAN §5.17). */
+function CanvasSettings() {
+  const theme = useCanvasSettings((s) => s.theme);
+  return (
+    <>
+      <div className="settings-head">
+        <h2>Canvases</h2>
+      </div>
+      <p className="muted">
+        Right-click a folder and choose <strong>New specialty note › Canvas…</strong> to draw on an
+        infinite canvas, or a note for a canvas subnote. Copied and exported images are always
+        light, on a white background.
+      </p>
+      <label className="dialog-field">
+        <span>Look</span>
+        <select
+          aria-label="Canvas look"
+          value={theme}
+          onChange={(e) => useCanvasSettings.getState().setTheme(e.target.value as CanvasTheme)}
+        >
+          <option value="app">Follow the app (light or dark, like macOS)</option>
+          <option value="light">Always light</option>
+          <option value="dark">Always dark</option>
+        </select>
       </label>
     </>
   );

@@ -215,6 +215,10 @@ await groundwork.navigate("[[Plan]]")    // open a note in Groundwork
 
 A typical flow: build the page, ask the user to open it in Groundwork and tell you when they're done, then run `groundwork page state`.
 
+## Canvases
+
+A canvas is a drawing on an infinite canvas: `Name.excalidraw`, Excalidraw's own JSON (`{"type": "excalidraw", "version": 2, "elements": [...], "appState": {...}, "files": {}}`). `groundwork files` lists them as `(canvas)`. `Note.key.excalidraw` beside `Note.md` is a canvas subnote of that note. The user draws these by hand; if you're asked to sketch one, write the JSON directly (rectangles, ellipses, `arrow`s with `startBinding`/`endBinding`, `text` with a `containerId` to sit inside a shape). An open canvas shows your changes once it has nothing unsaved. Link with the extension: `[[Name.excalidraw]]`.
+
 ## Projects, repos and tickets
 
 - **A project** is any folder with a `.groundwork.yml` (name, overview note, the `code` it uses). Make one with `groundwork project create`. A note belongs to the projects linked in its `projects:` frontmatter (`projects: ["[[Acme]]"]`, links to overview notes) plus the project folder it's in.

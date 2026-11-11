@@ -120,7 +120,11 @@ fn notes_links_and_search() {
     );
     assert!(!files.lines().any(|l| l == "Projects"), "{files}");
     let demos = v.ok(&["files", "--path", "Projects/Acme/demos/"]);
-    assert_eq!(demos.lines().count(), 4, "{demos}");
+    assert_eq!(demos.lines().count(), 5, "{demos}");
+    assert!(
+        demos.contains("Projects/Acme/demos/Architecture.excalidraw (canvas)\n"),
+        "{demos}"
+    );
     let all = v.ok(&["links", "--all"]);
     assert!(
         all.contains("Welcome.md -> Contacts/Jane Doe.md\n"),

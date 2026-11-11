@@ -2,7 +2,8 @@ import type { NodeKind } from "../api/generated/NodeKind";
 
 /**
  * How a vault entry is labelled in the UI. Like Obsidian, notes drop `.md`;
- * other files keep their extension, shown muted.
+ * canvases drop `.excalidraw` (their icon says what they are); other files
+ * keep their extension, shown muted.
  */
 export function displayName(name: string, kind: NodeKind): { base: string; ext: string } {
   if (kind === "folder") return { base: name, ext: "" };
@@ -10,7 +11,15 @@ export function displayName(name: string, kind: NodeKind): { base: string; ext: 
   if (dot <= 0) return { base: name, ext: "" };
   const base = name.slice(0, dot);
   const ext = name.slice(dot);
-  return kind === "note" ? { base, ext: "" } : { base, ext };
+  return kind === "note" || kind === "canvas" ? { base, ext: "" } : { base, ext };
+}
+
+/** A canvas's extension: Excalidraw's own JSON (PLAN §5.17). */
+export const CANVAS_EXT = ".excalidraw";
+
+/** A drawing on an infinite canvas. */
+export function isCanvasPath(path: string): boolean {
+  return path.toLowerCase().endsWith(CANVAS_EXT);
 }
 
 /** An HTML page: a single `.html` file or a `.page` bundle. */

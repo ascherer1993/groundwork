@@ -7,6 +7,7 @@ import { insertRendered } from "../editor/templates";
 import { EDITOR_COMMANDS } from "../editor/commands";
 import { EditorView } from "@codemirror/view";
 import { isViewPath, TODO_BOARD } from "./paths";
+import { newCanvas, newCanvasSubnote } from "./canvasFiles";
 import { canPickFolder, pickFolder } from "./pickFolder";
 import { changePassword, encryptNote, removeEncryption } from "./encryption";
 import { isEncrypted, isUnlocked, useLocks } from "../state/locks";
@@ -163,6 +164,17 @@ function commands(): Command[] {
       run: () => ui.setSwitcher(true),
     },
     { id: "new-note", label: "New note", run: () => ws.newNote() },
+    {
+      id: "new-canvas",
+      label: "New canvas…",
+      run: () => newCanvas(newNoteFolder(ws.activePath)),
+    },
+    {
+      id: "new-canvas-subnote",
+      label: "New canvas subnote of this note…",
+      when: () => !!ws.activePath?.toLowerCase().endsWith(".md"),
+      run: () => newCanvasSubnote(ws.activePath!),
+    },
     { id: "project-view", label: "Open a project’s view…", run: pickProjectView },
     { id: "new-from-template", label: "New note from template…", run: newNoteFromTemplate },
     { id: "quick-add", label: "Quick add…", run: openQuickAdd },
@@ -605,7 +617,9 @@ function inEditable(target: EventTarget | null): boolean {
     target.isContentEditable ||
     target.tagName === "INPUT" ||
     target.tagName === "TEXTAREA" ||
-    !!target.closest(".cm-editor")
+    !!target.closest(".cm-editor") ||
+    // A canvas has its own undo.
+    !!target.closest(".excalidraw")
   );
 }
 

@@ -8,6 +8,7 @@ use tauri::http::{Response, StatusCode, header};
 use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 
 mod command_bar;
+mod export;
 #[cfg(target_os = "macos")]
 mod notifications;
 #[cfg(target_os = "macos")]
@@ -162,7 +163,8 @@ pub fn run() {
             api,
             test_notification,
             command_bar::show_command_bar,
-            command_bar::hide_command_bar
+            command_bar::hide_command_bar,
+            export::save_image
         ])
         .build(tauri::generate_context!())
         .expect("error while building Groundwork");

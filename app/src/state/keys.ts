@@ -56,6 +56,7 @@ export const KEY_COMMANDS: KeyCommand[] = [
   { id: "toggle-right", label: "Toggle links panel", group: "General", key: "Shift+Cmd+B" },
   { id: "undo-file", label: "Undo the last file change", group: "General", key: "Cmd+Z" },
   { id: "new-note", label: "New note", group: "Notes", key: "Cmd+N" },
+  { id: "new-canvas", label: "New canvas", group: "Notes", key: null },
   { id: "project-view", label: "Open a project’s view…", group: "Notes", key: null },
   { id: "todo-board", label: "Open the todo board", group: "Notes", key: "Shift+Cmd+T" },
   { id: "daily-today", label: "Open today’s daily note", group: "Notes", key: "Shift+Cmd+D" },

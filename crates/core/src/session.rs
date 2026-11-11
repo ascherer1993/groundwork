@@ -375,6 +375,7 @@ impl Session {
                 default = starter_page(file_name(path));
                 &default
             }
+            None if classify(path, false) == NodeKind::Canvas => STARTER_CANVAS,
             None => "",
         };
         atomic_write(&full, text)?;
@@ -1381,6 +1382,18 @@ impl Drop for Session {
 }
 
 /// A new page: an empty document that follows light and dark mode.
+/// A new canvas: an empty Excalidraw scene, so Obsidian's Excalidraw plugin
+/// and excalidraw.com open it too.
+const STARTER_CANVAS: &str = r##"{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "groundwork",
+  "elements": [],
+  "appState": { "gridSize": 20, "viewBackgroundColor": "#ffffff" },
+  "files": {}
+}
+"##;
+
 fn starter_page(name: &str) -> String {
     let title = name.rsplit_once('.').map_or(name, |(base, _)| base);
     let title = title
@@ -2047,6 +2060,42 @@ mod tests {
             .unwrap();
         assert!(outcome.subnotes.is_empty());
         assert!(v.exists("Standup.md") && v.exists("Standup.notes.md"));
+    }
+
+    #[test]
+    fn renaming_a_note_takes_its_canvases() {
+        let scene = r#"{"type":"excalidraw","elements":[]}"#;
+        let v = TestVault::new(&[
+            ("Standup.md", "Drawn in [[Standup.diagram.excalidraw]]."),
+            ("Standup.diagram.excalidraw", scene),
+            ("Links.md", "![[Standup.diagram.excalidraw]]"),
+        ]);
+        let (outcome, _) = v.session.rename("Standup.md", "Kickoff.md").unwrap();
+        assert_eq!(outcome.subnotes, ["Kickoff.diagram.excalidraw"]);
+        assert_eq!(v.read("Kickoff.diagram.excalidraw"), scene);
+        assert!(!v.exists("Standup.diagram.excalidraw"));
+        assert_eq!(
+            v.read("Kickoff.md"),
+            "Drawn in [[Kickoff.diagram.excalidraw]]."
+        );
+        assert_eq!(v.read("Links.md"), "![[Kickoff.diagram.excalidraw]]");
+
+        v.session.undo().unwrap();
+        assert_eq!(v.read("Standup.diagram.excalidraw"), scene);
+        assert!(!v.exists("Kickoff.diagram.excalidraw"));
+    }
+
+    #[test]
+    fn new_canvases_start_as_an_empty_scene() {
+        let v = TestVault::new(&[]);
+        v.session.create_file("Flow.excalidraw", None).unwrap();
+        let scene: serde_json::Value = serde_json::from_str(&v.read("Flow.excalidraw")).unwrap();
+        assert_eq!(scene["type"], "excalidraw");
+        assert_eq!(scene["elements"], serde_json::json!([]));
+        assert_eq!(
+            v.session.vault().read_file("Flow.excalidraw").unwrap().kind,
+            NodeKind::Canvas
+        );
     }
 
     #[test]
