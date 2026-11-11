@@ -513,7 +513,8 @@ export async function terminalPlaces(
 
 /**
  * A workspace's new-terminal menu: its folder, then its ticket's worktrees
- * (the default starred) and components, then the ticket's repo choices.
+ * (the default starred) and components, then the vault root unless that's
+ * already its folder, then the ticket's repo choices.
  * `open` starts the terminal (in the workspace's folder without a `cwd`).
  */
 export async function newTerminalItems(
@@ -528,6 +529,12 @@ export async function newTerminalItems(
       starred: p.isDefault,
       action: () => open(p.cwd),
     });
+  // For working on the vault itself, without adding it as a repo.
+  const root = useVault.getState().vault?.path;
+  const folder = useWorkspaces.getState().list.find((w) => w.id === area)?.cwd;
+  const bare = (path: string) => path.replace(/\/+$/, "");
+  if (root && (!folder || bare(folder) !== bare(root)))
+    items.push({ label: "New terminal in vault root", action: () => open(root) });
   // Claude in a worktree, able to read the ticket's other repos too.
   const worktrees = places.filter((p) => p.worktree);
   if (worktrees.length > 1) {

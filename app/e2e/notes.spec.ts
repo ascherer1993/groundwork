@@ -349,6 +349,10 @@ test("file tree: new projects, and folders made into projects", async ({ page })
   await expect(page.getByRole("menuitem", { name: "Make this a project" })).toHaveCount(0);
   await expect(page.getByRole("menuitem", { name: "New ticket…" })).toBeVisible();
   await page.keyboard.press("Escape");
+
+  // The vault is shared with later specs, which count its projects.
+  for (const name of ["Test Project", "Side gig"])
+    rmSync(join(VAULT, "Projects", name), { recursive: true, force: true });
 });
 
 test("tabs and splits persist across reloads", async ({ page }) => {

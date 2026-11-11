@@ -401,12 +401,27 @@ test("a ticket spans repos in one workspace; its subnotes follow it; the Vault w
   await quickOpen(page, "TEAM-200 Fix signup.infra");
   await expect(header.locator(".terminals-name")).toHaveText("TEAM-200 Fix signup");
 
+  // A ticket's workspace can still open a terminal in the vault root.
+  await header.getByRole("button", { name: "New terminal in…" }).click();
+  await page.getByRole("menuitem", { name: "New terminal in vault root" }).click();
+  await expect
+    .poll(async () => {
+      await page.keyboard.type("pwd\n");
+      return (await screen(page)).replace(/\n/g, "");
+    })
+    .toContain(VAULT);
+
   // The Vault workspace is always first to switch to, and made when picked.
   await header.locator(".terminals-name").click();
   await expect(page.getByRole("option").first()).toContainText("Vault");
   await page.keyboard.press("Enter");
   await expect(header.locator(".terminals-name")).toHaveText("Vault");
   await expect(terminalTabs(page)).toHaveCount(1);
+  // Its terminals already start in the vault root, so the menu doesn't offer it.
+  await header.getByRole("button", { name: "New terminal in…" }).click();
+  await expect(page.getByRole("menuitem", { name: "New terminal" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "New terminal in vault root" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
   await page.getByRole("tab", { name: "Workspaces" }).click();
   const vaultRow = page
     .locator(".area-row")
