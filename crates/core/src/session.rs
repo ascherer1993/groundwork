@@ -1104,6 +1104,15 @@ impl Session {
                         "priority must be 0–5, not {priority}"
                     )));
                 }
+                TaskChange::Text { text } => {
+                    let text = text.trim();
+                    if text.is_empty() || text.contains('\n') {
+                        return Err(CoreError::InvalidPath(
+                            "a todo needs one line of text".into(),
+                        ));
+                    }
+                    parse::set_task_text(content, text)
+                }
             };
             edited.ok_or_else(stale)
         })
@@ -2512,6 +2521,29 @@ mod tests {
             v.read("Work.md")
                 .starts_with("# Work\n- [x] Ship it 📅 2026-11-09 ⏫ ✅ 20")
         );
+        // Changing the text keeps the rest of the line; the id then changes
+        // with it, so the old one is stale.
+        let text = |text: &str| TaskChange::Text { text: text.into() };
+        assert!(matches!(
+            v.session.update_task(&id, &text("  ")),
+            Err(CoreError::InvalidPath(_))
+        ));
+        v.session.update_task(&id, &text("Ship it today")).unwrap();
+        assert!(
+            v.read("Work.md")
+                .starts_with("# Work\n- [x] Ship it today 📅 2026-11-09 ⏫ ✅ 20")
+        );
+        assert!(matches!(
+            v.session.update_task(&id, &text("Again")),
+            Err(CoreError::Conflict(_))
+        ));
+        let new_id = todos::all(&v.session.index(), &DailySettings::read(v.dir.path()))
+            .into_iter()
+            .find(|t| t.task.text == "Ship it today")
+            .unwrap()
+            .id;
+        v.session.update_task(&new_id, &text("Ship it")).unwrap();
+        assert!(v.read("Work.md").starts_with("# Work\n- [x] Ship it 📅"));
         // A stale id is refused rather than editing whatever is on that line now.
         fs::write(
             v.dir.path().join("Work.md"),

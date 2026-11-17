@@ -6,7 +6,7 @@
  * line. Its path is `todos:board` (`lib/paths.ts`), so a note opened from it
  * is one Back away.
  */
-import { CalendarDays, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Pencil, Plus } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { Board } from "../api/generated/Board";
@@ -19,7 +19,14 @@ import { isoDate } from "../markdown/dates";
 import { attachContentHandlers, hydrate } from "../markdown/hydrate";
 import { renderInline } from "../markdown/render";
 import { taskMetaHtml } from "../markdown/tasks";
-import { opensNote, parseTodoInput, todoSource } from "../markdown/todos";
+import { mountTodoEdit } from "../markdown/todoEdit";
+import {
+  cancelTodo,
+  opensNote,
+  parseTodoInput,
+  rescheduleTodo,
+  todoSource,
+} from "../markdown/todos";
 import { useUi } from "../state/ui";
 import { message, onVaultChange } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
@@ -265,6 +272,8 @@ function EventItem({ event }: { event: ProjectEvent }) {
 function TodoItem({ todo, today }: { todo: Todo; today: string }) {
   const isOpen = todo.status === "todo" || todo.status === "other";
   const text = useRef<HTMLSpanElement>(null);
+  const editBox = useRef<HTMLDivElement>(null);
+  const [editing, setEditing] = useState(false);
   // Only what the column doesn't say: priority, and the date if it's overdue.
   const overdue = isOpen && !!todo.due && todo.due < today ? todo.due : undefined;
   const priority = todo.priority === 3 ? undefined : todo.priority;
@@ -276,14 +285,42 @@ function TodoItem({ todo, today }: { todo: Todo; today: string }) {
     if (!el) return;
     el.innerHTML = renderInline(todo.text);
     void hydrate(el, todo.path);
-  }, [todo.text, todo.path]);
+  }, [todo.text, todo.path, editing]);
+
+  // The field is mounted once per edit, saving against the todo it started
+  // from even if the board refreshes meanwhile.
+  useEffect(() => {
+    const box = editBox.current;
+    if (!editing || !box) return;
+    return mountTodoEdit(box, todo, () => setEditing(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+
+  const menu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    useUi.getState().showMenu(e.clientX, e.clientY, [
+      { label: "Edit", action: () => setEditing(true) },
+      ...(isOpen
+        ? [
+            { label: "Reschedule…", action: () => void rescheduleTodo(todo) },
+            { label: "Cancel todo…", action: () => void cancelTodo(todo) },
+          ]
+        : []),
+      "separator" as const,
+      {
+        label: "Open note",
+        action: () => useWorkspace.getState().open(todo.path, { line: todo.line }),
+      },
+    ]);
+  };
 
   return (
     <li
-      className={`board-todo${isOpen ? "" : " is-closed"}`}
+      className={`board-todo${isOpen ? "" : " is-closed"}${editing ? " is-editing" : ""}`}
       data-note-path={todo.path}
-      draggable={isOpen}
-      onClick={(e) => opensNote(e) && open(todo.path, e, todo.line)}
+      draggable={isOpen && !editing}
+      onClick={(e) => !editing && opensNote(e) && open(todo.path, e, todo.line)}
+      onContextMenu={editing ? undefined : menu}
       onDragStart={(e) => {
         e.dataTransfer.setData(DRAGGED, todo.id);
         e.dataTransfer.setData("text/plain", todo.text);
@@ -299,7 +336,16 @@ function TodoItem({ todo, today }: { todo: Todo; today: string }) {
         onChange={() => void change(todo.id, { kind: isOpen ? "done" : "reopen" })}
       />
       <div className="board-todo-body">
-        <span className="todo-text" ref={text} />
+        {editing ? (
+          <div
+            className="todo-edit"
+            ref={editBox}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span className="todo-text" ref={text} />
+        )}
         <span className="todo-details">
           {meta && <span dangerouslySetInnerHTML={{ __html: meta }} />}
           <button
@@ -311,6 +357,20 @@ function TodoItem({ todo, today }: { todo: Todo; today: string }) {
           </button>
         </span>
       </div>
+      {!editing && (
+        <button
+          type="button"
+          className="icon board-todo-edit"
+          title="Edit"
+          aria-label={`Edit: ${todo.text}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            setEditing(true);
+          }}
+        >
+          <Pencil size={13} aria-hidden="true" />
+        </button>
+      )}
     </li>
   );
 }

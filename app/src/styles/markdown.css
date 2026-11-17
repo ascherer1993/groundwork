@@ -1374,6 +1374,15 @@ summary.callout-title {
   opacity: 1;
 }
 
+.todo-item.is-editing .todo-actions {
+  display: none;
+}
+
+/* The edit field (markdown/todoEdit.ts) stands in for the text. */
+.todo-edit {
+  margin: -2px 0 2px;
+}
+
 .todo-actions .icon {
   width: 22px;
   height: 22px;

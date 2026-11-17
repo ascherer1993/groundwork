@@ -331,6 +331,35 @@ pub fn set_task_priority(line: &str, priority: u8) -> Option<String> {
     Some(format!("{prefix}{status}]{body}"))
 }
 
+/// Replaces a task's text, keeping its status, its metadata (dates and
+/// priority, in their order) and its block id after the new text. `None`
+/// if the line isn't a task.
+pub fn set_task_text(line: &str, text: &str) -> Option<String> {
+    let caps = TASK_PREFIX.captures(line)?;
+    let (prefix, status, rest) = (&caps[1], &caps[2], &caps[3]);
+    let body = &rest[1..];
+    let (body, block) = match BLOCK_ID.find(body) {
+        Some(m) => (&body[..m.start()], body[m.start()..].trim()),
+        None => (body, ""),
+    };
+    let mut meta: Vec<(usize, &str)> = TASK_DATE
+        .find_iter(body)
+        .chain(TASK_PRIORITY.find_iter(body))
+        .map(|m| (m.start(), m.as_str()))
+        .collect();
+    meta.sort_by_key(|(at, _)| *at);
+    let mut out = format!("{prefix}{status}] {}", text.trim());
+    for (_, m) in meta {
+        out.push(' ');
+        out.push_str(m);
+    }
+    if !block.is_empty() {
+        out.push(' ');
+        out.push_str(block);
+    }
+    Some(out)
+}
+
 /// Appends a metadata marker to a task's text, before any block id.
 fn insert_meta(body: &str, meta: &str) -> String {
     let body = body.trim_end();
@@ -925,6 +954,25 @@ mod tests {
             "- [ ] Plain 🔺"
         );
         assert_eq!(set_task_status("not a task", 'x', "2026-11-04"), None);
+        // New text keeps the indent, status, metadata and block id.
+        assert_eq!(
+            set_task_text(line, "  Ask [[Bob]] about it ").unwrap(),
+            "  - [ ] Ask [[Bob]] about it ⏫ 📅 2026-11-05 ➕ 2026-11-03 ^t1"
+        );
+        // Metadata written between words moves after the text, in order.
+        assert_eq!(
+            set_task_text(
+                "> 1. [x] Call 📅 2026-11-05 Jane ✅ 2026-11-06",
+                "Email Jane"
+            )
+            .unwrap(),
+            "> 1. [x] Email Jane 📅 2026-11-05 ✅ 2026-11-06"
+        );
+        assert_eq!(
+            set_task_text("- [ ] Plain", "Fancy").unwrap(),
+            "- [ ] Fancy"
+        );
+        assert_eq!(set_task_text("not a task", "x"), None);
         assert_eq!(
             toggle_task_line("- [x] Done ✅ 2026-11-01", "2026-11-04").unwrap(),
             "- [ ] Done"

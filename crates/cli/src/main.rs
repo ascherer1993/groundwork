@@ -560,6 +560,12 @@ enum TodoCommand {
     Reschedule { id: String, date: String },
     /// Set a todo's priority (`p0`–`p5`).
     Priority { id: String, priority: String },
+    /// Change a todo's text, keeping its dates and priority.
+    Edit {
+        id: String,
+        #[arg(allow_hyphen_values = true)]
+        text: String,
+    },
 }
 
 #[derive(Args)]
@@ -1984,6 +1990,7 @@ fn todo(session: &Session, cmd: TodoCommand, json: bool) -> Fallible<()> {
                 priority: priority_arg(&priority)?,
             },
         ),
+        TodoCommand::Edit { id, text } => change(&id, TaskChange::Text { text }),
     }
 }
 

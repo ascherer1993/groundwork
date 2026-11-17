@@ -2897,6 +2897,25 @@ button.link-button:hover:not(:disabled) {
   cursor: pointer;
 }
 
+.board-todo-edit {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--text-faint);
+  opacity: 0;
+}
+
+.board-todo:hover .board-todo-edit,
+.board-todo-edit:focus-visible {
+  opacity: 1;
+}
+
+.board-todo.is-editing,
+.board-todo.is-editing .board-todo-body {
+  cursor: auto;
+}
+
 .board-todo.is-closed .todo-text {
   color: var(--text-muted);
   text-decoration: line-through;

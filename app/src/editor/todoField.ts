@@ -1,5 +1,6 @@
-import { autocompletion } from "@codemirror/autocomplete";
-import { EditorState } from "@codemirror/state";
+import { autocompletion, closeCompletion, currentCompletions } from "@codemirror/autocomplete";
+import { selectAll } from "@codemirror/commands";
+import { EditorState, Prec } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { popupTheme } from "./popupTheme";
 import { todoFieldCompletions } from "./todoInput";
@@ -19,6 +20,10 @@ export function todoField(
     value?: string;
     onChange?(text: string): void;
     keep?: boolean;
+    /** Escape (with no completion open). */
+    onCancel?(): void;
+    /** Focus left the field. */
+    onBlur?(): void;
   },
 ): EditorView {
   const view = new EditorView({
@@ -26,6 +31,21 @@ export function todoField(
     state: EditorState.create({
       doc: opts.value ?? "",
       extensions: [
+        // Before the completions' own Escape (same precedence, so listed first),
+        // which also takes it when they're active with nothing to show.
+        Prec.highest(
+          keymap.of([
+            {
+              key: "Escape",
+              run: (v) => {
+                if (!opts.onCancel) return false;
+                if (currentCompletions(v.state).length) return closeCompletion(v);
+                opts.onCancel();
+                return true;
+              },
+            },
+          ]),
+        ),
         // Completion keys take precedence, so Enter picks a suggestion first.
         autocompletion({ override: [todoFieldCompletions], icons: false }),
         keymap.of([
@@ -41,7 +61,14 @@ export function todoField(
               return true;
             },
           },
+          // The field's own text; the browser's would select the note around it.
+          { key: "Mod-a", run: selectAll },
         ]),
+        EditorView.domEventHandlers({
+          blur: () => {
+            opts.onBlur?.();
+          },
+        }),
         // One line only: pasted newlines become spaces.
         EditorState.transactionFilter.of((tr) =>
           tr.newDoc.lines > 1

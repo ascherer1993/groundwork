@@ -63,6 +63,10 @@ pub enum TaskChange {
     Priority {
         priority: u8,
     },
+    /// Replaces the text, keeping the status, dates, priority and block id.
+    Text {
+        text: String,
+    },
 }
 
 /// Splits an id into path, line and text hash.

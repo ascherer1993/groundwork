@@ -15,6 +15,7 @@ import { useWorkspace } from "../state/workspace";
 import { isoDate, parseNatural } from "./dates";
 import { hydrate } from "./hydrate";
 import { renderInline } from "./render";
+import { mountTodoEdit } from "./todoEdit";
 import { escapeHtml } from "./syntax";
 import { hasMeta, parseTaskMeta, type TaskMeta, taskMetaHtml } from "./tasks";
 
@@ -163,6 +164,7 @@ export function todoSource(todo: Todo): string {
 
 const ICON_CALENDAR = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>`;
 const ICON_CHEVRON = `<svg class="todos-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
+const ICON_PENCIL = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/></svg>`;
 const ICON_X = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>`;
 
 interface Section {
@@ -218,6 +220,7 @@ function itemHtml(todo: Todo, section: Section, drawing: Drawing): string {
     <span class="todo-details">${meta}${origin}</span>
   </div>
   <span class="todo-actions">
+    <button type="button" class="icon" data-action="edit" title="Edit" aria-label="Edit">${ICON_PENCIL}</button>
     <button type="button" class="icon" data-action="reschedule" title="Reschedule" aria-label="Reschedule">${ICON_CALENDAR}</button>
     <button type="button" class="icon" data-action="cancel" title="Cancel" aria-label="Cancel">${ICON_X}</button>
   </span>
@@ -402,7 +405,8 @@ async function update(id: string, change: Parameters<typeof api.updateTodo>[1]) 
   }
 }
 
-async function reschedule(todo: Todo) {
+/** Asks for a todo's new due date (`fri`, `+3d`…; empty clears it) and sets it. */
+export async function rescheduleTodo(todo: Todo) {
   const value = await promptDialog({
     title: "Reschedule",
     value: todo.due ?? "",
@@ -416,6 +420,17 @@ async function reschedule(todo: Todo) {
     return;
   }
   return update(todo.id, { kind: "due", date });
+}
+
+/** Asks before cancelling a todo. */
+export async function cancelTodo(todo: Todo) {
+  const ok = await confirmDialog({
+    title: "Cancel this todo?",
+    message: todo.text,
+    confirmLabel: "Cancel todo",
+    danger: true,
+  });
+  if (ok) await update(todo.id, { kind: "cancel" });
 }
 
 /**
@@ -493,7 +508,31 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
     refocus(field, notePath);
   };
 
+  // A todo being edited: the list waits to redraw until it's done.
+  let editing: (() => void) | null = null;
+  const startEdit = (item: HTMLElement, todo: Todo) => {
+    editing?.();
+    const text = item.querySelector<HTMLElement>(".todo-text");
+    if (!text) return;
+    const box = document.createElement("div");
+    box.className = "todo-edit";
+    text.after(box);
+    text.hidden = true;
+    item.classList.add("is-editing");
+    const cancel = mountTodoEdit(box, todo, () => {
+      if (editing !== stopEditing) return;
+      editing = null;
+      void render();
+    });
+    const stopEditing = () => {
+      cancel();
+      editing = null;
+    };
+    editing = stopEditing;
+  };
+
   const render = async () => {
+    if (editing) return;
     const mine = ++generation;
     let all: Todo[];
     let next: Section[];
@@ -581,6 +620,8 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
       );
       return;
     }
+    // Clicks in the edit field are the field's.
+    if (target.closest(".todo-edit")) return;
     const item = target.closest<HTMLElement>(".todo-item");
     const todo = item && todosById.get(item.dataset.id!);
     if (!todo) return;
@@ -592,16 +633,15 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
       return;
     }
     const action = target.closest<HTMLElement>("[data-action]")?.dataset.action;
-    if (action === "reschedule") void reschedule(todo);
+    if (action === "reschedule") void rescheduleTodo(todo);
+    if (action === "edit") {
+      e.stopPropagation();
+      e.preventDefault();
+      startEdit(item, todo);
+      return;
+    }
     if (action === "cancel") {
-      void confirmDialog({
-        title: "Cancel this todo?",
-        message: todo.text,
-        confirmLabel: "Cancel todo",
-        danger: true,
-      }).then((ok) => {
-        if (ok) void update(todo.id, { kind: "cancel" });
-      });
+      void cancelTodo(todo);
       return;
     }
     // Anywhere else on a todo from another note opens it, at the todo's line.
@@ -614,7 +654,7 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
 
   // Keys typed in the add field belong to it, not to an editor around it.
   const onKey = (e: KeyboardEvent) => {
-    if ((e.target as HTMLElement).closest(".todo-add")) e.stopPropagation();
+    if ((e.target as HTMLElement).closest(".todo-add, .todo-edit")) e.stopPropagation();
   };
 
   const onRefresh = () => void render();
@@ -635,6 +675,7 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
     el.removeEventListener("click", onClick, true);
     el.removeEventListener("keydown", onKey);
     el.removeEventListener(TODOS_REFRESH, onRefresh);
+    editing?.();
     field?.destroy();
   }
   void render();

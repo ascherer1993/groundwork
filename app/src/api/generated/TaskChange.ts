@@ -3,4 +3,4 @@
 /**
  * A change to one task, made in the line where it lives.
  */
-export type TaskChange = { "kind": "done" } | { "kind": "cancel" } | { "kind": "reopen" } | { "kind": "due", date: string | null, } | { "kind": "priority", priority: number, };
+export type TaskChange = { "kind": "done" } | { "kind": "cancel" } | { "kind": "reopen" } | { "kind": "due", date: string | null, } | { "kind": "priority", priority: number, } | { "kind": "text", text: string, };

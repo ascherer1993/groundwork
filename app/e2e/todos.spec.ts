@@ -269,3 +269,43 @@ test("long lists show in pages", async ({ page }) => {
   await expect(undated.locator(".todo-item")).toHaveCount(259);
   rmSync(join(VAULT, "Many todos.md"));
 });
+
+test("a todo's text is edited in place from the block", async ({ page }) => {
+  await quickOpen(page, "Daily/2026-12-01");
+  const venue = block(page).locator(".todo-item", { hasText: "Book the venue" });
+  await venue.hover();
+  await venue.getByRole("button", { name: "Edit" }).click();
+  const field = block(page).getByRole("textbox", { name: "Edit todo" });
+  await expect(field).toBeFocused();
+  await expect(field).toHaveText("Book the venue");
+
+  // Escape leaves it as it was.
+  await page.keyboard.type(" and the band");
+  await page.keyboard.press("Escape");
+  await expect(field).toHaveCount(0);
+  await expect(section(page, "carried")).toHaveText(["Book the venue"]);
+
+  // Enter saves the new text in its own note, keeping the line's place.
+  await venue.hover();
+  await venue.getByRole("button", { name: "Edit" }).click();
+  await page.keyboard.type(" and the band");
+  await page.keyboard.press("Enter");
+  await expectFile(VAULT, "Daily/2026-11-28.md", (t) =>
+    t.includes("# 2026-11-28\n\n- [ ] Book the venue and the band\n- [ ] Send the proposal"),
+  );
+  await expect(section(page, "carried")).toHaveText(["Book the venue and the band"]);
+
+  // Its priority and stamps stay, and a typed @date changes the due date too.
+  const caterer = block(page).locator(".todo-item", { hasText: "Call the caterer" });
+  await caterer.hover();
+  await caterer.getByRole("button", { name: "Edit" }).click();
+  await page.keyboard.press("Meta+a");
+  await page.keyboard.type("Call the caterer about the menu @2026-12-09");
+  await page.locator(".cm-tooltip-autocomplete li[aria-selected]").waitFor();
+  await page.waitForTimeout(150);
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await expectFile(VAULT, "Daily/2026-12-01.md", (t) =>
+    t.includes(`- [ ] Call the caterer about the menu ⏫ ➕ ${TODAY} 📅 2026-12-09\n`),
+  );
+});
