@@ -844,6 +844,42 @@ fn tickets_from_create_to_close() {
         "{context}"
     );
     assert!(context.contains("Projects/Acme/Acme.md"), "{context}");
+    // Claude started at the vault root, in the ticket's workspace: its
+    // SessionStart hook gives the ticket's context, worktrees and all.
+    let note = v.read("Tickets/TEAM-7 Fix signup.md");
+    let workspace = note
+        .lines()
+        .find_map(|l| l.strip_prefix("workspace: "))
+        .unwrap()
+        .trim_matches('"');
+    let mut hook = Command::new(env!("CARGO_BIN_EXE_groundwork"))
+        .args(["hook", "session-start"])
+        .current_dir(v.root())
+        .env("GROUNDWORK_DATA_DIR", v.data.path())
+        .env("GROUNDWORK_VAULT", v.root())
+        .env("GROUNDWORK_SOCKET", v.data.path().join("none.sock"))
+        .env("GROUNDWORK_TAB_ID", "t1")
+        .env("GROUNDWORK_WORKSPACE_ID", workspace)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    hook.stdin
+        .take()
+        .unwrap()
+        .write_all(br#"{"session_id":"s-1"}"#)
+        .unwrap();
+    let started = String::from_utf8(hook.wait_with_output().unwrap().stdout).unwrap();
+    assert!(
+        started.contains("in the workspace “TEAM-7 Fix signup”, for Tickets/TEAM-7 Fix signup.md"),
+        "{started}"
+    );
+    assert!(started.contains("Ticket: TEAM-7 Fix signup"), "{started}");
+    assert!(
+        started.contains(&format!("worktree [acme-platform]: {}", wt.display())),
+        "{started}"
+    );
+
     let json: serde_json::Value =
         serde_json::from_str(&v.ok(&["context", "--note", "TEAM-7 Fix signup", "--json"])).unwrap();
     assert_eq!(json["ticket"]["branch"], "TEAM-7-fix-signup");

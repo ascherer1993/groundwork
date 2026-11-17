@@ -13,7 +13,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { FileContent } from "../api/generated/FileContent";
 import { vaultFileUrl } from "../lib/fileUrl";
-import { isCanvasPath, isPagePath, projectOfView, TODO_BOARD } from "../lib/paths";
+import { isCanvasPath, isPagePath, NEW_TAB, projectOfView, TODO_BOARD } from "../lib/paths";
 import { isImage } from "../markdown/syntax";
 import { useKeyLabel, withKey } from "../state/keys";
 import { useEncrypted, useLocks } from "../state/locks";
@@ -25,6 +25,7 @@ import { NoteView } from "./NoteView";
 import { PageView } from "./PageView";
 import { ProjectView } from "./ProjectView";
 import { ResizeHandle } from "./ResizeHandle";
+import { NotesNewTab } from "./NewTab";
 import { TodoBoard } from "./TodoBoard";
 
 // Excalidraw is big: it loads with the first canvas opened.
@@ -97,7 +98,9 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
             ? ["Project", viewTitle ?? project]
             : path === TODO_BOARD
               ? ["Todo board"]
-              : path.split("/")
+              : path === NEW_TAB
+                ? ["New tab"]
+                : path.split("/")
           ).map((part, i, parts) => (
             <span key={i} className={i === parts.length - 1 ? "crumb current" : "crumb"}>
               {i === parts.length - 1 ? part.replace(/\.(md|excalidraw)$/i, "") : part}
@@ -153,6 +156,8 @@ export function FilePanel({ api: panel, params }: IDockviewPanelProps<PanelParam
             <ProjectView id={project} setTitle={setTitle} />
           ) : path === TODO_BOARD ? (
             <TodoBoard />
+          ) : path === NEW_TAB ? (
+            <NotesNewTab />
           ) : note ? (
             <NoteView path={path} mode={mode} focus={focus} editTitle={editTitle} />
           ) : page && mode !== "source" ? (

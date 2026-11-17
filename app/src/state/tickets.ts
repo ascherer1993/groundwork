@@ -532,22 +532,127 @@ export async function newTerminalItems(
   // For working on the vault itself, without adding it as a repo.
   const root = useVault.getState().vault?.path;
   const folder = useWorkspaces.getState().list.find((w) => w.id === area)?.cwd;
-  const bare = (path: string) => path.replace(/\/+$/, "");
   if (root && (!folder || bare(folder) !== bare(root)))
     items.push({ label: "New terminal in vault root", action: () => open(root) });
+  items.push("separator");
+  // Claude with the whole vault, knowing what the workspace is for.
+  if (root)
+    items.push({
+      label: "New Claude at vault root, with context",
+      action: () => void claudeAtRoot(area, contextDirs(area, places)),
+    });
   // Claude in a worktree, able to read the ticket's other repos too.
   const worktrees = places.filter((p) => p.worktree);
-  if (worktrees.length > 1) {
-    items.push("separator");
+  if (worktrees.length > 1)
     for (const p of worktrees)
       items.push({
         label: `New Claude in ${p.label}`,
         starred: p.isDefault,
         action: () => void claudeIn(area, p.cwd),
       });
-  }
   const repos = ticket ? repoMenuItems(ticket) : [];
   if (repos.length) items.push("separator", ...repos);
+  return items;
+}
+
+const bare = (path: string) => path.replace(/\/+$/, "");
+
+/**
+ * What Claude at the vault root is given with `--add-dir` for a workspace:
+ * its ticket's worktrees, or else its folder when that's outside the vault.
+ */
+function contextDirs(area: string, places: TerminalPlace[]): string[] {
+  const worktrees = places.filter((p) => p.worktree).map((p) => p.cwd);
+  if (worktrees.length) return worktrees;
+  const root = useVault.getState().vault?.path;
+  const folder = useWorkspaces.getState().list.find((w) => w.id === area)?.cwd;
+  if (!root || !folder) return [];
+  const inVault = bare(folder) === bare(root) || folder.startsWith(`${bare(root)}/`);
+  return inVault ? [] : [folder];
+}
+
+/**
+ * Claude Code at the vault root, able to work in `dirs` too and to read
+ * their `CLAUDE.md`s. Its SessionStart hook adds the workspace's ticket (or
+ * folder) to its context, from the terminal's workspace.
+ */
+export function claudeAtRootCommand(dirs: string[]): string {
+  if (!dirs.length) return "claude";
+  const add = dirs.map((d) => ` --add-dir ${shellQuote(d)}`).join("");
+  return `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude${add}`;
+}
+
+async function claudeAtRoot(area: string, dirs: string[]) {
+  const root = useVault.getState().vault?.path;
+  if (!root) return;
+  const ws = useWorkspace.getState();
+  if (ws.docks[area]) ws.showWorkspace(area, ws.view === "note" ? "split" : ws.view);
+  await ws.openTerminal(root, { run: claudeAtRootCommand(dirs), workspace: area });
+}
+
+/** A choice on a workspace's new-tab page (⌘T among its terminals). */
+export interface LaunchItem {
+  label: string;
+  /** Where, or what it sees. */
+  detail?: string;
+  kind: "claude" | "terminal";
+  /** The ticket's default repo. */
+  starred?: boolean;
+  launch(): Promise<void>;
+}
+
+/**
+ * The new-tab page's choices for a workspace, Claude at the vault root
+ * first (the default): then a terminal at the vault root, in each of the
+ * ticket's worktrees and components, and in the workspace's folder; then
+ * Claude in each worktree.
+ */
+export async function launchItems(area: string): Promise<LaunchItem[]> {
+  const { places } = await terminalPlaces(area);
+  const root = useVault.getState().vault?.path;
+  const folder = useWorkspaces.getState().list.find((w) => w.id === area)?.cwd;
+  const open = (cwd: string, run?: string) => () =>
+    useWorkspace.getState().openTerminal(cwd, { run, workspace: area });
+  const items: LaunchItem[] = [];
+  if (root) {
+    const dirs = contextDirs(area, places);
+    items.push({
+      label: "Claude at the vault root, with context",
+      detail: dirs.length ? `also sees ${dirs.join(", ")}` : root,
+      kind: "claude",
+      launch: () => claudeAtRoot(area, dirs),
+    });
+    items.push({
+      label: "Terminal at the vault root",
+      detail: root,
+      kind: "terminal",
+      launch: open(root),
+    });
+  }
+  for (const p of places)
+    items.push({
+      label: `Terminal in ${p.label}`,
+      detail: p.detail ?? p.cwd,
+      kind: "terminal",
+      starred: p.isDefault,
+      launch: open(p.cwd),
+    });
+  const listed = [root, ...places.map((p) => p.cwd)].filter(Boolean).map((p) => bare(p!));
+  if (folder && !listed.includes(bare(folder)))
+    items.push({
+      label: `Terminal in ${bare(folder).slice(bare(folder).lastIndexOf("/") + 1)}`,
+      detail: folder,
+      kind: "terminal",
+      launch: open(folder),
+    });
+  for (const p of places.filter((p) => p.worktree))
+    items.push({
+      label: `Claude in ${p.label}`,
+      detail: p.cwd,
+      kind: "claude",
+      starred: p.isDefault,
+      launch: () => claudeIn(area, p.cwd),
+    });
   return items;
 }
 

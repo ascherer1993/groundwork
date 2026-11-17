@@ -411,6 +411,30 @@ test("a ticket spans repos in one workspace; its subnotes follow it; the Vault w
     })
     .toContain(VAULT);
 
+  // ⌘T among its terminals offers the vault root, each worktree (the default
+  // starred) and component, and Claude; ↩ starts the first, Claude at the
+  // vault root, seeing every worktree (and their CLAUDE.md files).
+  await page.keyboard.press("Meta+t");
+  const places = page.getByRole("listbox", { name: "New tab" });
+  await expect(places.getByRole("option")).toHaveText([
+    /^Claude at the vault root, with context\s*also sees \//,
+    /^Terminal at the vault root/,
+    /^Terminal in Acme infra/,
+    /^Terminal in Acme platform/,
+    /^Terminal in web \(Acme platform\)/,
+    /^Claude in Acme infra/,
+    /^Claude in Acme platform/,
+  ]);
+  await expect(places.getByRole("option").nth(2).getByLabel("default")).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(places).toHaveCount(0);
+  await expect
+    .poll(async () => (await screen(page)).replace(/\n/g, ""))
+    .toContain("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude --add-dir /");
+  await expect
+    .poll(async () => (await screen(page)).replace(/\n/g, ""))
+    .toContain("fake claude: unsupported: --add-dir /");
+
   // The Vault workspace is always first to switch to, and made when picked.
   await header.locator(".terminals-name").click();
   await expect(page.getByRole("option").first()).toContainText("Vault");

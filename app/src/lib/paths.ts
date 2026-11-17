@@ -51,7 +51,10 @@ export function projectOfView(path: string | null | undefined): string | null {
 
 export const TODO_BOARD = "todos:board";
 
+/** A blank tab (⌘T among the notes), waiting for a note to be picked. */
+export const NEW_TAB = "new:tab";
+
 /** A view's path, not a file's. */
 export function isViewPath(path: string | null | undefined): boolean {
-  return projectOfView(path) !== null || path === TODO_BOARD;
+  return projectOfView(path) !== null || path === TODO_BOARD || path === NEW_TAB;
 }

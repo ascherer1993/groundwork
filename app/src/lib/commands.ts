@@ -6,7 +6,7 @@ import { editorFor } from "../editor/active";
 import { insertRendered } from "../editor/templates";
 import { EDITOR_COMMANDS } from "../editor/commands";
 import { EditorView } from "@codemirror/view";
-import { isViewPath, TODO_BOARD } from "./paths";
+import { isViewPath, NEW_TAB, TODO_BOARD } from "./paths";
 import { newCanvas, newCanvasSubnote } from "./canvasFiles";
 import { canPickFolder, pickFolder } from "./pickFolder";
 import { changePassword, encryptNote, removeEncryption } from "./encryption";
@@ -267,6 +267,17 @@ function commands(): Command[] {
     },
     { id: "back", label: "Go back", run: () => ws.back() },
     { id: "forward", label: "Go forward", run: () => ws.forward() },
+    {
+      id: "new-tab",
+      label: "New tab",
+      run: () => {
+        const terminals =
+          ws.view === "terminal" || (ws.view === "split" && ws.focused === "terminals");
+        if (terminals) return ws.openLauncher();
+        ws.open(NEW_TAB, { newTab: true });
+        ui.setSwitcher(true);
+      },
+    },
     { id: "new-terminal", label: "New terminal", run: () => ws.openTerminal() },
     { id: "new-terminal-in", label: "New terminal in folder…", run: terminalInFolder },
     {

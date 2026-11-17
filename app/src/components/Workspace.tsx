@@ -31,6 +31,7 @@ import { useVault } from "../state/vault";
 import { newTerminalItems, repoOfFolder, useTickets } from "../state/tickets";
 import { useTerminals } from "../state/terminals";
 import { FilePanel } from "./FilePanel";
+import { LauncherPanel } from "./NewTab";
 import { TerminalPanel } from "./TerminalPanel";
 
 /** The dock (`NOTES` or a workspace id) a panel belongs to. */
@@ -39,6 +40,7 @@ export const AreaContext = createContext<string>(NOTES);
 const components = {
   file: FilePanel as (props: IDockviewPanelProps) => React.ReactNode,
   terminal: TerminalPanel as (props: IDockviewPanelProps) => React.ReactNode,
+  launcher: LauncherPanel as (props: IDockviewPanelProps) => React.ReactNode,
 };
 
 /**

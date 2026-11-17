@@ -78,7 +78,14 @@ export const KEY_COMMANDS: KeyCommand[] = [
     group: "Views and workspaces",
     key: "Ctrl+Cmd+3",
   },
-  { id: "new-terminal", label: "New terminal", group: "Views and workspaces", key: "Cmd+T" },
+  // Among the notes, a blank note tab; among terminals, the page of where to start one.
+  { id: "new-tab", label: "New tab", group: "Views and workspaces", key: "Cmd+T" },
+  {
+    id: "new-terminal",
+    label: "New terminal",
+    group: "Views and workspaces",
+    key: "Alt+Cmd+T",
+  },
   {
     id: "switch-workspace",
     label: "Switch workspace…",

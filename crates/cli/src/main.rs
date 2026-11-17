@@ -6,7 +6,7 @@
 //! `--json` gives machine-readable output.
 
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Read, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -829,8 +829,27 @@ fn run(cli: Cli) -> Fallible<()> {
                         Session::open_for_tool(vault.clone()?, &data_dir(), ActivitySource::Cli)
                             .ok()?;
                     let cwd = std::env::current_dir().ok()?;
-                    let context = session.context(None, Some(&cwd)).ok()?;
+                    let workspace = std::env::var("GROUNDWORK_WORKSPACE_ID").ok();
+                    let (context, workspace) = session
+                        .terminal_context(&cwd, workspace.as_deref().filter(|w| !w.is_empty()))
+                        .ok()?;
                     let mut text = Vec::new();
+                    if let Some(w) = workspace {
+                        // Started outside the work (the vault root): what the
+                        // workspace is for, so the session knows where to look.
+                        let _ = match &w.note {
+                            Some(note) => writeln!(
+                                text,
+                                "This terminal is in the workspace “{}”, for {note}. Work in the folders listed here, by absolute path.",
+                                w.name
+                            ),
+                            None => writeln!(
+                                text,
+                                "This terminal is in the workspace “{}”, whose folder is {}.",
+                                w.name, w.cwd
+                            ),
+                        };
+                    }
                     print_context_to(&mut text, &context);
                     String::from_utf8(text).ok()
                 },

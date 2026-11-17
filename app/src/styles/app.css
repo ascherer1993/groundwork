@@ -463,6 +463,102 @@ input {
   margin-left: auto;
 }
 
+/* New tab among the terminals (components/NewTab.tsx) */
+
+.launcher {
+  height: 100%;
+  box-sizing: border-box;
+  overflow: auto;
+  padding: 32px 16px;
+  background: var(--bg);
+}
+
+.launcher-title {
+  max-width: 560px;
+  margin: 0 auto 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.launcher-list {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+
+.launcher-list:focus-visible {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 2px;
+}
+
+.launcher-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.launcher-item.is-selected {
+  background: var(--accent-soft);
+}
+
+.launcher-icon {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.launcher-item.is-selected .launcher-icon {
+  color: var(--accent);
+}
+
+.launcher-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.launcher-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.launcher-star {
+  color: var(--warning);
+  fill: currentColor;
+}
+
+.launcher-detail {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launcher-key {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.launcher-loading,
+.launcher-hint {
+  max-width: 560px;
+  margin: 10px auto 0;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
 /* Terminal panel */
 
 .terminal-panel {

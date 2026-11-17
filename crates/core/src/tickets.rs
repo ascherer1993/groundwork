@@ -1639,6 +1639,33 @@ impl Session {
         Ok(Vec::new())
     }
 
+    /// What an agent in a terminal should know: its folder's context, or,
+    /// where that names no ticket or repo (the vault root, say), the
+    /// context of its workspace's note (a ticket, with every worktree's
+    /// path). The workspace comes back when its context was used.
+    pub fn terminal_context(
+        &self,
+        cwd: &Path,
+        workspace: Option<&str>,
+    ) -> Result<(Context, Option<Workspace>)> {
+        let here = self.context(None, Some(cwd))?;
+        if here.ticket.is_some() || here.repo.is_some() {
+            return Ok((here, None));
+        }
+        let Some(workspace) =
+            workspace.and_then(|id| self.workspaces().list().into_iter().find(|w| w.id == id))
+        else {
+            return Ok((here, None));
+        };
+        let context = match &workspace.note {
+            Some(note) if self.vault().resolve(note).is_ok_and(|p| p.is_file()) => {
+                self.context(Some(note), None)?
+            }
+            _ => here,
+        };
+        Ok((context, Some(workspace)))
+    }
+
     /// Context for a note, or for a folder (absolute) on this machine.
     pub fn context(&self, note: Option<&str>, cwd: Option<&Path>) -> Result<Context> {
         let config = self.config()?;
@@ -2861,6 +2888,47 @@ mod tests {
             ["TEAM-123"]
         );
         assert!(s.session.code_who("/nowhere").is_err());
+    }
+
+    #[test]
+    fn a_terminal_outside_the_worktrees_gets_its_workspaces_ticket() {
+        let s = Setup::new();
+        s.locate();
+        let t = s
+            .session
+            .create_ticket(&new_ticket("TEAM-201", "Fix login"))
+            .unwrap()
+            .ticket;
+        let workspace = t.workspace.clone().unwrap();
+        let wt = PathBuf::from(t.worktree_path.clone().unwrap());
+        let root = s.session.vault().root().to_path_buf();
+
+        // At the vault root, in the ticket's workspace: the ticket's context.
+        let (ctx, used) = s.session.terminal_context(&root, Some(&workspace)).unwrap();
+        assert_eq!(used.map(|w| w.id), Some(workspace.clone()));
+        let ticket = ctx.ticket.unwrap();
+        assert_eq!(ticket.key.as_deref(), Some("TEAM-201"));
+        assert_eq!(
+            ticket.repos[0].worktree_path.as_deref(),
+            Some(wt.to_str().unwrap())
+        );
+
+        // In a worktree, the folder says it all.
+        let (ctx, used) = s.session.terminal_context(&wt, Some(&workspace)).unwrap();
+        assert!(used.is_none());
+        assert_eq!(ctx.ticket.unwrap().key.as_deref(), Some("TEAM-201"));
+
+        // No workspace, or one that's gone: just the folder's.
+        for id in [None, Some("ws-gone")] {
+            let (ctx, used) = s.session.terminal_context(&root, id).unwrap();
+            assert!(used.is_none() && ctx.ticket.is_none());
+        }
+
+        // A workspace with no note is still named, for its folder.
+        let plain = s.session.workspaces().create("Scratch", "/tmp").unwrap();
+        let (ctx, used) = s.session.terminal_context(&root, Some(&plain.id)).unwrap();
+        assert!(ctx.ticket.is_none());
+        assert_eq!(used.map(|w| w.name), Some("Scratch".to_string()));
     }
 
     #[test]
