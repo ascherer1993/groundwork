@@ -383,8 +383,8 @@ test("a ticket spans repos in one workspace; its subnotes follow it; the Vault w
   await props.locator(`.property[data-key="projects"] .property-value`).hover();
   await props.getByRole("button", { name: "Remove [[Acme]]" }).click();
   await expectFile(VAULT, TICKET, (t) => t.includes("projects: []\n"));
-  await props.getByRole("button", { name: "Add a project to projects" }).click();
-  const picker = page.getByRole("dialog", { name: "Add a project" });
+  await props.getByRole("textbox", { name: "Add a project to projects" }).click();
+  const picker = page.getByRole("listbox", { name: "Add a project" });
   await expect(picker.getByRole("option")).toHaveText([/Acme\s*Projects\/Acme/]);
   await page.keyboard.press("Enter");
   await expectFile(VAULT, TICKET, (t) => t.includes('projects: ["[[Acme]]"]\n'));

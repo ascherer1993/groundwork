@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { FIXTURE_VAULT as VAULT } from "./fixtures";
-import { expectFile, openVault } from "./helpers";
+import { editor, expectFile, openVault } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -83,6 +83,11 @@ test("the board shows a week of events and todos, by day", async ({ page }) => {
   await expect(page.getByLabel("Note title")).toHaveValue(`${iso(TUE)} Design review`);
   await page.getByRole("button", { name: "Back" }).click();
   await expect(day(page, WED).locator(".todo-text")).toHaveText(["Draft the rollout plan"]);
+
+  // Clicking a todo opens its note, at its line.
+  await day(page, WED).locator(".todo-text", { hasText: "Draft the rollout plan" }).click();
+  await expect(page.getByLabel("Note title")).toHaveValue("Rollout todos");
+  await expect(editor(page).locator(".cm-activeLine")).toContainText("Draft the rollout plan");
 });
 
 test("ticking, dragging to another day and adding edit the notes", async ({ page }) => {

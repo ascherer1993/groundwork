@@ -28,6 +28,7 @@ pub mod search;
 pub mod session;
 pub mod settings;
 pub mod setup;
+pub mod spelling;
 pub mod subnotes;
 pub mod template;
 #[cfg(test)]

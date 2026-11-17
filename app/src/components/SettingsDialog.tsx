@@ -9,6 +9,7 @@ import { comboOf, displayCombo, usable } from "../lib/keyCombo";
 import { allCommands, bindingOf, type KeyCommand, useKeys } from "../state/keys";
 import { useCanvasSettings } from "../state/canvas";
 import { useLocks } from "../state/locks";
+import { removeFromDictionary, useSpelling } from "../state/spelling";
 import { choiceCommand, useQuickAdd } from "../state/quickadd";
 import { useUi } from "../state/ui";
 import { message } from "../state/vault";
@@ -23,6 +24,7 @@ const SECTIONS = [
   "Daily notes",
   "Quick add",
   "Search",
+  "Spelling",
   "Encrypted notes",
   "Canvases",
   "Keyboard shortcuts",
@@ -90,6 +92,8 @@ function SettingsDialogBody() {
             <QuickAddSettings />
           ) : section === "Search" ? (
             <SearchSettings />
+          ) : section === "Spelling" ? (
+            <SpellingSettings />
           ) : section === "Encrypted notes" ? (
             <EncryptionSettings />
           ) : section === "Canvases" ? (
@@ -270,6 +274,73 @@ function EncryptionSettings() {
           onKeyDown={(e) => e.key === "Enter" && commit()}
         />
       </label>
+    </>
+  );
+}
+
+// ---- Spelling --------------------------------------------------------------
+
+/** Settings › Spelling: checking on or off, and the vault's own words (PLAN §5.18). */
+function SpellingSettings() {
+  const enabled = useSpelling((s) => s.enabled);
+  const [words, setWords] = useState<string[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.dictionaryWords().then(setWords, (e: unknown) => setError(message(e)));
+  }, []);
+
+  const remove = async (word: string) => {
+    try {
+      await removeFromDictionary(word);
+      setWords(await api.dictionaryWords());
+    } catch (e) {
+      setError(message(e));
+    }
+  };
+
+  return (
+    <>
+      <div className="settings-head">
+        <h2>Spelling</h2>
+      </div>
+      <p className="muted">
+        Words the dictionary (US English) doesn’t know get a red underline. Right-click one for
+        suggestions, or to add it to this vault’s dictionary. Code, links, tags and the like aren’t
+        checked.
+      </p>
+      <label className="settings-check">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => useSpelling.getState().setEnabled(e.target.checked)}
+        />
+        Check spelling in notes
+      </label>
+      <h3 className="settings-subhead">This vault’s words</h3>
+      <p className="muted">
+        Kept in <code>.groundwork/dictionary.txt</code>, one per line, so they go wherever the vault
+        does.
+      </p>
+      {error && <p className="error">{error}</p>}
+      {words && words.length === 0 && <p className="muted">None yet.</p>}
+      {words && words.length > 0 && (
+        <ul className="dictionary-words" aria-label="This vault’s words">
+          {words.map((w) => (
+            <li key={w}>
+              <span>{w}</span>
+              <button
+                type="button"
+                className="icon"
+                aria-label={`Remove ${w}`}
+                onClick={() => void remove(w)}
+              >
+                <Trash2 size={12} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   );
 }

@@ -17,13 +17,9 @@ import {
 } from "../markdown/syntax";
 import { notePath } from "./context";
 import { attachImage } from "./images";
-import {
-  ADD_LABEL,
-  attachPropertyEditing,
-  displayValue,
-  missingTicketRows,
-  pickKind,
-} from "./properties";
+import { displayValue } from "./properties";
+import { openPropertiesSource } from "./propertiesSource";
+import { PropertyPanel } from "./propertyPanel";
 
 /**
  * Fills in a widget's links, embeds and diagrams. They change its height
@@ -163,6 +159,24 @@ export class BulletWidget extends WidgetType {
     const span = document.createElement("span");
     span.className = "cm-bullet";
     span.textContent = "•";
+    return span;
+  }
+}
+
+/** A nested numbered item's label (`b.`, `iv.`), drawn over its number. */
+export class ListNumberWidget extends WidgetType {
+  constructor(readonly label: string) {
+    super();
+  }
+
+  eq(other: ListNumberWidget) {
+    return other.label === this.label;
+  }
+
+  toDOM() {
+    const span = document.createElement("span");
+    span.className = "cm-list-number";
+    span.textContent = this.label;
     return span;
   }
 }
@@ -353,10 +367,13 @@ function editSourceButton(view: EditorView, wrap: HTMLElement): HTMLButtonElemen
   return button;
 }
 
-/** Frontmatter as a properties table. */
+/**
+ * Frontmatter as an editable properties panel (`./propertyPanel`); `yaml` is
+ * null for a note without frontmatter, which gets just "Add property".
+ */
 export class PropertiesWidget extends WidgetType {
   constructor(
-    readonly yaml: string,
+    readonly yaml: string | null,
     readonly source: string,
   ) {
     super();
@@ -367,19 +384,28 @@ export class PropertiesWidget extends WidgetType {
   }
 
   toDOM(view: EditorView) {
-    const div = document.createElement("div");
-    div.className = "cm-properties";
-    div.dataset.notePath = this.source;
-    div.innerHTML = propertiesHtml(this.yaml, true);
-    hydrateWidget(view, div, this.source);
-    attachContentHandlers(div);
-    attachPropertyEditing(view, div, this.source);
-    div.addEventListener("mousedown", (e) => {
-      if (isInteractive(e.target)) return;
-      e.preventDefault();
-      editAt(view, div);
+    const panel = new PropertyPanel(view, this.source, this.yaml, {
+      onSource: () => openPropertiesSource(view),
     });
-    return div;
+    panels.set(panel.root, panel);
+    return panel.root;
+  }
+
+  /** Redraws in place, so a field being edited keeps its focus. */
+  updateDOM(dom: HTMLElement, view: EditorView) {
+    const panel = panels.get(dom);
+    if (
+      !panel ||
+      panel.source !== this.source ||
+      (this.yaml === null) !== dom.classList.contains("cm-properties-none")
+    )
+      return false;
+    panel.update(view, this.yaml);
+    return true;
+  }
+
+  destroy(dom: HTMLElement) {
+    panels.get(dom)?.destroy();
   }
 
   ignoreEvent() {
@@ -387,13 +413,10 @@ export class PropertiesWidget extends WidgetType {
   }
 }
 
-/**
- * Renders frontmatter YAML as a two-column table; values may contain links.
- * `editable` adds the controls for list properties that are picked rather
- * than typed (people, projects, a ticket's repos; see `./properties`), and a
- * ticket's empty projects and repos rows, for the editor's panel.
- */
-export function propertiesHtml(yaml: string, editable = false): string {
+const panels = new WeakMap<HTMLElement, PropertyPanel>();
+
+/** Renders frontmatter YAML as a read-only two-column table; values may contain links. */
+export function propertiesHtml(yaml: string): string {
   let data: unknown;
   try {
     data = parseYaml(yaml);
@@ -403,30 +426,18 @@ export function propertiesHtml(yaml: string, editable = false): string {
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     return `<div class="properties-empty">No properties</div>`;
   }
-  const record = data as Record<string, unknown>;
-  const entries: [string, unknown][] = Object.entries(record);
-  if (editable) for (const key of missingTicketRows(record)) entries.push([key, null]);
-  const rows = entries.map(([key, value]) => {
+  const rows = Object.entries(data as Record<string, unknown>).map(([key, value]) => {
     const values = Array.isArray(value) ? value : [value];
-    const kind = editable ? pickKind(key, record) : null;
     const cells = values
-      .map((v, i) => ({ v, i }))
-      .filter(({ v }) => v !== null && v !== undefined && v !== "")
-      .map(({ v, i }) => {
-        const text = displayValue(key, kind, formatValue(v));
-        const remove = kind
-          ? `<button type="button" class="property-remove" data-index="${i}" title="Remove" aria-label="Remove ${escapeHtml(text)}">×</button>`
-          : "";
-        const shown = text === formatValue(v) ? renderInline(text) : escapeHtml(text);
-        return `<span class="property-value">${shown}${remove}</span>`;
+      .filter((v) => v !== null && v !== undefined && v !== "")
+      .map((v) => {
+        const raw = formatValue(v);
+        const text = displayValue(key, null, raw);
+        const shown = text === raw ? renderInline(text) : escapeHtml(text);
+        return `<span class="property-value">${shown}</span>`;
       })
       .join("");
-    const add = kind
-      ? `<button type="button" class="property-add" title="${ADD_LABEL[kind]}" aria-label="${ADD_LABEL[kind]} to ${escapeHtml(key)}">+</button>`
-      : "";
-    const empty = add ? "" : '<span class="muted">—</span>';
-    const attrs = kind ? ` data-key="${escapeHtml(key)}" data-kind="${kind}"` : "";
-    return `<div class="property"${attrs}><div class="property-key">${escapeHtml(key)}</div><div class="property-values">${cells || empty}${add}</div></div>`;
+    return `<div class="property"><div class="property-key">${escapeHtml(key)}</div><div class="property-values">${cells || '<span class="muted">—</span>'}</div></div>`;
   });
   return `<div class="properties-title">Properties</div>${rows.join("")}`;
 }

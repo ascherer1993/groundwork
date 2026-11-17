@@ -140,6 +140,7 @@ pub struct Session {
     config: Mutex<Option<CachedConfig>>,
     /// Task events found while reindexing, logged by `log_changes`.
     pending_tasks: Mutex<Vec<(String, ActivityKind, Task)>>,
+    spelling: crate::spelling::Spelling,
 }
 
 impl Session {
@@ -170,6 +171,7 @@ impl Session {
             state_dir: data_dir.join("vaults").join(key),
             workspaces: crate::workspaces::Workspaces::new(&data_dir.join("vaults").join(key)),
             repos: crate::repos::RepoLocations::new(&data_dir.join("vaults").join(key)),
+            spelling: crate::spelling::Spelling::new(vault.root()),
             vault,
             index: RwLock::new(index),
             write_lock: Mutex::new(()),
@@ -180,6 +182,11 @@ impl Session {
             config: Mutex::new(None),
         };
         Ok(session)
+    }
+
+    /// The vault's spell checker (`spelling.rs`).
+    pub fn spelling(&self) -> &crate::spelling::Spelling {
+        &self.spelling
     }
 
     /// Logs changes made through this session as `source` (the CLI uses `Cli`).

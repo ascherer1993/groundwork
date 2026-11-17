@@ -111,14 +111,14 @@ export async function locateRepo(id: string): Promise<boolean> {
   const values = await formDialog({
     title: `Where is ${repo?.name ?? id}?`,
     message:
-      "Its main checkout on this Mac (any folder in it). Unless you choose a folder, worktrees go beside it: in “worktrees” when it’s checked out as name/name (dev/api/api → dev/api/worktrees), else in “<checkout>-worktrees”.",
+      "Its main checkout on this Mac (any folder in it). Unless you choose a folder, worktrees go in “<checkout>-worktrees” beside it (dev/api → dev/api-worktrees).",
     fields: [
       { label: "Checkout", value: repo?.location?.path ?? "~/", type: "folder" },
       {
         label: "Worktrees folder",
         value: repo?.location?.worktrees ?? "",
         type: "folder",
-        placeholder: "beside the checkout",
+        placeholder: "<checkout>-worktrees",
       },
     ],
     confirmLabel: "Save",

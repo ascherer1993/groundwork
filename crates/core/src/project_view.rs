@@ -71,6 +71,20 @@ pub struct Person {
     pub company: Option<String>,
 }
 
+/// A team: a note with `type: team`, or in `Teams/`. Contacts pick theirs
+/// in their `team:` property.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Team {
+    pub path: String,
+    pub name: String,
+}
+
+pub(crate) fn is_team(path: &str, fm: Option<&Value>) -> bool {
+    note_type(fm) == "team" || path.starts_with("Teams/")
+}
+
 fn note_type(fm: Option<&Value>) -> String {
     fm_str(fm, "type").unwrap_or_default().to_lowercase()
 }
@@ -142,6 +156,24 @@ impl Session {
             .collect();
         people.sort_by_key(|p| p.name.to_lowercase());
         people
+    }
+
+    /// Every team in the vault (templates left out), by name.
+    pub fn teams(&self) -> Vec<Team> {
+        let templates = format!("{}/", TemplateSettings::read(self.vault().root()).folder);
+        let index = self.index();
+        let mut teams: Vec<Team> = index
+            .notes()
+            .filter(|(path, note)| {
+                !path.starts_with(&templates) && is_team(path, note.frontmatter.as_ref())
+            })
+            .map(|(path, _)| Team {
+                path: path.to_string(),
+                name: file_stem(path).to_string(),
+            })
+            .collect();
+        teams.sort_by_key(|t| t.name.to_lowercase());
+        teams
     }
 
     /// A project's events and people.
@@ -354,6 +386,23 @@ mod tests {
         let jane = &s.people()[0];
         assert_eq!(jane.path, "Contacts/Jane Doe.md");
         assert_eq!(jane.role.as_deref(), Some("Staff Engineer"));
+    }
+
+    #[test]
+    fn teams_are_notes_in_teams_or_typed_team() {
+        let (_dir, s) = session();
+        let teams: Vec<(String, String)> =
+            s.teams().into_iter().map(|t| (t.name, t.path)).collect();
+        assert_eq!(
+            teams,
+            [
+                ("Design".to_string(), "Teams/Design.md".to_string()),
+                ("Platform".to_string(), "Teams/Platform.md".to_string()),
+            ]
+        );
+        let typed = serde_json::json!({ "type": "Team" });
+        assert!(is_team("Elsewhere/Web.md", Some(&typed)));
+        assert!(!is_team("Contacts/Jane Doe.md", None));
     }
 
     #[test]

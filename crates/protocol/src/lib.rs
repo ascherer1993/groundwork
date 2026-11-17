@@ -635,6 +635,10 @@ pub enum Request {
     #[serde(rename = "people.list")]
     PeopleList,
 
+    /// → `Team[]`: every team in the vault (`type: team`, or in `Teams/`), by name.
+    #[serde(rename = "teams.list")]
+    TeamsList,
+
     /// → `string`: `text` (a note's) with its `key` property set to the list
     /// `values`, leaving the rest of its frontmatter as written.
     #[serde(rename = "frontmatter.setList")]
@@ -642,6 +646,23 @@ pub enum Request {
         text: String,
         key: String,
         values: Vec<String>,
+    },
+    /// → `string`: `text` (a note's) with its `key` property set to `value`
+    /// (removed when it's null), leaving the rest of its frontmatter as
+    /// written. A new property goes last; a note without frontmatter gets it.
+    #[serde(rename = "frontmatter.set")]
+    FrontmatterSet {
+        text: String,
+        key: String,
+        value: Option<PropertyValue>,
+    },
+    /// → `string`: `text` (a note's) with property `from` renamed `to` in
+    /// place; unchanged when `to` is taken or isn't a plain key.
+    #[serde(rename = "frontmatter.rename")]
+    FrontmatterRename {
+        text: String,
+        from: String,
+        to: String,
     },
 
     /// → `Ticket[]`
@@ -731,6 +752,22 @@ pub enum Request {
         #[ts(optional)]
         limit: Option<usize>,
     },
+    /// → `string[]`: the words in `words` that aren't in the dictionary or
+    /// the vault's own words (`.groundwork/dictionary.txt`), in the order given.
+    #[serde(rename = "spelling.check")]
+    SpellingCheck { words: Vec<String> },
+    /// → `string[]`: what a misspelled word might have been, best first.
+    #[serde(rename = "spelling.suggest")]
+    SpellingSuggest { word: String },
+    /// → `null`: adds a word to the vault's dictionary.
+    #[serde(rename = "spelling.add")]
+    SpellingAdd { word: String },
+    /// → `string[]`: the vault's own words, sorted.
+    #[serde(rename = "spelling.words")]
+    SpellingWords,
+    /// → `null`: takes a word out of the vault's dictionary.
+    #[serde(rename = "spelling.remove")]
+    SpellingRemove { word: String },
     /// → `null`: runs a `shell` action from the note's (or folder's) context,
     /// in the background. Terminal and URL actions are run by the app.
     #[serde(rename = "action.run")]
@@ -811,6 +848,33 @@ pub enum Event {
         id: u64,
         command: UiCommand,
     },
+}
+
+/// A property's value as the properties panel writes it.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", content = "value", rename_all = "camelCase")]
+#[ts(export)]
+pub enum PropertyValue {
+    /// `key:` with nothing after it.
+    Empty,
+    Text(String),
+    List(Vec<String>),
+    Number(f64),
+    Bool(bool),
+}
+
+impl PropertyValue {
+    pub fn into_prop(self) -> groundwork_core::frontmatter::Prop {
+        use groundwork_core::frontmatter::Prop;
+        match self {
+            Self::Empty => Prop::Empty,
+            Self::Text(t) => Prop::Text(t),
+            Self::List(l) => Prop::List(l),
+            Self::Number(n) if n.is_finite() => Prop::Raw(n.to_string()),
+            Self::Number(_) => Prop::Empty,
+            Self::Bool(b) => Prop::Raw(b.to_string()),
+        }
+    }
 }
 
 /// What the backend asks the window to do; see `Event::UiCommand`.

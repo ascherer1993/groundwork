@@ -10,6 +10,10 @@ pub enum Prop {
     List(Vec<String>),
     /// A nested mapping of plain values, written as a block.
     Map(Vec<(String, String)>),
+    /// Written as it is, unquoted: a number or a boolean.
+    Raw(String),
+    /// A key with no value (`key:`), which YAML reads as null.
+    Empty,
 }
 
 impl Prop {
@@ -31,6 +35,8 @@ impl Prop {
                 }
                 out
             }
+            Self::Raw(v) => format!("{key}: {v}\n"),
+            Self::Empty => format!("{key}:\n"),
         }
     }
 }
@@ -99,19 +105,49 @@ pub fn set(text: &str, changes: &[(&str, Option<Prop>)]) -> String {
     )
 }
 
+/// The line that starts top-level property `key`, if there is one.
+fn key_line(lines: &[String], key: &str) -> Option<usize> {
+    let prefix = format!("{key}:");
+    lines.iter().position(|l| {
+        l.starts_with(&prefix)
+            && l[prefix.len()..]
+                .chars()
+                .next()
+                .is_none_or(char::is_whitespace)
+    })
+}
+
+/// Renames property `from` to `to` where it is, keeping its value as
+/// written. Leaves the text as it was when there's no `from`, when `to` is
+/// already a property, or when `to` isn't a plain key.
+pub fn rename(text: &str, from: &str, to: &str) -> String {
+    let Some((start, end)) = body(text) else {
+        return text.to_string();
+    };
+    let plain = !to.is_empty()
+        && to.trim() == to
+        && !to.contains([':', '\n', '\r', '#', '"', '\''])
+        && !to.starts_with(['-', '[', '{', '?', '&', '*', '!', '|', '>', '%', '@', '`']);
+    let mut lines: Vec<String> = text[start..end]
+        .split_inclusive('\n')
+        .map(str::to_string)
+        .collect();
+    if !plain || from == to || key_line(&lines, to).is_some() {
+        return text.to_string();
+    }
+    let Some(i) = key_line(&lines, from) else {
+        return text.to_string();
+    };
+    lines[i] = format!("{to}{}", &lines[i][from.len()..]);
+    format!("{}{}{}", &text[..start], lines.concat(), &text[end..])
+}
+
 /// Sets (`Some`) or removes (`None`) top-level keys of a YAML document, as
 /// [`set`] does for a note's frontmatter.
 pub fn set_in_yaml(yaml: &str, changes: &[(&str, Option<Prop>)]) -> String {
     let mut lines: Vec<String> = yaml.split_inclusive('\n').map(str::to_string).collect();
     for (key, value) in changes {
-        let prefix = format!("{key}:");
-        let found = lines.iter().position(|l| {
-            l.starts_with(&prefix)
-                && l[prefix.len()..]
-                    .chars()
-                    .next()
-                    .is_none_or(char::is_whitespace)
-        });
+        let found = key_line(&lines, key);
         let rendered = value.as_ref().map(|v| v.render(key));
         match found {
             Some(i) => {
@@ -210,6 +246,51 @@ mod tests {
         assert_eq!(scalar("say \"hi\"", false), "say \"hi\"");
         assert_eq!(scalar("\"q\"", false), "\"\\\"q\\\"\"");
         assert_eq!(scalar("", false), "\"\"");
+    }
+
+    #[test]
+    fn writes_numbers_booleans_and_empty_values_unquoted() {
+        let text = "---\ntitle: x\n---\n";
+        assert_eq!(
+            set(
+                text,
+                &[
+                    ("done", Some(Prop::Raw("true".into()))),
+                    ("count", Some(Prop::Raw("3".into()))),
+                    ("links", Some(Prop::Empty)),
+                ],
+            ),
+            "---\ntitle: x\ndone: true\ncount: 3\nlinks:\n---\n"
+        );
+        // A block list is replaced whole.
+        assert_eq!(
+            set(
+                "---\ntags:\n  - a\n  - b\nx: 1\n---\n",
+                &[("tags", Some(Prop::Empty))]
+            ),
+            "---\ntags:\nx: 1\n---\n"
+        );
+    }
+
+    #[test]
+    fn renames_properties_in_place() {
+        let text =
+            "---\ntype: person\n# who\nteams:\n  - \"[[Platform]]\"\nrole: x\n---\nteams: body\n";
+        assert_eq!(
+            rename(text, "teams", "team"),
+            "---\ntype: person\n# who\nteam:\n  - \"[[Platform]]\"\nrole: x\n---\nteams: body\n"
+        );
+        assert_eq!(
+            rename(text, "role", "due date"),
+            "---\ntype: person\n# who\nteams:\n  - \"[[Platform]]\"\ndue date: x\n---\nteams: body\n"
+        );
+        // Taken names, missing keys, keys YAML would misread, no frontmatter.
+        assert_eq!(rename(text, "role", "type"), text);
+        assert_eq!(rename(text, "nope", "other"), text);
+        assert_eq!(rename(text, "role", "a: b"), text);
+        assert_eq!(rename(text, "role", "- x"), text);
+        assert_eq!(rename(text, "role", ""), text);
+        assert_eq!(rename("# No properties\n", "a", "b"), "# No properties\n");
     }
 
     #[test]

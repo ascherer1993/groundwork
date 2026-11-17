@@ -106,6 +106,9 @@ pub struct Repo {
     /// the main checkout into every new worktree, before setup; missing ones
     /// are skipped.
     pub copy: Vec<String>,
+    /// Like `copy`, but symlinked to the main checkout's file or folder
+    /// instead of copied, so every worktree shares one (`CLAUDE.local.md`).
+    pub link: Vec<String>,
     /// Run at the root of every new worktree.
     pub setup: Vec<String>,
     /// Where agents should start reading, relative to the repo.

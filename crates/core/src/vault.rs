@@ -187,6 +187,7 @@ mod tests {
                 "Daily",
                 "Events",
                 "Projects",
+                "Teams",
                 "Templates",
                 "Welcome.md"
             ]

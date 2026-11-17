@@ -104,18 +104,14 @@ impl RepoLocations {
     }
 }
 
-/// Where a checkout's worktrees go unless told: `worktrees` beside it when
-/// it's in a folder of its own name (`dev/api/api` → `dev/api/worktrees`),
-/// else `<repo>-worktrees` beside it (`dev/api` → `dev/api-worktrees`).
+/// Where a checkout's worktrees go unless told: `<repo>-worktrees` beside it
+/// (`dev/api` → `dev/api-worktrees`), so every repo's checkout and its
+/// worktrees sit side by side in one folder.
 pub fn default_worktrees(checkout: &Path) -> PathBuf {
     let name = checkout
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "repo".into());
-    let parent = checkout.parent().and_then(Path::file_name);
-    if parent.is_some_and(|p| p.to_string_lossy() == name) {
-        return checkout.with_file_name("worktrees");
-    }
     checkout.with_file_name(format!("{name}-worktrees"))
 }
 
@@ -155,7 +151,8 @@ mod tests {
             repo.with_file_name("repo-worktrees/T-1")
         );
 
-        // A checkout in a folder of its own name keeps its worktrees there.
+        // A checkout in a folder of its own name (`api/api`) is no exception:
+        // its worktrees still go in `api-worktrees` beside it.
         let home = dir.path().join("api");
         fs::create_dir_all(&home).unwrap();
         let api = git::tests::repo_with_origin(&home);
@@ -165,7 +162,7 @@ mod tests {
         let home = fs::canonicalize(&home).unwrap();
         assert_eq!(
             nested.worktrees,
-            home.join("worktrees").display().to_string()
+            home.join("api-worktrees").display().to_string()
         );
 
         let other = dir.path().join("trees");

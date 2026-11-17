@@ -2346,7 +2346,8 @@ label.check input {
   color: var(--text-faint);
 }
 
-.settings-scroll h3 {
+.settings-scroll h3,
+.settings-subhead {
   margin: 12px 0 4px;
   color: var(--text-faint);
   font-size: 11px;
@@ -2371,6 +2372,29 @@ label.check input {
   gap: 6px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.dictionary-words {
+  flex: 1;
+  min-height: 0;
+  max-height: 260px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.dictionary-words li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 2px 0;
+  border-top: 1px solid var(--border);
+}
+
+.dictionary-words li:first-child {
+  border-top: none;
 }
 
 .quickadd-list {
@@ -2870,6 +2894,7 @@ button.link-button:hover:not(:disabled) {
   min-width: 0;
   line-height: 1.4;
   overflow-wrap: anywhere;
+  cursor: pointer;
 }
 
 .board-todo.is-closed .todo-text {

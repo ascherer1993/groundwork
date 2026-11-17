@@ -2,8 +2,9 @@
  * The todo board (PLAN §5.11): a week, a column a day, each with its events,
  * the todos due that day and the ones done. Overdue todos show on today.
  * Ticking, dragging a todo to another day (rescheduling it) and adding one
- * edit the notes where the todos live. Its path is `todos:board`
- * (`lib/paths.ts`), so a note opened from it is one Back away.
+ * edit the notes where the todos live; clicking one opens its note at its
+ * line. Its path is `todos:board` (`lib/paths.ts`), so a note opened from it
+ * is one Back away.
  */
 import { CalendarDays, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -18,7 +19,7 @@ import { isoDate } from "../markdown/dates";
 import { attachContentHandlers, hydrate } from "../markdown/hydrate";
 import { renderInline } from "../markdown/render";
 import { taskMetaHtml } from "../markdown/tasks";
-import { parseTodoInput, todoSource } from "../markdown/todos";
+import { opensNote, parseTodoInput, todoSource } from "../markdown/todos";
 import { useUi } from "../state/ui";
 import { message, onVaultChange } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
@@ -282,6 +283,7 @@ function TodoItem({ todo, today }: { todo: Todo; today: string }) {
       className={`board-todo${isOpen ? "" : " is-closed"}`}
       data-note-path={todo.path}
       draggable={isOpen}
+      onClick={(e) => opensNote(e) && open(todo.path, e, todo.line)}
       onDragStart={(e) => {
         e.dataTransfer.setData(DRAGGED, todo.id);
         e.dataTransfer.setData("text/plain", todo.text);

@@ -40,12 +40,15 @@ import { message } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
 import { openExternalUrl } from "../lib/fileUrl";
 import { enterLink, leaveLink } from "../lib/linkPreview";
+import { indentListItem, outdentListItem } from "./lists";
 import { wikilinkCompletions } from "./autocomplete";
 import { imageInput } from "./images";
 import { popupTheme } from "./popupTheme";
 import { createdStamps, todoCompletions } from "./todoInput";
 import { type NoteContext, noteContext, notePath } from "./context";
+import { listWrap } from "./listWrap";
 import { blockPreview, inlinePreview, revealAt, structure } from "./livePreview";
+import { spellcheck } from "./spelling";
 import { obsidianSyntax } from "./syntax";
 
 export type EditorMode = "live" | "source";
@@ -240,7 +243,12 @@ export const modeCompartment = new Compartment();
 
 export function modeExtensions(mode: EditorMode): Extension {
   return mode === "live"
-    ? [blockPreview, inlinePreview, EditorView.contentAttributes.of({ "data-mode": "live" })]
+    ? [
+        blockPreview,
+        inlinePreview,
+        listWrap,
+        EditorView.contentAttributes.of({ "data-mode": "live" }),
+      ]
     : [EditorView.contentAttributes.of({ "data-mode": "source" })];
 }
 
@@ -292,6 +300,8 @@ export function editorExtensions(host: EditorHost, mode: EditorMode): Extension[
       ...searchKeymap,
       ...historyKeymap,
       ...defaultKeymap,
+      // On a list item, Tab nests it and Shift-Tab brings it out, renumbering.
+      { key: "Tab", run: indentListItem, shift: outdentListItem },
       indentWithTab,
     ]),
     structure,
@@ -299,6 +309,7 @@ export function editorExtensions(host: EditorHost, mode: EditorMode): Extension[
     handlers,
     metaHeld,
     imageInput,
+    spellcheck,
     hoverPreview,
     theme,
     popupTheme,

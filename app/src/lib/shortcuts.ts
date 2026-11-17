@@ -1,5 +1,6 @@
 import { commandFor, useKeys } from "../state/keys";
 import { loadCanvasSettings } from "../state/canvas";
+import { loadSpellingSettings } from "../state/spelling";
 import { loadLockSettings } from "../state/locks";
 import { useVault } from "../state/vault";
 import { runKey } from "./commands";
@@ -13,6 +14,7 @@ export function installShortcuts(): () => void {
   void useKeys.getState().load();
   void loadLockSettings();
   void loadCanvasSettings();
+  void loadSpellingSettings();
   const onKey = (e: KeyboardEvent) => {
     if (useVault.getState().status !== "vault") return;
     // The settings are recording new keys for a command.

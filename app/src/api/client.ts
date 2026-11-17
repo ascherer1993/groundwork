@@ -9,6 +9,8 @@ import type { BarCommand } from "./generated/BarCommand";
 import type { CommandEntry } from "./generated/CommandEntry";
 import type { ProjectView } from "./generated/ProjectView";
 import type { Person } from "./generated/Person";
+import type { PropertyValue } from "./generated/PropertyValue";
+import type { Team } from "./generated/Team";
 import type { DailyFields } from "./generated/DailyFields";
 import type { DailyNoteSettings } from "./generated/DailyNoteSettings";
 import type { QmdStatus } from "./generated/QmdStatus";
@@ -149,6 +151,9 @@ interface Results {
   "project.view": ProjectView;
   "people.list": Person[];
   "frontmatter.setList": string;
+  "frontmatter.set": string;
+  "frontmatter.rename": string;
+  "teams.list": Team[];
   "search.smart": SmartResult[];
   "qmd.status": QmdStatus;
   "qmd.setup": QmdStatus;
@@ -181,6 +186,11 @@ interface Results {
   "agent.command": string;
   "bar.command": BarCommand;
   "commandLog.list": CommandEntry[];
+  "spelling.check": string[];
+  "spelling.suggest": string[];
+  "spelling.add": null;
+  "spelling.words": string[];
+  "spelling.remove": null;
 }
 
 type Method = Request["method"];
@@ -342,6 +352,12 @@ export const api = {
   people: () => call("people.list"),
   setListProperty: (text: string, key: string, values: string[]) =>
     call("frontmatter.setList", { text, key, values }),
+  /** `text` with property `key` set to `value`, or removed when it's null. */
+  setProperty: (text: string, key: string, value: PropertyValue | null) =>
+    call("frontmatter.set", { text, key, value }),
+  renameProperty: (text: string, from: string, to: string) =>
+    call("frontmatter.rename", { text, from, to }),
+  teams: () => call("teams.list"),
   inbox: () => call("inbox.list"),
   inboxHistory: () => call("inbox.history"),
   answerInbox: (id: string, answer?: string) => call("inbox.answer", { id, answer }),
@@ -377,6 +393,13 @@ export const api = {
     call("bar.command", { prompt, context, shown }),
   /** The command bar's requests, newest first. */
   commandLog: (limit?: number) => call("commandLog.list", { limit }),
+  /** The words that aren't in the dictionary or the vault's own words. */
+  misspelled: (words: string[]) => call("spelling.check", { words }),
+  spellingSuggestions: (word: string) => call("spelling.suggest", { word }),
+  addToDictionary: (word: string) => call("spelling.add", { word }),
+  /** The vault's own words (`.groundwork/dictionary.txt`). */
+  dictionaryWords: () => call("spelling.words"),
+  removeFromDictionary: (word: string) => call("spelling.remove", { word }),
 };
 
 export { ApiCallError } from "./transport";

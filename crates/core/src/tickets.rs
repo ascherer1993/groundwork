@@ -2203,10 +2203,32 @@ impl Session {
     }
 }
 
-/// Copies the repo's `copy:` files and folders from its checkout into a new
-/// worktree, leaving anything already there. Missing ones, and paths that
-/// would leave the checkout, are skipped.
+/// A `copy:` or `link:` entry as a path inside the checkout, or `None` for
+/// one that's empty or would leave it.
+fn inside_checkout(rel: &str) -> Option<&Path> {
+    let rel = Path::new(rel.trim());
+    let leaves = rel.as_os_str().is_empty()
+        || rel.is_absolute()
+        || rel
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir));
+    (!leaves).then_some(rel)
+}
+
+/// Brings the repo's files git ignores into a new worktree: `link:` ones as
+/// symlinks to the checkout's, then `copy:` ones copied. Anything already
+/// there is left; missing ones, and paths that would leave the checkout, are
+/// skipped.
 fn copy_ignored(repo: &Repo, checkout: &Path, worktree: &Path) {
+    for rel in repo.link.iter().filter_map(|r| inside_checkout(r)) {
+        let (from, to) = (checkout.join(rel), worktree.join(rel));
+        if from.exists() && to.symlink_metadata().is_err() {
+            if let Some(dir) = to.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::os::unix::fs::symlink(&from, &to);
+        }
+    }
     fn copy(from: &Path, to: &Path) -> std::io::Result<()> {
         if from.is_dir() {
             std::fs::create_dir_all(to)?;
@@ -2222,16 +2244,7 @@ fn copy_ignored(repo: &Repo, checkout: &Path, worktree: &Path) {
         }
         Ok(())
     }
-    for rel in &repo.copy {
-        let rel = Path::new(rel.trim());
-        if rel.as_os_str().is_empty()
-            || rel.is_absolute()
-            || rel
-                .components()
-                .any(|c| matches!(c, std::path::Component::ParentDir))
-        {
-            continue;
-        }
+    for rel in repo.copy.iter().filter_map(|r| inside_checkout(r)) {
         let from = checkout.join(rel);
         if from.exists() {
             let _ = copy(&from, &worktree.join(rel));
@@ -2551,16 +2564,28 @@ mod tests {
             Err(CoreError::RepoNotLocated(r)) if r == "acme-platform"
         ));
         s.locate();
-        // Files git ignores, copied in (CLAUDE.local.md is missing: skipped).
+        // Files git ignores: copied in, or linked to the checkout's
+        // (.claude/settings.local.json is missing: skipped).
         fs::write(s.repo.join(".env"), "PORT=1\n").unwrap();
         fs::create_dir_all(s.repo.join("config/local")).unwrap();
         fs::write(s.repo.join("config/local/keys.json"), "{}").unwrap();
+        fs::write(s.repo.join("CLAUDE.local.md"), "Never push.\n").unwrap();
         let created = s.session.create_ticket(&new).unwrap();
         let t = &created.ticket;
         let copied = PathBuf::from(t.worktree_path.as_ref().unwrap());
         assert_eq!(fs::read_to_string(copied.join(".env")).unwrap(), "PORT=1\n");
         assert!(copied.join("config/local/keys.json").is_file());
-        assert!(!copied.join("CLAUDE.local.md").exists());
+        assert_eq!(
+            fs::read_link(copied.join("CLAUDE.local.md")).unwrap(),
+            fs::canonicalize(&s.repo).unwrap().join("CLAUDE.local.md")
+        );
+        // One file: a change in the checkout shows in the worktree.
+        fs::write(s.repo.join("CLAUDE.local.md"), "Never push. Ever.\n").unwrap();
+        assert_eq!(
+            fs::read_to_string(copied.join("CLAUDE.local.md")).unwrap(),
+            "Never push. Ever.\n"
+        );
+        assert!(!copied.join(".claude").exists());
         assert_eq!(t.path, "Tickets/TEAM-200 Fix signup.md");
         assert_eq!(t.key.as_deref(), Some("TEAM-200"));
         assert_eq!(

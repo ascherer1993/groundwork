@@ -770,6 +770,16 @@ impl Backend {
 
             Request::ProjectView { project } => to_value(self.session()?.project_view(&project)?),
             Request::PeopleList => to_value(self.session()?.people()),
+            Request::TeamsList => to_value(self.session()?.teams()),
+            Request::FrontmatterSet { text, key, value } => {
+                to_value(groundwork_core::frontmatter::set(
+                    &text,
+                    &[(key.as_str(), value.map(|v| v.into_prop()))],
+                ))
+            }
+            Request::FrontmatterRename { text, from, to } => {
+                to_value(groundwork_core::frontmatter::rename(&text, &from, &to))
+            }
             Request::FrontmatterSetList { text, key, values } => {
                 to_value(groundwork_core::frontmatter::set(
                     &text,
@@ -862,6 +872,21 @@ impl Backend {
             } => to_value(self.session()?.bar_command(&prompt, &context, shown)?),
             Request::CommandLogList { limit } => {
                 to_value(CommandLog::new(self.session()?.vault().root()).list(limit.unwrap_or(200)))
+            }
+            Request::SpellingCheck { words } => {
+                to_value(self.session()?.spelling().misspelled(&words))
+            }
+            Request::SpellingSuggest { word } => {
+                to_value(self.session()?.spelling().suggest(&word))
+            }
+            Request::SpellingAdd { word } => {
+                self.session()?.spelling().add(&word)?;
+                Ok(Value::Null)
+            }
+            Request::SpellingWords => to_value(self.session()?.spelling().words()),
+            Request::SpellingRemove { word } => {
+                self.session()?.spelling().remove(&word)?;
+                Ok(Value::Null)
             }
             Request::ActionRun { id, note, cwd } => {
                 let context = self
@@ -991,6 +1016,7 @@ impl Backend {
         // Drop the previous session (and its watcher) first.
         self.close_vault();
         let session = Arc::new(Session::open(vault, &self.data_dir)?);
+        groundwork_core::spelling::warm_up();
 
         let weak = Arc::downgrade(&session);
         let events = self.events.clone();

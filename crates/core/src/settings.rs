@@ -39,6 +39,11 @@ pub struct AppSettings {
     )]
     #[ts(optional)]
     pub canvas_theme: Option<CanvasTheme>,
+    /// Whether the editor underlines words it doesn't know (PLAN §5.18).
+    /// On when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub spellcheck: Option<bool>,
 }
 
 /// How canvases look: like the app, or always light or dark.

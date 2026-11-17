@@ -7,8 +7,10 @@ acme-platform:
     base_branch: main
     branch_format: "{{key}}-{{slug}}"
     worktree_name: "{{key}}-{{slug}}"
-  # Ignored by git, so copied into each new worktree (missing ones skipped).
-  copy: [.env, config/local, CLAUDE.local.md]
+  # Ignored by git, so copied into each new worktree, or linked to the main
+  # checkout's so they all share one (missing ones skipped).
+  copy: [.env, config/local]
+  link: [CLAUDE.local.md, .claude/settings.local.json]
   setup:
     - npm install
   docs: [CLAUDE.md]

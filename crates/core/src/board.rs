@@ -190,6 +190,24 @@ mod tests {
     }
 
     #[test]
+    fn blank_checkboxes_are_not_todos() {
+        let (_dir, s) = session();
+        s.create_file(
+            "Blank.md",
+            Some("- [ ] \n- [ ] 📅 2026-11-05\n- [x] ✅ 2026-11-03\n- [ ] Real 📅 2026-11-05\n"),
+        )
+        .unwrap();
+        let board = s.todo_board_on(d("2026-11-02"), 7, &TodoFilter::default(), d("2026-11-03"));
+        let all: Vec<&str> = board
+            .days
+            .iter()
+            .flat_map(|d| texts(&d.open).into_iter().chain(texts(&d.done)))
+            .collect();
+        assert!(all.contains(&"Real"));
+        assert!(!all.iter().any(|t| t.trim().is_empty()), "{all:?}");
+    }
+
+    #[test]
     fn the_filter_narrows_todos_and_events() {
         let (_dir, s) = session();
         let today = d("2026-11-03");

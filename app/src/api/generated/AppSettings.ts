@@ -16,4 +16,9 @@ lockAfterMinutes?: number,
  * Whether canvases follow the app's light or dark look or always use
  * one (PLAN §5.17). Follows the app when absent.
  */
-canvasTheme?: CanvasTheme, };
+canvasTheme?: CanvasTheme, 
+/**
+ * Whether the editor underlines words it doesn't know (PLAN §5.18).
+ * On when absent.
+ */
+spellcheck?: boolean, };

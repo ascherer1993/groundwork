@@ -62,9 +62,43 @@
   margin-bottom: 0;
 }
 
+/* Nested numbered lists count 1, 2, 3; a, b, c; i, ii, iii; then over (as the editor draws them). */
+.markdown-rendered ol ol {
+  list-style-type: lower-alpha;
+}
+
+.markdown-rendered ol ol ol {
+  list-style-type: lower-roman;
+}
+
+.markdown-rendered ol ol ol ol {
+  list-style-type: decimal;
+}
+
+.markdown-rendered ol ol ol ol ol {
+  list-style-type: lower-alpha;
+}
+
+.markdown-rendered ol ol ol ol ol ol {
+  list-style-type: lower-roman;
+}
+
 .markdown-rendered li:has(> .task-checkbox) {
   list-style: none;
   margin-left: -1.4em;
+  /* A wrapped line lines up with the task's text, not under its checkbox
+     (bullets and numbers hang this way already). */
+  padding-left: calc(14px + 0.45em);
+  text-indent: calc(-14px - 0.45em);
+}
+
+.markdown-rendered li:has(> .task-checkbox) * {
+  text-indent: 0;
+}
+
+/* Lists under a task stay where they were, not pushed in by its padding. */
+.markdown-rendered li:has(> .task-checkbox) > :is(ul, ol) {
+  margin-left: calc(-14px - 0.45em);
 }
 
 .task-checkbox {
@@ -397,11 +431,238 @@ summary.callout-title {
   text-decoration: none;
 }
 
-/* People properties: remove one, or pick more from the contacts. */
 .property-value {
   display: inline-flex;
   align-items: center;
   gap: 2px;
+}
+
+/* The editor's properties panel (editor/propertyPanel.ts). */
+
+.properties-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  padding-left: 6px;
+}
+
+.properties-head .properties-title {
+  margin: 0;
+}
+
+.properties-source {
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+  font: 11px var(--font-mono);
+  line-height: 18px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.cm-properties:hover .properties-source,
+.properties-source:focus-visible {
+  opacity: 1;
+}
+
+.properties-source:hover,
+.properties-source:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.cm-properties .property {
+  grid-template-columns: 160px minmax(0, 1fr);
+  align-items: start;
+  gap: 4px;
+  padding: 1px 0;
+}
+
+.cm-properties .property-key {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.property-key-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.property-icon {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.cm-properties .property-key:hover,
+.cm-properties .property-key:focus-visible,
+.cm-properties .property-key[aria-expanded="true"] {
+  background: var(--bg-hover);
+  color: var(--text);
+  outline: none;
+}
+
+.property.is-suggested .property-key {
+  color: var(--text-faint);
+}
+
+.property-key-input {
+  height: 28px;
+  min-width: 0;
+  padding: 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.cm-properties .property-values {
+  min-height: 28px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-radius: 4px;
+}
+
+.cm-properties .property-values:hover {
+  background: var(--bg-hover);
+}
+
+.cm-properties .property-values:focus-within {
+  background: var(--bg-hover);
+}
+
+.pv-text {
+  flex: 1;
+  min-width: 0;
+  min-height: 28px;
+  padding: 4px 0;
+  overflow-wrap: anywhere;
+  cursor: text;
+  outline: none;
+}
+
+.pv-empty,
+.cm-properties .pv-add::placeholder,
+.pv-input::placeholder {
+  color: var(--text-faint);
+}
+
+.pv-input,
+.pv-add {
+  min-width: 0;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+  outline: none;
+}
+
+.cm-properties .pv-input,
+.cm-properties .pv-add,
+.cm-properties .pv-input:focus,
+.cm-properties .pv-add:focus,
+.cm-properties .pv-input:focus-visible,
+.cm-properties .pv-add:focus-visible {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+.pv-text a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.pv-text a:hover {
+  text-decoration: underline;
+}
+
+.pv-text-input {
+  flex: 1;
+  display: block;
+  resize: none;
+  overflow: hidden;
+}
+
+.pv-number {
+  width: 100%;
+}
+
+.pv-date {
+  color-scheme: inherit;
+}
+
+.pv-checkbox {
+  width: 15px;
+  height: 15px;
+  margin: 6px 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.pv-add {
+  flex: 1 0 60px;
+}
+
+.pv-object {
+  overflow: hidden;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: 12px var(--font-mono);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* List values are chips. */
+.cm-properties .pv-list {
+  flex-wrap: wrap;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.cm-properties .pv-list .property-value {
+  max-width: 100%;
+  padding: 0 2px 0 8px;
+  border-radius: 999px;
+  background: var(--bg-selected);
+  line-height: 22px;
+}
+
+.cm-properties .pv-list .property-value.is-tag {
+  background: var(--accent-soft);
+  color: var(--link);
+}
+
+.property-value-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .property-remove,
@@ -414,6 +675,11 @@ summary.callout-title {
   font: inherit;
   line-height: 1.3;
   cursor: pointer;
+}
+
+.cm-properties .pv-list .property-remove {
+  border-radius: 999px;
+  line-height: 18px;
 }
 
 .property-remove {
@@ -431,57 +697,174 @@ summary.callout-title {
 .property-add:focus-visible {
   background: var(--bg-hover);
   color: var(--text);
+  outline: none;
 }
 
-.people-picker {
-  z-index: 120;
+.property-remove:focus-visible {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Adding a property. */
+.property-new-row {
   display: flex;
-  flex-direction: column;
-  max-height: 320px;
-  padding: 0;
-  overflow: hidden;
-  font-family: var(--font-ui);
-  font-size: 13px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
 }
 
-.people-picker-input {
-  padding: 8px 10px;
+.property-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 6px;
   border: none;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
+  border-radius: 4px;
   background: transparent;
+  color: var(--text-faint);
+  font: inherit;
+  cursor: pointer;
+}
+
+.property-new span {
+  width: 14px;
+  text-align: center;
+}
+
+.property-new:hover,
+.property-new:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text);
+  outline: none;
+}
+
+.property-new-name,
+.property-new-type {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-input);
   color: var(--text);
   font: inherit;
 }
 
-.people-picker-input:focus-visible {
+.property-new-name {
+  width: 160px;
+}
+
+.property-new-name:focus,
+.property-new-type:focus {
+  border-color: var(--accent);
   outline: none;
 }
 
-.people-picker-list {
-  overflow-y: auto;
-  padding: 4px;
+.property-new-ok,
+.property-new-cancel {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
 }
 
-.menu .people-picker-item {
+.property-new-ok {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.property-new-cancel:hover {
+  background: var(--bg-hover);
+}
+
+.property-new-error {
+  flex-basis: 100%;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.property-new-error:empty {
+  display: none;
+}
+
+.properties-error-fix {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* A note without properties: just "Add property", shown on hover. */
+.cm-properties.cm-properties-none {
+  padding: 0 0 4px;
+}
+
+.cm-properties.cm-properties-none::after {
+  display: none;
+}
+
+.cm-properties-none .property-new {
+  height: 22px;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.cm-editor:hover .cm-properties-none .property-new,
+.cm-properties-none .property-new:focus-visible,
+.cm-properties-none .is-adding {
+  opacity: 1;
+}
+
+/* The menus: a property's options, and suggestions under a field. */
+.menu-heading {
+  padding: 4px 10px 2px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.property-menu {
+  z-index: 120;
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+.property-suggest {
+  z-index: 130;
+  max-height: 280px;
+  overflow-y: auto;
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+.menu .property-suggest-item {
   flex-direction: column;
   align-items: flex-start;
   color: var(--text);
 }
 
-.menu .people-picker-item[aria-selected] {
+.menu .property-suggest-item[aria-selected] {
   background: var(--accent);
   color: var(--accent-text);
 }
 
-.people-picker-detail {
-  font-size: 11px;
-  opacity: 0.7;
+.property-suggest-name.is-action {
+  font-style: italic;
 }
 
-.people-picker-empty {
-  padding: 6px 10px;
-  color: var(--text-faint);
+.property-suggest-detail {
+  font-size: 11px;
+  opacity: 0.7;
 }
 
 /* Editor live preview */
@@ -581,6 +964,11 @@ summary.callout-title {
   color: var(--text-muted);
 }
 
+/* Looks like the number it stands for (list marks are faint in the editor). */
+.cm-list-number {
+  color: var(--text-faint);
+}
+
 .cm-hr {
   display: inline-block;
   width: 100%;
@@ -590,6 +978,17 @@ summary.callout-title {
 
 .cm-task-checkbox {
   margin-right: 0.4em;
+}
+
+/* A list line with a hanging indent (`listWrap.ts`); widgets inside it, which
+   would otherwise take on its negative indent, start their text normally. */
+.cm-list-hang * {
+  text-indent: 0;
+}
+
+/* The hanging indent already lines the line up with the task's text. */
+.cm-list-hang .cm-task-meta {
+  padding-left: 0;
 }
 
 .cm-embed {
@@ -761,10 +1160,6 @@ summary.callout-title {
   padding-bottom: 2px;
 }
 
-.markdown-rendered li:has(> .task-checkbox) .task-meta {
-  padding-left: calc(14px + 0.45em);
-}
-
 .task-meta-sep {
   opacity: 0.6;
 }
@@ -830,6 +1225,59 @@ summary.callout-title {
   color: var(--danger);
 }
 
+/* Headings that fold their section (the Todos panel). */
+.todos-section h4 button.todos-fold {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.todos-section h4 button.todos-fold:hover {
+  color: var(--text-muted);
+}
+
+.todos-section[data-section="overdue"] h4 button.todos-fold:hover {
+  color: var(--danger);
+}
+
+.todos-fold .todos-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todos-chevron {
+  flex: none;
+  transition: transform 0.12s;
+}
+
+.todos-fold[aria-expanded="false"] .todos-chevron {
+  transform: rotate(-90deg);
+}
+
+/* Grouped by note, headings are note names: as written, not in capitals. */
+.todos-view[data-group="note"] .todos-section h4 {
+  font-size: 12px;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-muted);
+}
+
+.todos-view[data-group="note"] .todos-section h4 button.todos-fold:hover {
+  color: var(--text);
+}
+
 .todos-count {
   margin-left: 4px;
   font-weight: 500;
@@ -869,6 +1317,10 @@ summary.callout-title {
   flex: 1;
   min-width: 0;
   line-height: 1.4;
+}
+
+.todo-item.opens-note .todo-body {
+  cursor: pointer;
 }
 
 .todo-item.is-closed .todo-text {
