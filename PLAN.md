@@ -772,6 +772,7 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
     - The layout persists, so terminals reattach after a reload or relaunch. If a session is gone, a new shell starts in the same folder.
     - xterm.js 6 draws with WebGL when it's available, with colours from `tokens.css` (`--term-*`).
     - Keyboard: Shift+Enter sends ESC CR (a newline in Claude Code), and ⌘ shortcuts go to the app. Web and OSC 8 links open in the browser.
+    - (2026-11-17) **Clicking into the window from another app** clicks what's under the pointer too (`acceptFirstMouse` on the main window), so a click on a terminal puts the keyboard there at once; macOS otherwise only brings the window forward, and the keyboard goes back to wherever it was.
     - Input is sent one call at a time, so keystrokes stay in order.
 - Built in the second half:
   - **Workspaces** have a name, a folder and their own dock layout. They're machine-local, so they're kept per vault in the data folder (`vaults/<key>/workspaces.json`), not the vault. The main area shows the notes layout or one workspace's; ⌘1 is the notes, ⌘2… the workspaces, and "Switch workspace…" is in the palette. Every area's dock stays mounted (hidden), so terminals in other workspaces keep reporting. New terminals start in the workspace's folder with `GROUNDWORK_WORKSPACE_ID` set. Deleting a workspace ends its terminals, after confirming.

@@ -110,8 +110,19 @@ export function todoField(
             fontFamily: "var(--font-ui)",
           },
           // Room for the 📅 and priority emoji, so they don't push the line taller.
-          "&.cm-editor .cm-line": { padding: "0", lineHeight: "1.5" },
+          "&.cm-editor .cm-line": {
+            padding: "0",
+            lineHeight: "1.5",
+            // See below: the note's editor hides the browser's caret.
+            caretColor: "var(--accent) !important",
+          },
           "&.cm-editor .cm-placeholder": { color: "var(--text-faint)" },
+          // Inside a note, the note's editor hides the browser's caret (set
+          // on the lines above) and selection on every line within it (it
+          // draws its own), these included. More specific, so these win.
+          "&.cm-editor .cm-line::selection, &.cm-editor .cm-line ::selection": {
+            backgroundColor: "var(--selection) !important",
+          },
         }),
       ],
     }),

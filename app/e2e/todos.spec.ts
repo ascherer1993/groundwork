@@ -278,6 +278,14 @@ test("a todo's text is edited in place from the block", async ({ page }) => {
   const field = block(page).getByRole("textbox", { name: "Edit todo" });
   await expect(field).toBeFocused();
   await expect(field).toHaveText("Book the venue");
+  // The note around it hides the browser's caret on its lines; not on these.
+  const caret = (sel: string) =>
+    block(page)
+      .locator(`${sel} .cm-line`)
+      .first()
+      .evaluate((el) => el.ownerDocument.defaultView!.getComputedStyle(el).caretColor);
+  expect(await caret(".todo-edit")).not.toBe("rgba(0, 0, 0, 0)");
+  expect(await caret(".todo-add")).not.toBe("rgba(0, 0, 0, 0)");
 
   // Escape leaves it as it was.
   await page.keyboard.type(" and the band");
