@@ -202,13 +202,13 @@ mod tests {
                 ("closed", Some(Prop::text("2026-11-04"))),
                 (
                     "projects",
-                    Some(Prop::List(vec!["[[Acme]]".into(), "[[Empower]]".into()])),
+                    Some(Prop::List(vec!["[[Acme]]".into(), "[[Globex]]".into()])),
                 ),
             ],
         );
         assert_eq!(
             out,
-            "---\ntype: ticket\n# a comment\nstatus: closed\nclosed: 2026-11-04\nprojects: [\"[[Acme]]\", \"[[Empower]]\"]\n---\n# Body\nstatus: not a property\n"
+            "---\ntype: ticket\n# a comment\nstatus: closed\nclosed: 2026-11-04\nprojects: [\"[[Acme]]\", \"[[Globex]]\"]\n---\n# Body\nstatus: not a property\n"
         );
         // Prefixes of other keys aren't matched.
         let out = set(

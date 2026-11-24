@@ -80,12 +80,12 @@ My Vault/
   Events/                         # convention: one note per event or meeting (type: event)
   Notes/                          # shared ideas and concepts, linked from any project
   Projects/
-    Integrations/                 # a project for the shared, repo-wide work
+    Platform/                     # a project for the shared, repo-wide work
       .groundwork.yml             # ← marks this folder as a Project
-      Integrations.md             # overview note (any name; referenced in config)
-    Lincoln/
-      .groundwork.yml             # code: the lincoln-web and lincoln-lambda components
-      Lincoln.md
+      Platform.md                 # overview note (any name; referenced in config)
+    Acme/
+      .groundwork.yml             # code: the acme-web and acme-worker components
+      Acme.md
       Meetings/  Decisions/  ...  # any structure you like
       demos/
         login-flow.page/          # an HTML bundle (folder with .page suffix)
@@ -94,7 +94,7 @@ My Vault/
           state.json              # written by the page via the bridge API
         sketch.html               # a single-file HTML page
         Architecture.excalidraw   # a canvas (§5.17)
-    Empower/                      # same repo as Lincoln, different components
+    Globex/                       # same repo as Acme, different components
     Kyoto Trip/                   # a project with no code at all
       .groundwork.yml
 ```
@@ -117,9 +117,9 @@ A project is any folder containing `.groundwork.yml`. Inside a project, any subf
 Every code repo the vault refers to, defined once. Projects and tickets refer to a repo by id, and to part of one as `repo:component`.
 
 ```yaml
-integrations:
-  name: Integrations monorepo
-  description: Partner integrations. One web app and one Lambda per partner, plus shared libraries.
+platform:
+  name: Platform monorepo
+  description: Customer apps. One web app and one background worker per customer, plus shared libraries.
   git:
     base_branch: main
     branch_format: "{{key}}-{{slug}}"
@@ -128,56 +128,56 @@ integrations:
     - npm install
     - cp "{{repo.path}}/.env" .env
   docs: [CLAUDE.md, docs/architecture.md]   # where agents should start reading
-  home_project: Integrations        # the project a new ticket here gets when none is given (optional)
+  home_project: Platform            # the project a new ticket here gets when none is given (optional)
   components:                       # optional; parts of the repo that work differently
     shared:
       path: packages/shared
       description: Auth, HTTP clients and models used by every integration.
-    lincoln-web:
-      path: apps/lincoln
-      description: Lincoln's partner portal (Next.js).
-      setup: [npm run build -w apps/lincoln]
+    acme-web:
+      path: apps/acme
+      description: Acme's customer portal (Next.js).
+      setup: [npm run build -w apps/acme]
       commands:                     # named commands for people, actions and agents
-        dev: npm run dev -w apps/lincoln
-        test: npm test -w apps/lincoln
-      docs: [apps/lincoln/README.md]
-    lincoln-lambda:
-      path: lambdas/lincoln-sync
-      description: Nightly sync Lambda (Python, SAM).
+        dev: npm run dev -w apps/acme
+        test: npm test -w apps/acme
+      docs: [apps/acme/README.md]
+    acme-worker:
+      path: workers/acme-sync
+      description: Nightly sync job (Python).
       commands:
         test: make test
-        invoke: sam local invoke SyncFunction
+        run: python -m sync --once
 ```
 
 - **Everything is optional.** A repo can be just an id and git settings. Components exist only where a part of the repo needs its own setup, commands or explanation.
 - **Point, don't duplicate.** The repo's own `CLAUDE.md`, READMEs and scripts stay the source of truth for how its code works. `repos.yml` holds what the repo can't know: which projects use which parts, worktree conventions, personal setup steps, and pointers (`docs`) to where to start reading.
 - `{{repo.path}}` is the main checkout on this machine; `{{worktree.path}}` and `{{component.path}}` resolve inside the current worktree.
 
-### 4.4 Project config — `Projects/Lincoln/.groundwork.yml` (portable)
+### 4.4 Project config — `Projects/Acme/.groundwork.yml` (portable)
 
 ```yaml
-name: Lincoln
-overview: Lincoln.md
+name: Acme
+overview: Acme.md
 code:                             # optional: what this project's work touches
-  - integrations:lincoln-web
-  - integrations:lincoln-lambda
-  - integrations:shared
+  - platform:acme-web
+  - platform:acme-worker
+  - platform:shared
 tickets:                          # optional overrides of the vault's tracker settings
   template: Templates/Ticket.md
   match:                          # how a new ticket is routed here (see §5.6)
-    jira_components: [Lincoln]
+    jira_components: [Acme]
 actions: []                       # project-specific buttons (see 4.7)
 ```
 
 - A project without `code` (a trip, a hobby, a reading list) simply has no repos, worktrees or ticket flow. It still gets notes, todos, actions and, if you want one, a workspace whose terminals open in the project folder.
-- The project's id is its folder name, slugified (`lincoln`), unless `id:` is set.
+- The project's id is its folder name, slugified (`acme`), unless `id:` is set.
 - **Ticket trackers are vault-level**, in `.groundwork/config.yml`, because one tracker often serves many projects and a vault may use several trackers:
 
 ```yaml
 trackers:
-  - id: jira-int
-    key_pattern: "INT-\\d+"
-    url: "https://company.atlassian.net/browse/{{key}}"
+  - id: jira
+    key_pattern: "TEAM-\\d+"
+    url: "https://example.atlassian.net/browse/{{key}}"
     note_name: "{{key}} {{title}}"
     template: Templates/Ticket.md
 ```
@@ -186,8 +186,8 @@ trackers:
 
 ```json
 { "vaults": { "<vault-id>": { "repos": {
-  "integrations": { "path": "/Users/aaron/dev/integrations",
-                    "worktrees": "/Users/aaron/dev/integrations-worktrees" }
+  "platform": { "path": "/Users/aaron/dev/platform",
+                "worktrees": "/Users/aaron/dev/platform-worktrees" }
 }}}}
 ```
 
@@ -198,18 +198,18 @@ The first time something needs a repo on a new machine, Groundwork asks you to l
 ```yaml
 # Ticket note
 type: ticket
-ticket: INT-123
-jira: https://company.atlassian.net/browse/INT-123
-projects: ["[[Lincoln]]", "[[Empower]]"]   # every project it affects; the first is its home
-code: [integrations:shared, integrations:lincoln-web]   # what it touches (optional)
-repos: [integrations, web]       # where it has worktrees; the first is the default (★)
-worktree: INT-123-fix-login      # name inside each repo's worktree dir
-branch: INT-123-fix-login        # the same branch in every repo
+ticket: TEAM-123
+jira: https://example.atlassian.net/browse/TEAM-123
+projects: ["[[Acme]]", "[[Globex]]"]      # every project it affects; the first is its home
+code: [platform:shared, platform:acme-web]   # what it touches (optional)
+repos: [platform, web]           # where it has worktrees; the first is the default (★)
+worktree: TEAM-123-fix-login     # name inside each repo's worktree dir
+branch: TEAM-123-fix-login       # the same branch in every repo
 status: active                   # active | closed
 people: ["[[Jane Doe]]"]
 
 # Any note can belong to projects other than the folder it's in
-projects: ["[[Lincoln]]", "[[Empower]]"]
+projects: ["[[Acme]]", "[[Globex]]"]
 
 # Any note that has a workspace
 workspace: ws-7f3a               # id of a machine-local workspace record
@@ -221,7 +221,7 @@ references: ["[[Auth design]]", "[[Jane Doe]]"]
 team: ["[[Platform]]"]
 ```
 
-A ticket written before multi-repo tickets has `repo: integrations`, read as `repos: [integrations]`; it becomes `repos:` the first time its repos change.
+A ticket written before multi-repo tickets has `repo: platform`, read as `repos: [platform]`; it becomes `repos:` the first time its repos change.
 
 ```yaml
 
@@ -229,14 +229,14 @@ A ticket written before multi-repo tickets has `repo: integrations`, read as `re
 type: person
 company: ...
 role: ...
-projects: ["[[Lincoln]]"]
+projects: ["[[Acme]]"]
 
 # Event (a meeting, call, conference, deadline…); `type: meeting` counts too
 type: event
 date: 2026-11-05
 time: "14:00"                    # optional
 people: ["[[Jane Doe]]"]
-projects: ["[[Lincoln]]"]
+projects: ["[[Acme]]"]
 ```
 
 **People, events and tickets live in top-level folders** (`Contacts/`, `Events/`, `Tickets/`), never inside a project, so a note made mid-meeting never needs moving, and a ticket that gains or loses a project stays put. They belong to projects through `projects:`, which Quick add fills in from what you're working on (§5.13).
@@ -254,11 +254,11 @@ actions:
     kind: shell
     run: code "{{worktree.path}}"
     show_on: [worktree]          # worktree toolbar, note context menu, palette...
-  - id: lincoln-dev
-    label: Run Lincoln portal
+  - id: acme-dev
+    label: Run Acme portal
     kind: terminal                # opens a tab in the workspace and runs it
     run: "{{component.commands.dev}}"
-    component: integrations:lincoln-web
+    component: platform:acme-web
   - id: new-ticket
     label: New ticket from Jira
     kind: agent                   # launches a visible Claude Code session
@@ -469,7 +469,7 @@ Daily notes follow Groundwork's own settings, then Obsidian's. **Settings › Da
 
 ### 5.6 Projects, repos, tickets & worktrees
 
-- **One worktree per repo a ticket touches** (decided 2026-11-09, replacing one worktree per ticket: a ticket can span repos). Each is in its repo's worktree directory, whichever project the ticket belongs to, all with the same folder name and branch (named by the default repo's formats). Tickets from Lincoln and Empower share the `integrations` worktree directory; ticket keys keep the names unique.
+- **One worktree per repo a ticket touches** (decided 2026-11-09, replacing one worktree per ticket: a ticket can span repos). Each is in its repo's worktree directory, whichever project the ticket belongs to, all with the same folder name and branch (named by the default repo's formats). Tickets from Acme and Globex share the `platform` worktree directory; ticket keys keep the names unique.
   - **One workspace per ticket**, however many repos: its tabs pick their worktree (§5.5), so a ticket doesn't fill the Workspaces view. A workspace belongs to one note and is never shared between tickets; two tickets in the same folder get a workspace each.
   - **The default repo** is the first in `repos:`, starred in the menus. ⌥⌘T ("New terminal") and the first tab start in its worktree, and so does the workspace's folder. "Make default" moves a repo to the front and changes the workspace's folder.
   - **Add repo…** (the note bar, the ticket's menus, `groundwork ticket add-repo`) adds a worktree in another repo on the ticket's branch. A ticket can start with no repo at all and get its first worktree this way.
@@ -479,12 +479,12 @@ Daily notes follow Groundwork's own settings, then Obsidian's. **Settings › Da
   - **Seeing the other repos:** Claude Code sessions Groundwork starts in a ticket's worktree (agent actions, Fork, Resume, and "New Claude in <repo>" in the + menu) get `--add-dir` for each of the ticket's other worktrees, so a contract between repos can be read on both sides. `groundwork context` lists every worktree's path. A `claude` typed by hand can use `/add-dir`.
   - **Open ticket in VS Code** (the note bar, for a ticket in several repos) opens all its worktrees in one new window, each repo's changes apart in Source Control. The main checkout or one worktree, opened alone, shows only its own changes.
   - The Tickets view groups a ticket by its default repo; its git state adds up all its worktrees.
-  - Subnotes follow their note's workspace (§5.5), so a ticket's per-repo notes (`INT-123 Fix login.web.md`) use the ticket's workspace.
+  - Subnotes follow their note's workspace (§5.5), so a ticket's per-repo notes (`TEAM-123 Fix login.web.md`) use the ticket's workspace.
 - **Where a ticket's note goes** (decided 2026-11-10, replacing each home project's work folder): the vault's one tickets folder, `Tickets/` (`tickets_folder` in `config.yml`). A ticket spans repos and may belong to several projects, so no project's folder is the right place for it, and moving the note whenever its projects changed would churn its links. Its projects are only `projects:` links (the first is its home, which the Workspaces view groups it under); a new ticket with none given gets its repo's `home_project`. A ticket has one workspace, whatever its projects and repos.
   - **Editing a ticket's projects and repos** is picking, never typing keys. The properties panel has a picker for `projects:` (the vault's projects; it writes links to their overview notes) and, on a ticket, for `repos:`, each value with × to remove it. A ticket shows empty `projects` and `repos` rows until it has some. Adding a repo there is "Add repo…" (a worktree on the ticket's branch); removing one is **Remove repo** below. `workspace:` shows the workspace's name, not its id.
   - **Remove repo** (the properties' ×, the Repos menu's "Remove <repo>…", the palette, `groundwork ticket remove-repo`), added 2026-11-10: removes that repo's worktree, ends terminals working in it and drops it from `repos:`. The branch stays, so adding the repo again brings its commits back; only uncommitted changes would be lost, so only those need a second yes (`--force`). Removing the default makes the next repo the default and moves the workspace's folder there; removing the last leaves no `repos:` (the branch and worktree names stay for the next one) and the workspace in the note's folder.
   - **Older vaults** kept tickets in project work folders. "Move tickets into the tickets folder…" (palette; `groundwork ticket gather`) moves every ticket note outside `Tickets/` into it with its subnotes, rewriting links. One that belonged to a project only by sitting in its folder gets that project in `projects:` first. Folders it leaves empty go to the Trash. A project's `work_folder:` is no longer read.
-- **Ad-hoc tickets.** Projects and tracker keys are both optional. A spike or quick fix can be just a repo plus a slug: `groundwork ticket create --repo integrations --slug try-new-cache`. It gets a branch and worktree (name formats skip `{{key}}` and its separator when there's no key), a workspace and a note in `Tickets/`, and you can attach it to projects or a Jira key later by editing frontmatter.
+- **Ad-hoc tickets.** Projects and tracker keys are both optional. A spike or quick fix can be just a repo plus a slug: `groundwork ticket create --repo platform --slug try-new-cache`. It gets a branch and worktree (name formats skip `{{key}}` and its separator when there's no key), a workspace and a note in `Tickets/`, and you can attach it to projects or a Jira key later by editing frontmatter.
 - **Starting a worktree** works from wherever you are:
   - a project: its overview note, its folder in the tree, or the tickets view filtered to it (defaults to that project and its repo, or asks which repo when it uses several)
   - a repo: the tickets view grouped by repo, or "New worktree in…" in the command palette
@@ -503,7 +503,7 @@ Daily notes follow Groundwork's own settings, then Obsidian's. **Settings › Da
 - **Agent create (default):** "New ticket from Jira" is an agent action.
   1. It opens a visible Claude tab in the repo's main checkout (or the vault, for a ticket with no repo yet).
   2. Claude reads the ticket and picks a slug, title, projects and the components it touches.
-  3. Claude runs `groundwork ticket create --key INT-123 --project lincoln --project empower --code integrations:shared --slug fix-login --title "Fix login"`.
+  3. Claude runs `groundwork ticket create --key TEAM-123 --project acme --project globex --code platform:shared --slug fix-login --title "Fix login"`.
   4. Claude fills in the note's summary.
 
   You can watch it happen and step in. This requires Claude Code to have Jira access; see open questions.
@@ -522,7 +522,7 @@ Daily notes follow Groundwork's own settings, then Obsidian's. **Settings › Da
   - the actions available here
   - related notes: the ticket's links, the projects' overviews, and recent meetings and decisions
 
-  It works in reverse too: `groundwork code who apps/lincoln` lists the projects and open tickets that touch a path. The plugin's SessionStart hook injects a short `context` summary into every Groundwork tab, and the skill teaches agents to call `groundwork context --json` whenever they need more.
+  It works in reverse too: `groundwork code who apps/acme` lists the projects and open tickets that touch a path. The plugin's SessionStart hook injects a short `context` summary into every Groundwork tab, and the skill teaches agents to call `groundwork context --json` whenever they need more.
 - **Multi-repo tickets:** not in the first version. The frontmatter keeps room for them (`repo`/`worktree` become a list), and `code` can already name components in several repos.
 
 ### 5.7 Claude Code integration
