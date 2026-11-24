@@ -23,6 +23,7 @@ pub mod project_view;
 pub mod qmd;
 pub mod quickadd;
 pub mod recent;
+pub mod refile;
 pub mod repos;
 pub mod search;
 pub mod session;

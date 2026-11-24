@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ancestors, displayName } from "./paths";
+import { ancestors, displayName, folderBase } from "./paths";
 
 describe("displayName", () => {
   it("drops .md from notes", () => {
@@ -28,5 +28,14 @@ describe("ancestors", () => {
       "Projects/Acme/Work",
     ]);
     expect(ancestors("Welcome.md")).toEqual([]);
+  });
+});
+
+describe("folderBase", () => {
+  it("is the folder before the first date tag", () => {
+    expect(folderBase("Events/{{date:YYYY}}/{{date:MM-MMMM}}")).toBe("Events");
+    expect(folderBase("/Log/{{date:YYYY-MM}}/")).toBe("Log");
+    expect(folderBase("{{date:YYYY}}")).toBe("");
+    expect(folderBase("Contacts/")).toBe("Contacts");
   });
 });

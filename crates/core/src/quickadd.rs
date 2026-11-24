@@ -50,7 +50,8 @@ pub struct QuickAddChoice {
     pub name: String,
     #[serde(default)]
     pub kind: ChoiceKind,
-    /// Note: the folder it goes in (the vault's root if empty).
+    /// Note: the folder it goes in (the vault's root if empty). It can have
+    /// date tags, to file notes by day: `Events/{{date:YYYY}}/{{date:MM-MMMM}}`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub folder: Option<String>,
@@ -168,6 +169,32 @@ fn clean_name(name: &str) -> String {
     }
 }
 
+/// The folder a note choice's notes go in, its tags filled in from `ctx`.
+/// A folder without tags is used as written.
+pub(crate) fn render_folder(pattern: &str, ctx: &template::Context) -> String {
+    let pattern = pattern.trim().trim_matches('/');
+    if !pattern.contains("{{") {
+        return pattern.to_string();
+    }
+    template::render(pattern, ctx)
+        .text
+        .split('/')
+        .filter(|s| !s.trim_matches(['.', ' ']).is_empty())
+        .map(clean_name)
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// The part of a folder pattern before its first tag: where all its notes
+/// are, whatever their date (`Events` for `Events/{{date:YYYY}}`).
+pub(crate) fn folder_base(pattern: &str) -> &str {
+    let pattern = pattern.trim().trim_matches('/');
+    match pattern.find("{{") {
+        None => pattern,
+        Some(at) => pattern[..at].rsplit_once('/').map_or("", |(base, _)| base),
+    }
+}
+
 impl Session {
     /// The vault's Quick add choices, or the defaults when it has none.
     pub fn quick_add_choices(&self) -> Result<Vec<QuickAddChoice>> {
@@ -249,14 +276,20 @@ impl Session {
         let (prompts, date) = match choice.kind {
             ChoiceKind::Note => {
                 let pattern = choice.file_name.clone().unwrap_or_default();
+                let folder = choice.folder.clone().unwrap_or_default();
                 let source = self.choice_template(&choice)?;
                 let mut prompts = template::prompts(&pattern);
-                for p in template::prompts(&source) {
+                for p in template::prompts(&source)
+                    .into_iter()
+                    .chain(template::prompts(&folder))
+                {
                     if !prompts.contains(&p) {
                         prompts.push(p);
                     }
                 }
-                let date = template::uses_date(&pattern) || template::uses_date(&source);
+                let date = [&pattern, &source, &folder]
+                    .iter()
+                    .any(|t| template::uses_date(t));
                 (prompts, date)
             }
             ChoiceKind::Capture => {
@@ -317,12 +350,10 @@ impl Session {
             ),
             None => None,
         };
-        let folder = choice
-            .folder
-            .as_deref()
-            .unwrap_or("")
-            .trim_matches('/')
-            .to_string();
+        let folder = render_folder(
+            choice.folder.as_deref().unwrap_or(""),
+            &self.template_context("", date, answers.clone()),
+        );
         let pattern = choice.file_name.as_deref().unwrap_or("{{prompt:Name}}");
         let ctx = self.template_context(&folder, date, answers.clone());
         let base = clean_name(&template::render(pattern, &ctx).text);
@@ -473,6 +504,43 @@ mod tests {
         // Its project is now one it belongs to.
         let config = s.config().unwrap();
         assert_eq!(s.note_projects(&config, &added.path), ["acme"]);
+    }
+
+    #[test]
+    fn a_folder_with_date_tags_files_notes_by_their_day() {
+        let (dir, s) = session();
+        let choice = QuickAddChoice {
+            name: "Meeting".into(),
+            folder: Some("/Events/{{date:YYYY}}/{{date:MM-MMMM}}/".into()),
+            file_name: Some("{{prompt:Title}}".into()),
+            ..Default::default()
+        };
+        s.save_quick_add_choices(std::slice::from_ref(&choice))
+            .unwrap();
+        // The folder's date is asked for, though the name has none.
+        assert!(s.quick_add_form("Meeting", None).unwrap().date);
+        let added = s
+            .quick_add(
+                "Meeting",
+                HashMap::from([("Title".into(), "Retro".into())]),
+                NaiveDate::from_ymd_opt(2026, 3, 9),
+                None,
+            )
+            .unwrap();
+        assert_eq!(added.path, "Events/2026/03-March/Retro.md");
+        assert!(dir.path().join("vault").join(&added.path).exists());
+
+        assert_eq!(folder_base("Events/{{date:YYYY}}/{{date:MM}}"), "Events");
+        assert_eq!(folder_base("Log/{{date:YYYY-MM}}"), "Log");
+        assert_eq!(folder_base("{{date:YYYY}}"), "");
+        assert_eq!(folder_base("Contacts/"), "Contacts");
+        // What a tag fills in can't climb out of the folder.
+        let ctx = s.template_context(
+            "",
+            None,
+            HashMap::from([("Where".into(), "../x/ ./y".into())]),
+        );
+        assert_eq!(render_folder("Notes/{{prompt:Where}}", &ctx), "Notes/x/y");
     }
 
     #[test]

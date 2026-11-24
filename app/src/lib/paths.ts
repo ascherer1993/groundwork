@@ -58,3 +58,15 @@ export const NEW_TAB = "new:tab";
 export function isViewPath(path: string | null | undefined): boolean {
   return projectOfView(path) !== null || path === TODO_BOARD || path === NEW_TAB;
 }
+
+/**
+ * The folder a Quick add folder's notes are all in: the part before its first
+ * date tag (`Events` for `Events/{{date:YYYY}}/{{date:MM-MMMM}}`).
+ */
+export function folderBase(folder: string): string {
+  const trimmed = folder.trim().replace(/^\/+|\/+$/g, "");
+  const at = trimmed.indexOf("{{");
+  if (at < 0) return trimmed;
+  const head = trimmed.slice(0, at);
+  return head.includes("/") ? head.slice(0, head.lastIndexOf("/")) : "";
+}

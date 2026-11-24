@@ -120,6 +120,15 @@ enum Command {
         #[arg(long)]
         project: Option<String>,
     },
+    /// Move daily notes, and the notes of Quick add choices whose folder has
+    /// date tags (events), to where their date puts them now: after changing
+    /// the daily notes format to `YYYY/MM-MMMM/YYYY-MM-DD`, say. Subnotes go
+    /// with them and links are rewritten.
+    Refile {
+        /// Only list what would move.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// List, add and update todos.
     #[command(subcommand)]
     Todo(TodoCommand),
@@ -1135,6 +1144,23 @@ fn run(cli: Cli) -> Fallible<()> {
             date,
             project,
         } => quick_add(&session, choice, vars, date, project, json),
+        Command::Refile { dry_run } => {
+            let (refiled, _) = session.refile_dated_notes(dry_run).map_err(err)?;
+            if json {
+                return print_json(&refiled);
+            }
+            if refiled.moved.is_empty() {
+                println!("every dated note is already in its folder");
+            }
+            let arrow = if dry_run { "would go to" } else { "→" };
+            for m in &refiled.moved {
+                println!("{} {arrow} {}", m.from, m.to);
+            }
+            for m in &refiled.blocked {
+                println!("{} stays: {} is taken", m.from, m.to);
+            }
+            Ok(())
+        }
         Command::Todo(cmd) => todo(&session, cmd, json),
         Command::Context { note, cwd } => {
             let note = note.map(|n| resolve_note(&session, &n)).transpose()?;

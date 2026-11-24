@@ -315,7 +315,7 @@ pub struct RemovedTicketRepo {
 }
 
 /// A note moved by `gather_tickets`.
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct MovedNote {

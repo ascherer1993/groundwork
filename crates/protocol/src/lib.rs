@@ -313,6 +313,16 @@ pub enum Request {
         project: Option<String>,
     },
 
+    /// → `Refiled`: moves daily notes, and the notes of Quick add choices
+    /// whose folder has date tags, to where their date puts them now, with
+    /// their subnotes, rewriting links. `dryRun` only says what would move.
+    #[serde(rename = "vault.refile", rename_all = "camelCase")]
+    VaultRefile {
+        #[serde(default)]
+        #[ts(optional)]
+        dry_run: Option<bool>,
+    },
+
     /// → `string`: the daily note for `date` (`YYYY-MM-DD`, default today),
     /// created from the daily template if it doesn't exist.
     #[serde(rename = "daily.open")]

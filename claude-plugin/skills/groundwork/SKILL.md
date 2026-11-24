@@ -70,6 +70,7 @@ groundwork daily [--date today|yesterday|fri|+1d|nov 12|YYYY-MM-DD]   # prints t
 groundwork add                          # the choices and what each asks for
 groundwork add event --var Title="Vendor call" [--date fri] [--project Acme]
 groundwork add person --var Name="Jane Doe" [--project Acme]
+groundwork refile [--dry-run]           # move daily notes and events into the date folders the settings now give them
 
 # Todos
 groundwork todo list [--due overdue|today|week|any|none] [--priority p0-p1] [--tag t]... [--path p] [--status open|done|cancelled|all] [--stale 14d] [--text t]
@@ -155,7 +156,7 @@ It can also run unattended, from cron or a scheduler: `claude -p "Triage my todo
 
 ## People and events
 
-People and events are notes in top-level folders, `Contacts/` and `Events/`, never inside a project. They belong to projects through their `projects:` property, so nothing needs moving later.
+People and events are notes in top-level folders, `Contacts/` and `Events/`, never inside a project. They belong to projects through their `projects:` property, so nothing needs moving later. `Events/` may be split into year and month folders (`Events/2026/11-November/`) when the user's Event choice files them by date: anywhere under `Events/` counts, and `groundwork add event` picks the folder. Find a note by its name (`groundwork note path "2026-11-12 Vendor call"`), not by guessing its folder.
 
 ```yaml
 # Contacts/Jane Doe.md
@@ -174,12 +175,12 @@ projects: ["[[Acme]]"]
 - Make them with `groundwork add` (the user's Quick add, ⇧⌘A in the app). It names the note, uses the user's template, and sets `projects:` from `--project`. Pass the project whenever you know it.
 - Older meeting notes may live in a project's folder with `type: meeting`. They count as events of that project; leave them where they are.
 - Link people from events and notes as `[[Jane Doe]]`, and list who attended in the event's `people:`.
-- Something that belongs to a note, like a meeting's transcript or raw notes, is a **subnote**: a Markdown note beside it named `<note name>.<key>.md`, such as `Events/2026-11-12 Vendor call.transcript.md`. The key starts with a letter. The app lists it under the note and moves it when the note is renamed. Don't give a subnote `type: event`; it's part of the event, not another one. Link to it from the note if that helps: `[[2026-11-12 Vendor call.transcript]]`.
+- Something that belongs to a note, like a meeting's transcript or raw notes, is a **subnote**: a Markdown note in the same folder as it, named `<note name>.<key>.md`, such as `Events/2026-11-12 Vendor call.transcript.md` beside `Events/2026-11-12 Vendor call.md`. The key starts with a letter. The app lists it under the note and moves it when the note is renamed. Don't give a subnote `type: event`; it's part of the event, not another one. Link to it from the note if that helps: `[[2026-11-12 Vendor call.transcript]]`.
 - `groundwork project show <project>` lists a project's events (newest first) and people: members (their `projects:` names it) and anyone its notes link to, with how many notes mention them. Use it to answer "who's on X" or "when did we last meet about X". The user sees the same in the app's project view.
 
 ## Daily notes
 
-Daily notes live in the daily notes folder (often `Daily/`), named by date. They usually contain a `todos` block:
+Daily notes live in the daily notes folder (often `Daily/`), named by date, possibly in year and month folders (`Daily/2026/11-November/2026-11-12.md`). Get a day's path from `groundwork daily --date <day>` rather than building it; link to it by name, `[[2026-11-12]]`. They usually contain a `todos` block:
 
 ````markdown
 ```todos

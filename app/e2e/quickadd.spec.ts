@@ -1,3 +1,5 @@
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { type Page, expect, test } from "@playwright/test";
 import { FIXTURE_VAULT as VAULT } from "./fixtures";
 import { editor, expectFile, openVault, quickOpen } from "./helpers";
@@ -84,6 +86,33 @@ test("choices are made in Settings, with shortcuts of their own", async ({ page 
   await page.keyboard.press("Enter");
   await expect(page.getByText("Added to Ideas")).toBeVisible();
   await expectFile(VAULT, "Ideas.md", (t) => t.endsWith("- Dark mode\n"));
+});
+
+test("a folder with date tags files events by month, and the palette says what it would move", async ({
+  page,
+}) => {
+  const file = join(VAULT, ".groundwork/quickadd.yml");
+  const before = existsSync(file) ? readFileSync(file, "utf8") : null;
+  writeFileSync(
+    file,
+    'choices:\n- name: Event\n  kind: note\n  folder: Events/{{date:YYYY}}/{{date:MM-MMMM}}\n  fileName: "{{date}} {{prompt:Title}}"\n',
+  );
+  try {
+    await page.keyboard.press("Meta+p");
+    await page.keyboard.type("File daily notes and events by date");
+    await page.keyboard.press("Enter");
+    const ask = page.getByRole("dialog", { name: /^Move \d+ notes into their date folders\?$/ });
+    await expect(ask).toContainText(
+      "“Events/2026-10-20 Offsite.md” goes to Events/2026/10-October/2026-10-20 Offsite.md",
+    );
+    await ask.getByRole("button", { name: "Cancel" }).click();
+    await expect(ask).toBeHidden();
+    // Asking moved nothing.
+    expect(existsSync(join(VAULT, "Events/2026-10-20 Offsite.md"))).toBe(true);
+  } finally {
+    if (before === null) rmSync(file);
+    else writeFileSync(file, before);
+  }
 });
 
 /** CodeMirror ignores keys for a moment after suggestions open (`interactionDelay`). */

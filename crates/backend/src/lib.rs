@@ -826,6 +826,13 @@ impl Backend {
                 }
                 to_value(removed)
             }
+            Request::VaultRefile { dry_run } => {
+                let (refiled, changes) = self
+                    .session()?
+                    .refile_dated_notes(dry_run.unwrap_or(false))?;
+                self.emit(changes);
+                to_value(refiled)
+            }
             Request::TicketGather => {
                 let (moved, changes) = self.session()?.gather_tickets()?;
                 self.emit(changes);

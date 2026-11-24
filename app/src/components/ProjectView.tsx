@@ -10,6 +10,7 @@ import { api } from "../api/client";
 import type { ProjectEvent } from "../api/generated/ProjectEvent";
 import type { ProjectPerson } from "../api/generated/ProjectPerson";
 import type { ProjectView as View } from "../api/generated/ProjectView";
+import { folderBase } from "../lib/paths";
 import { today } from "../markdown/syntax";
 import { runChoice, useQuickAdd } from "../state/quickadd";
 import { message, onVaultChange } from "../state/vault";
@@ -142,7 +143,9 @@ function Search({
 /** The Quick add choice that makes notes in `folder`, if there is one. */
 function useChoiceIn(folder: string): string | undefined {
   return useQuickAdd(
-    (s) => s.choices.find((c) => c.kind === "note" && c.folder === folder && c.project)?.name,
+    (s) =>
+      s.choices.find((c) => c.kind === "note" && folderBase(c.folder ?? "") === folder && c.project)
+        ?.name,
   );
 }
 

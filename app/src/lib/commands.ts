@@ -24,6 +24,7 @@ import {
 import { useInbox } from "../state/inbox";
 import { testNotification } from "../state/inbox";
 import { openCommandBar } from "../state/commandBar";
+import { refileDatedNotes } from "../state/refile";
 import { showCommandLog } from "../components/CommandLog";
 import { newTicketFromJira, triageTodos } from "../state/claude";
 import { allCommands, keyLabel } from "../state/keys";
@@ -361,6 +362,11 @@ function commands(): Command[] {
       label: "Remove a repo from this ticket…",
       when: () => (ticketAt(ws.activePath)?.repos.length ?? 0) > 0,
       run: () => pickRepoToRemove(ws.activePath!),
+    },
+    {
+      id: "refile-dated-notes",
+      label: "File daily notes and events by date…",
+      run: () => void refileDatedNotes(),
     },
     {
       id: "gather-tickets",

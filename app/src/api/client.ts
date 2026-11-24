@@ -27,6 +27,7 @@ import type { RepoLocation } from "./generated/RepoLocation";
 import type { StrayWorktree } from "./generated/StrayWorktree";
 import type { RemovedTicketRepo } from "./generated/RemovedTicketRepo";
 import type { MovedNote } from "./generated/MovedNote";
+import type { Refiled } from "./generated/Refiled";
 import type { Ticket } from "./generated/Ticket";
 import type { TicketFilter } from "./generated/TicketFilter";
 import type { CreatedNote } from "./generated/CreatedNote";
@@ -179,6 +180,7 @@ interface Results {
   "ticket.addRepo": CreatedTicket;
   "ticket.removeRepo": RemovedTicketRepo;
   "ticket.gather": MovedNote[];
+  "vault.refile": Refiled;
   "ticket.setDefaultRepo": Ticket;
   "ticket.strays": StrayWorktree[];
   "context.get": Context;
@@ -372,6 +374,7 @@ export const api = {
   removeTicketRepo: (path: string, repo: string, force?: boolean) =>
     call("ticket.removeRepo", { path, repo, force }),
   gatherTickets: () => call("ticket.gather"),
+  refileDatedNotes: (dryRun?: boolean) => call("vault.refile", { dryRun }),
   setDefaultTicketRepo: (path: string, repo: string) =>
     call("ticket.setDefaultRepo", { path, repo }),
   strayWorktrees: () => call("ticket.strays"),

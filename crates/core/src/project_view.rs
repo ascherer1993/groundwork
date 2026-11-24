@@ -107,13 +107,13 @@ pub(crate) fn is_person(path: &str, fm: Option<&Value>) -> bool {
 }
 
 /// A `YYYY-MM-DD` at the start of `text`.
-fn leading_date(text: &str) -> Option<&str> {
+pub(crate) fn leading_date(text: &str) -> Option<&str> {
     let head = text.get(..10)?;
     NaiveDate::parse_from_str(head, "%Y-%m-%d").ok()?;
     Some(head)
 }
 
-fn event_date(path: &str, fm: Option<&Value>) -> Option<String> {
+pub(crate) fn event_date(path: &str, fm: Option<&Value>) -> Option<String> {
     let field = |key| fm_str(fm, key).and_then(|d| leading_date(&d).map(str::to_string));
     field("date")
         .or_else(|| leading_date(file_stem(path)).map(str::to_string))

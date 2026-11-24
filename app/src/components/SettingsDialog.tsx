@@ -116,7 +116,12 @@ function SettingsDialogBody() {
 
 const DAILY_FIELDS = [
   { key: "folder", label: "Folder", fallback: "the vault’s root", hint: "Type / for the root." },
-  { key: "format", label: "Date format", fallback: "YYYY-MM-DD", hint: "Moment.js tokens." },
+  {
+    key: "format",
+    label: "Date format",
+    fallback: "YYYY-MM-DD",
+    hint: "Moment.js tokens. Slashes make folders: YYYY/MM-MMMM/YYYY-MM-DD files notes by year and month. “File daily notes and events by date…” in the palette moves the ones already written.",
+  },
   { key: "template", label: "Template", fallback: "none", hint: "" },
 ] as const;
 
@@ -728,6 +733,9 @@ function ChoiceEditor({
                 placeholder="Events"
                 onChange={(folder) => set({ folder })}
               />
+              <span className="daily-hint">
+                Date tags file notes by their day: Events/{"{{date:YYYY}}"}/{"{{date:MM-MMMM}}"}.
+              </span>
             </div>
             <label className="dialog-field">
               <span>Named</span>

@@ -6,7 +6,8 @@ import type { ChoiceKind } from "./ChoiceKind";
  */
 export type QuickAddChoice = { name: string, kind: ChoiceKind, 
 /**
- * Note: the folder it goes in (the vault's root if empty).
+ * Note: the folder it goes in (the vault's root if empty). It can have
+ * date tags, to file notes by day: `Events/{{date:YYYY}}/{{date:MM-MMMM}}`.
  */
 folder?: string, 
 /**
