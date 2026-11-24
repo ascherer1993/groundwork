@@ -901,7 +901,8 @@ summary.callout-title {
 }
 
 .cm-content .cm-codeblock-line {
-  background: var(--code-bg);
+  /* See-through: an opaque line would hide the selection, drawn behind it. */
+  background: var(--code-line-bg);
   font-family: var(--font-mono);
   font-size: 13px;
   padding: 0 12px !important;
