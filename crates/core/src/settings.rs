@@ -1,5 +1,6 @@
 //! App-wide settings that belong to this machine, not a vault: the keyboard
-//! shortcuts you've changed, and when encrypted notes lock again.
+//! shortcuts you've changed, when encrypted notes lock again, and how
+//! canvases look.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -29,6 +30,30 @@ pub struct AppSettings {
     )]
     #[ts(optional)]
     pub lock_after_minutes: Option<u32>,
+    /// Whether canvases follow the app's light or dark look or always use
+    /// one (PLAN §5.17). Follows the app when absent.
+    #[serde(
+        default,
+        rename = "canvasTheme",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[ts(optional)]
+    pub canvas_theme: Option<CanvasTheme>,
+    /// Whether the editor underlines words it doesn't know (PLAN §5.18).
+    /// On when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub spellcheck: Option<bool>,
+}
+
+/// How canvases look: like the app, or always light or dark.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum CanvasTheme {
+    App,
+    Light,
+    Dark,
 }
 
 pub struct Settings {
@@ -75,8 +100,11 @@ mod tests {
             .keys
             .insert("view.terminal".into(), Some("Ctrl+Cmd+T".into()));
         changed.keys.insert("tab.close".into(), None);
+        changed.canvas_theme = Some(CanvasTheme::Light);
         settings.set(&changed).unwrap();
         assert_eq!(settings.get(), changed);
+        let saved = fs::read_to_string(dir.path().join(FILE_NAME)).unwrap();
+        assert!(saved.contains(r#""canvasTheme": "light""#), "{saved}");
         // A file that doesn't parse reads as the defaults.
         fs::write(dir.path().join(FILE_NAME), "{").unwrap();
         assert_eq!(settings.get(), AppSettings::default());

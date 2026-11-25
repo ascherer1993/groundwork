@@ -1,5 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
@@ -27,7 +34,39 @@ const WORKTREE = join(CODE, "acme-worktrees", "TEAM-200-fix-signup");
   git(REPO, "push", "-q", "-u", "origin", "main");
 }
 
-const TICKET = "Projects/Acme/Work/TEAM-200 Fix signup.md";
+/** A checkout of the fixture's second repo, `acme-infra`. */
+const INFRA = join(CODE, "infra");
+const INFRA_WORKTREE = join(CODE, "infra-worktrees", "TEAM-200-fix-signup");
+{
+  const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, stdio: "pipe" });
+  mkdirSync(join(INFRA, "network"), { recursive: true });
+  git(CODE, "init", "-q", "--bare", "-b", "main", "infra-origin.git");
+  git(INFRA, "init", "-q", "-b", "main");
+  git(INFRA, "config", "user.email", "test@example.com");
+  git(INFRA, "config", "user.name", "Test");
+  git(INFRA, "config", "commit.gpgsign", "false");
+  writeFileSync(join(INFRA, "network/main.tf"), "\n");
+  git(INFRA, "add", ".");
+  git(INFRA, "commit", "-q", "-m", "first");
+  git(INFRA, "remote", "add", "origin", join(CODE, "infra-origin.git"));
+  git(INFRA, "push", "-q", "-u", "origin", "main");
+}
+
+/** A repo the vault doesn't list yet. */
+const BILLING = join(CODE, "billing");
+{
+  const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, stdio: "pipe" });
+  mkdirSync(BILLING, { recursive: true });
+  git(BILLING, "init", "-q", "-b", "trunk");
+  git(BILLING, "config", "user.email", "test@example.com");
+  git(BILLING, "config", "user.name", "Test");
+  git(BILLING, "config", "commit.gpgsign", "false");
+  writeFileSync(join(BILLING, "README.md"), "\n");
+  git(BILLING, "add", ".");
+  git(BILLING, "commit", "-q", "-m", "first");
+}
+
+const TICKET = "Tickets/TEAM-200 Fix signup.md";
 
 test.beforeEach(async ({ page }) => {
   page.on("pageerror", (e) => console.log("pageerror:", e.message));
@@ -69,6 +108,9 @@ const tab = (page: Page, name: string | RegExp) =>
 const bar = (page: Page) => page.locator(`${NOTES} .note-bar`).first();
 const views = (page: Page) => page.getByRole("group", { name: "Main view" });
 const terminals = (page: Page) => page.locator(TERMINALS);
+/** The current workspace's terminal tabs. */
+const terminalTabs = (page: Page) =>
+  page.locator(".terminals-side:not([hidden]) .area:not([hidden]) .dv-tab");
 
 test("a ticket gets a worktree, a note and a workspace, and closes and restores", async ({
   page,
@@ -78,10 +120,10 @@ test("a ticket gets a worktree, a note and a workspace, and closes and restores"
   await dialog.getByLabel("Key or link").fill("https://example.atlassian.net/browse/TEAM-200");
   await dialog.getByLabel("Title").fill("Fix signup");
   await expect(dialog.getByLabel("Branch name")).toHaveAttribute("placeholder", "fix-signup");
-  await dialog.getByRole("checkbox", { name: "Acme" }).check();
-  await expect(dialog.getByRole("combobox", { name: "Repo" })).toContainText(
-    "Automatic (acme-platform)",
-  );
+  await dialog.getByRole("checkbox", { name: "Acme", exact: true }).check();
+  // The project's one repo is chosen for it.
+  await expect(dialog.getByRole("checkbox", { name: /^Acme platform/ })).toBeChecked();
+  await expect(dialog.getByRole("checkbox", { name: /^Acme infra/ })).not.toBeChecked();
   await dialog.getByRole("checkbox", { name: "web" }).check();
   await dialog.getByRole("button", { name: "Create" }).click();
 
@@ -187,7 +229,7 @@ test("tickets blocks, adding a worktree to a note, and workspaces for any note",
   await page.getByRole("menuitem", { name: "Add worktree…" }).click();
   const dialog = page.getByRole("dialog", { name: "Add worktree" });
   await dialog.getByLabel("Key or link").fill("TEAM-500");
-  await dialog.getByRole("combobox", { name: "Repo" }).selectOption("acme-platform");
+  await dialog.getByRole("checkbox", { name: /^Acme platform/ }).check();
   await dialog.getByRole("button", { name: "Add worktree" }).click();
   await expect(tab(page, /^Welcome$/)).toBeVisible();
   await expect(bar(page)).toContainText("TEAM-500");
@@ -208,4 +250,211 @@ test("tickets blocks, adding a worktree to a note, and workspaces for any note",
   await expect(page.locator(".area-row").filter({ hasText: "Jane Doe" })).toContainText(
     "vault/Projects/Acme",
   );
+});
+
+test("a ticket spans repos in one workspace; its subnotes follow it; the Vault workspace", async ({
+  page,
+}) => {
+  const header = page.locator(".terminals-header");
+  await quickOpen(page, "TEAM-200 Fix signup");
+  await page.keyboard.press("Control+Meta+2");
+  await expect(header.locator(".terminals-name")).toHaveText("TEAM-200 Fix signup");
+  const before = await terminalTabs(page).count();
+
+  // Another repo, from the note bar; this Mac is asked where it is first.
+  await bar(page).getByRole("button", { name: "Repos" }).click();
+  await page.getByRole("menuitem", { name: "Add repo…" }).click();
+  await page.getByRole("option", { name: /Acme infra/ }).click();
+  const locate = page.getByRole("dialog", { name: "Where is Acme infra?" });
+  await locate.getByLabel("Checkout").fill(INFRA);
+  await locate.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Added Acme infra to “TEAM-200 Fix signup”")).toBeVisible();
+  await expect.poll(() => existsSync(join(INFRA_WORKTREE, "network/main.tf"))).toBe(true);
+  await expectFile(VAULT, TICKET, (t) => t.includes("repos: [acme-platform, acme-infra]"));
+  // Its setup runs in a new terminal in the same workspace.
+  await expect(terminalTabs(page)).toHaveCount(before + 1);
+  await expect(header.locator(".terminals-name")).toHaveText("TEAM-200 Fix signup");
+  await expect(bar(page).getByRole("button", { name: "Repos" })).toContainText("+1");
+
+  // VS Code: all its worktrees in one window, or one of them.
+  await bar(page).getByRole("button", { name: "Open in VS Code" }).click();
+  await expect(page.getByRole("menuitem")).toHaveText([
+    "Open all worktrees in VS Code",
+    "Open Acme platform in VS Code",
+    "Open Acme infra in VS Code",
+  ]);
+  await page.keyboard.press("Escape");
+  // Another note in the same tab doesn't keep the ticket's buttons.
+  await page.keyboard.press("Control+Meta+1");
+  await quickOpen(page, "Projects/Acme/Acme.md");
+  await expect(bar(page).getByRole("button", { name: "Project view" })).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: /VS Code/ })).toHaveCount(0);
+  await quickOpen(page, "TEAM-200 Fix signup");
+  await page.keyboard.press("Control+Meta+2");
+
+  // New terminals pick their worktree; the default is starred.
+  await header.getByRole("button", { name: "New terminal in…" }).click();
+  const platform = page.getByRole("menuitem", { name: /New terminal in Acme platform/ });
+  await expect(platform.locator(".menu-star")).toHaveCount(1);
+  await expect(
+    page.getByRole("menuitem", { name: "New terminal in web (Acme platform)" }),
+  ).toBeVisible();
+  await page.getByRole("menuitem", { name: /New terminal in Acme infra/ }).click();
+  await expect(terminalTabs(page)).toHaveCount(before + 2);
+  await expect
+    .poll(async () => {
+      await page.keyboard.type("pwd\n");
+      // Long paths wrap.
+      return (await screen(page)).replace(/\n/g, "");
+    })
+    .toContain(INFRA_WORKTREE);
+  // Every worktree has the same folder name, so each tab says its repo (the
+  // second is Acme infra's setup).
+  await expect(terminalTabs(page).locator(".terminal-tab-repo")).toContainText([
+    "Acme platform",
+    "Acme infra",
+    "Acme infra",
+  ]);
+  // So do its terminals in the Workspaces view.
+  await page.getByRole("tab", { name: "Workspaces" }).click();
+  const ticket = page.locator(".area-item").filter({ hasText: "TEAM-200 Fix signup" });
+  await ticket.getByRole("button", { name: "Show TEAM-200 Fix signup’s terminals" }).click();
+  await expect(ticket.locator(".area-tab-repo")).toContainText([
+    "Acme platform",
+    "Acme infra",
+    "Acme infra",
+  ]);
+  // Back to the files, whose list the steps below read.
+  await page.getByRole("tab", { name: "Files" }).click();
+
+  // A repo the vault doesn't list yet is added from its checkout.
+  const reposYml = join(VAULT, ".groundwork/repos.yml");
+  const listed = readFileSync(reposYml, "utf8");
+  await bar(page).getByRole("button", { name: "Repos" }).click();
+  await page.getByRole("menuitem", { name: "Add repo…" }).click();
+  await page.getByRole("option", { name: /Another repo, from its checkout/ }).click();
+  const add = page.getByRole("dialog", { name: "Add a repo" });
+  await add.getByLabel("Checkout").fill(BILLING);
+  await add.getByLabel("Name").fill("Billing");
+  await add.getByRole("button", { name: "Add repo" }).click();
+  await expect(page.getByText("Added Billing to “TEAM-200 Fix signup”")).toBeVisible();
+  expect(readFileSync(reposYml, "utf8")).toContain(
+    "billing:\n  name: Billing\n  git:\n    base_branch: trunk\n",
+  );
+  expect(existsSync(join(CODE, "billing-worktrees", "TEAM-200-fix-signup", "README.md"))).toBe(
+    true,
+  );
+  await expectFile(VAULT, TICKET, (t) => t.includes("repos: [acme-platform, acme-infra, billing]"));
+  // Leave the vault's repos as they were for the other specs.
+  writeFileSync(reposYml, listed);
+
+  // Claude in a worktree can read the ticket's other repos. (The test's fake
+  // `claude` names the options it doesn't know; long lines can come out garbled
+  // as the terminal resizes, so only the start is checked.)
+  await header.getByRole("button", { name: "New terminal in…" }).click();
+  await page.getByRole("menuitem", { name: /New Claude in Acme infra/ }).click();
+  await expect
+    .poll(async () => (await screen(page)).replace(/\n/g, ""))
+    .toContain("fake claude: unsupported: --add-dir /");
+  // All its worktrees in one VS Code window.
+  await expect(bar(page).getByRole("button", { name: "Open in VS Code" })).toHaveAttribute(
+    "aria-haspopup",
+    "menu",
+  );
+
+  // The default can change.
+  await header.getByRole("button", { name: "New terminal in…" }).click();
+  await page.getByRole("menuitem", { name: "Make Acme infra the default" }).click();
+  await expectFile(VAULT, TICKET, (t) => t.includes("repos: [acme-infra, acme-platform, billing]"));
+  await expect(bar(page).getByRole("button", { name: "Repos" })).toContainText("Acme infra");
+
+  // Repos and projects are picked in the properties, not typed. Removing a
+  // repo takes its worktree away (the branch stays).
+  const props = page.locator(`${NOTES} .cm-properties`).first();
+  await props.locator(".property-value", { hasText: "billing" }).hover();
+  await props.getByRole("button", { name: "Remove billing" }).click();
+  const confirm = page.getByRole("dialog", { name: /Remove billing from/ });
+  await expect(confirm).toContainText("The branch TEAM-200-fix-signup stays");
+  await confirm.getByRole("button", { name: "Remove repo" }).click();
+  await expectFile(VAULT, TICKET, (t) => t.includes("repos: [acme-infra, acme-platform]\n"));
+  await expect
+    .poll(() => existsSync(join(CODE, "billing-worktrees", "TEAM-200-fix-signup")))
+    .toBe(false);
+  await props.locator(`.property[data-key="projects"] .property-value`).hover();
+  await props.getByRole("button", { name: "Remove [[Acme]]" }).click();
+  await expectFile(VAULT, TICKET, (t) => t.includes("projects: []\n"));
+  await props.getByRole("textbox", { name: "Add a project to projects" }).click();
+  const picker = page.getByRole("listbox", { name: "Add a project" });
+  await expect(picker.getByRole("option")).toHaveText([/Acme\s*Projects\/Acme/]);
+  await page.keyboard.press("Enter");
+  await expectFile(VAULT, TICKET, (t) => t.includes('projects: ["[[Acme]]"]\n'));
+  await page.keyboard.press("Escape");
+  // The workspace shows by name, not its id.
+  await expect(props.locator(".property").filter({ hasText: "workspace" })).toContainText(
+    "TEAM-200 Fix signup",
+  );
+
+  // A subnote follows the ticket's workspace, not the project's.
+  writeFileSync(join(VAULT, "Tickets/TEAM-200 Fix signup.infra.md"), "# The infra part\n");
+  await quickOpen(page, "Jane Doe");
+  await expect(header.locator(".terminals-name")).toHaveText("Jane Doe");
+  await quickOpen(page, "TEAM-200 Fix signup.infra");
+  await expect(header.locator(".terminals-name")).toHaveText("TEAM-200 Fix signup");
+
+  // A ticket's workspace can still open a terminal in the vault root.
+  await header.getByRole("button", { name: "New terminal in…" }).click();
+  await page.getByRole("menuitem", { name: "New terminal in vault root" }).click();
+  await expect
+    .poll(async () => {
+      await page.keyboard.type("pwd\n");
+      return (await screen(page)).replace(/\n/g, "");
+    })
+    .toContain(VAULT);
+
+  // ⌘T among its terminals offers the vault root, each worktree (the default
+  // starred) and component, and Claude; ↩ starts the first, Claude at the
+  // vault root, seeing every worktree (and their CLAUDE.md files).
+  await page.keyboard.press("Meta+t");
+  const places = page.getByRole("listbox", { name: "New tab" });
+  await expect(places.getByRole("option")).toHaveText([
+    /^Claude at the vault root, with context\s*also sees \//,
+    /^Terminal at the vault root/,
+    /^Terminal in Acme infra/,
+    /^Terminal in Acme platform/,
+    /^Terminal in web \(Acme platform\)/,
+    /^Claude in Acme infra/,
+    /^Claude in Acme platform/,
+  ]);
+  await expect(places.getByRole("option").nth(2).getByLabel("default")).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(places).toHaveCount(0);
+  await expect
+    .poll(async () => (await screen(page)).replace(/\n/g, ""))
+    .toContain("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude --add-dir /");
+  await expect
+    .poll(async () => (await screen(page)).replace(/\n/g, ""))
+    .toContain("fake claude: unsupported: --add-dir /");
+
+  // The Vault workspace is always first to switch to, and made when picked.
+  await header.locator(".terminals-name").click();
+  await expect(page.getByRole("option").first()).toContainText("Vault");
+  await page.keyboard.press("Enter");
+  await expect(header.locator(".terminals-name")).toHaveText("Vault");
+  await expect(terminalTabs(page)).toHaveCount(1);
+  // Its terminals already start in the vault root, so the menu doesn't offer it.
+  await header.getByRole("button", { name: "New terminal in…" }).click();
+  await expect(page.getByRole("menuitem", { name: "New terminal" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "New terminal in vault root" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.getByRole("tab", { name: "Workspaces" }).click();
+  const vaultRow = page
+    .locator(".area-row")
+    .filter({ has: page.locator(".area-name").getByText("Vault", { exact: true }) });
+  await expect(vaultRow).toHaveCount(1);
+
+  // Leave the shared data as it was found: no Vault workspace.
+  await vaultRow.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Delete…" }).click();
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect(vaultRow).toHaveCount(0);
 });

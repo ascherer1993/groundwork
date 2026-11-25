@@ -6,28 +6,43 @@ import { editorFor } from "../editor/active";
 import { insertRendered } from "../editor/templates";
 import { EDITOR_COMMANDS } from "../editor/commands";
 import { EditorView } from "@codemirror/view";
-import { isViewPath, TODO_BOARD } from "./paths";
+import { isViewPath, NEW_TAB, TODO_BOARD } from "./paths";
+import { newCanvas, newCanvasSubnote } from "./canvasFiles";
+import { canPickFolder, pickFolder } from "./pickFolder";
 import { changePassword, encryptNote, removeEncryption } from "./encryption";
 import { isEncrypted, isUnlocked, useLocks } from "../state/locks";
 import { formDialog, type PaletteItem, promptDialog, useUi } from "../state/ui";
 import { message, newNoteFolder, useVault } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
 import { orderedWorkspaces } from "../state/workspaceOrder";
-import { useWorkspaces } from "../state/workspaces";
+import {
+  showVaultWorkspace,
+  useWorkspaces,
+  VAULT_WORKSPACE,
+  vaultWorkspace,
+} from "../state/workspaces";
 import { useInbox } from "../state/inbox";
 import { testNotification } from "../state/inbox";
 import { openCommandBar } from "../state/commandBar";
+import { refileDatedNotes } from "../state/refile";
 import { showCommandLog } from "../components/CommandLog";
 import { newTicketFromJira, triageTodos } from "../state/claude";
 import { allCommands, keyLabel } from "../state/keys";
 import { choiceCommand, openQuickAdd, runChoice, useQuickAdd } from "../state/quickadd";
 import {
+  addRepo,
+  addTicketRepo,
   closeTicket,
+  gatherTickets,
   locateRepo,
   noteWorkspace,
   openProjectView,
   pickAction,
+  removeTicketRepo,
+  repoName,
+  setDefaultTicketRepo,
   showSplit,
+  terminalPlaces,
   ticketAt,
   useTickets,
 } from "../state/tickets";
@@ -150,6 +165,17 @@ function commands(): Command[] {
       run: () => ui.setSwitcher(true),
     },
     { id: "new-note", label: "New note", run: () => ws.newNote() },
+    {
+      id: "new-canvas",
+      label: "New canvas…",
+      run: () => newCanvas(newNoteFolder(ws.activePath)),
+    },
+    {
+      id: "new-canvas-subnote",
+      label: "New canvas subnote of this note…",
+      when: () => !!ws.activePath?.toLowerCase().endsWith(".md"),
+      run: () => newCanvasSubnote(ws.activePath!),
+    },
     { id: "project-view", label: "Open a project’s view…", run: pickProjectView },
     { id: "new-from-template", label: "New note from template…", run: newNoteFromTemplate },
     { id: "quick-add", label: "Quick add…", run: openQuickAdd },
@@ -242,6 +268,17 @@ function commands(): Command[] {
     },
     { id: "back", label: "Go back", run: () => ws.back() },
     { id: "forward", label: "Go forward", run: () => ws.forward() },
+    {
+      id: "new-tab",
+      label: "New tab",
+      run: () => {
+        const terminals =
+          ws.view === "terminal" || (ws.view === "split" && ws.focused === "terminals");
+        if (terminals) return ws.openLauncher();
+        ws.open(NEW_TAB, { newTab: true });
+        ui.setSwitcher(true);
+      },
+    },
     { id: "new-terminal", label: "New terminal", run: () => ws.openTerminal() },
     { id: "new-terminal-in", label: "New terminal in folder…", run: terminalInFolder },
     {
@@ -250,6 +287,11 @@ function commands(): Command[] {
       run: () => useWorkspaces.getState().create(),
     },
     { id: "switch-workspace", label: "Switch workspace…", run: switchWorkspace },
+    {
+      id: "vault-workspace",
+      label: "Show the Vault workspace",
+      run: () => void showVaultWorkspace(),
+    },
     {
       id: "toggle-pin",
       label: ws.locked ? "Let the terminals follow notes" : "Lock the terminals to this workspace",
@@ -310,12 +352,41 @@ function commands(): Command[] {
       run: () => pickAction(ws.activePath!),
     },
     {
+      id: "add-ticket-repo",
+      label: "Add a repo to this ticket…",
+      when: () => ticketAt(ws.activePath)?.status === "active",
+      run: () => addTicketRepo(ws.activePath!),
+    },
+    {
+      id: "remove-ticket-repo",
+      label: "Remove a repo from this ticket…",
+      when: () => (ticketAt(ws.activePath)?.repos.length ?? 0) > 0,
+      run: () => pickRepoToRemove(ws.activePath!),
+    },
+    {
+      id: "refile-dated-notes",
+      label: "File daily notes and events by date…",
+      run: () => void refileDatedNotes(),
+    },
+    {
+      id: "gather-tickets",
+      label: "Move tickets into the tickets folder…",
+      run: () => void gatherTickets(),
+    },
+    {
+      id: "default-ticket-repo",
+      label: "Change this ticket’s default repo…",
+      when: () => (ticketAt(ws.activePath)?.repos.length ?? 0) > 1,
+      run: () => pickDefaultRepo(ws.activePath!),
+    },
+    {
       id: "close-ticket",
       label: "Close ticket…",
       when: () => ticketAt(ws.activePath)?.status === "active",
       run: () => closeTicket(ws.activePath!),
     },
     { id: "locate-repo", label: "Locate repo…", run: pickRepoToLocate },
+    { id: "add-repo", label: "Add a repo from its checkout…", run: () => void addRepo() },
     { id: "tickets", label: "Show tickets", run: () => ui.setSidebarView("tickets") },
     {
       id: "close-tab",
@@ -396,18 +467,24 @@ function noteProject(path: string, projects: ProjectInfo[]): ProjectInfo | undef
 async function newWorktreeIn() {
   await useTickets.getState().load();
   const { repos } = useTickets.getState();
-  if (!repos.length) {
-    useUi.getState().notify("No repos yet. Add them to .groundwork/repos.yml.");
-    return;
-  }
   useUi.getState().openPalette({
     placeholder: "New worktree in…",
-    items: repos.map((r) => ({
-      id: r.id,
-      label: r.name,
-      detail: r.id,
-      run: () => useTickets.getState().newTicket({ repo: r.id }),
-    })),
+    items: [
+      ...repos.map((r) => ({
+        id: r.id,
+        label: r.name,
+        detail: r.id,
+        run: () => useTickets.getState().newTicket({ repo: r.id }),
+      })),
+      {
+        id: "new-repo",
+        label: "Another repo, from its checkout…",
+        run: async () => {
+          const id = await addRepo();
+          if (id) await useTickets.getState().newTicket({ repo: id });
+        },
+      },
+    ],
   });
 }
 
@@ -415,7 +492,7 @@ async function pickRepoToLocate() {
   await useTickets.getState().load();
   const { repos } = useTickets.getState();
   if (!repos.length) {
-    useUi.getState().notify("No repos yet. Add them to .groundwork/repos.yml.");
+    await addRepo();
     return;
   }
   useUi.getState().openPalette({
@@ -443,16 +520,17 @@ async function terminalInFolder() {
   if (tree) walk(tree);
   const open = (cwd: string) => useWorkspace.getState().openTerminal(cwd);
   const items: PaletteItem[] = [];
-  // In a ticket's workspace: the components it touches, in its worktree.
+  // In a ticket's workspace: its worktrees (the default first), then the
+  // components it touches.
   const current = useWorkspace.getState().workspace;
-  const note = useWorkspaces.getState().list.find((w) => w.id === current)?.note;
-  if (note) {
-    const context = await api.context({ note }).catch(() => null);
-    for (const c of context?.components ?? []) {
-      if (c.absPath) {
-        const cwd = c.absPath;
-        items.push({ id: `component:${c.id}`, label: c.id, detail: c.path, run: () => open(cwd) });
-      }
+  if (current) {
+    for (const p of (await terminalPlaces(current)).places) {
+      items.push({
+        id: `place:${p.cwd}`,
+        label: p.isDefault ? `${p.label} ★` : p.label,
+        detail: p.detail,
+        run: () => open(p.cwd),
+      });
     }
   }
   items.push(
@@ -470,7 +548,10 @@ async function terminalInFolder() {
     id: "other",
     label: "Another folder…",
     run: async () => {
-      const cwd = await promptDialog({ title: "Folder", value: "~/", confirmLabel: "Open" });
+      // The native picker on desktop; typing it in browser mode.
+      const cwd = canPickFolder()
+        ? await pickFolder({ title: "New terminal in…", start: "~/" })
+        : await promptDialog({ title: "Folder", value: "~/", confirmLabel: "Open" });
       if (cwd?.trim()) await open(cwd.trim());
     },
   });
@@ -481,18 +562,61 @@ async function terminalInFolder() {
   });
 }
 
+/** Picks which of a ticket's repos is its default. */
+function pickDefaultRepo(path: string) {
+  const ticket = ticketAt(path);
+  if (!ticket) return;
+  useUi.getState().openPalette({
+    placeholder: "Default repo…",
+    items: ticket.repos.map((r, i) => ({
+      id: r.id,
+      label: i === 0 ? `${repoName(r.id)} ★` : repoName(r.id),
+      detail: r.worktreePath ?? undefined,
+      run: () => (i === 0 ? undefined : setDefaultTicketRepo(path, r.id)),
+    })),
+  });
+}
+
+function pickRepoToRemove(path: string) {
+  const ticket = ticketAt(path);
+  if (!ticket) return;
+  useUi.getState().openPalette({
+    placeholder: `Remove a repo from “${ticket.title}”…`,
+    items: ticket.repos.map((r, i) => ({
+      id: r.id,
+      label: i === 0 && ticket.repos.length > 1 ? `${repoName(r.id)} ★` : repoName(r.id),
+      detail: r.worktreePath ?? undefined,
+      run: () => removeTicketRepo(path, r.id),
+    })),
+  });
+}
+
 /** Lists the workspaces, with their shortcuts. */
 export function switchWorkspace() {
-  useUi.getState().openPalette({
-    placeholder: "Switch to…",
-    items: orderedWorkspaces().map((w, i) => ({
+  // The vault's own workspace comes first, made the first time it's picked.
+  const vaultWs = vaultWorkspace();
+  const items: PaletteItem[] = [
+    {
+      id: "vault-workspace",
+      label: VAULT_WORKSPACE,
+      detail: vaultWs?.cwd ?? useVault.getState().vault?.path ?? "the vault",
+      hint: undefined,
+      run: () => void showVaultWorkspace(),
+    },
+  ];
+  orderedWorkspaces().forEach((w, i) => {
+    if (w.id === vaultWs?.id) return;
+    items.push({
       id: w.id,
       label: w.name,
       detail: w.cwd,
       hint: i < 9 ? keyLabel(`workspace-${i + 1}`) : undefined,
       run: () => useWorkspaces.getState().pick(w.id),
-    })),
+    });
   });
+  const vaultAt = orderedWorkspaces().findIndex((w) => w.id === vaultWs?.id);
+  if (vaultAt >= 0 && vaultAt < 9) items[0]!.hint = keyLabel(`workspace-${vaultAt + 1}`);
+  useUi.getState().openPalette({ placeholder: "Switch to…", items });
 }
 
 /** The workspace after (or before) the current one, round the list. */
@@ -510,7 +634,9 @@ function inEditable(target: EventTarget | null): boolean {
     target.isContentEditable ||
     target.tagName === "INPUT" ||
     target.tagName === "TEXTAREA" ||
-    !!target.closest(".cm-editor")
+    !!target.closest(".cm-editor") ||
+    // A canvas has its own undo.
+    !!target.closest(".excalidraw")
   );
 }
 

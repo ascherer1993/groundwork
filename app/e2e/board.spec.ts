@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { FIXTURE_VAULT as VAULT } from "./fixtures";
-import { expectFile, openVault } from "./helpers";
+import { editor, expectFile, openVault } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -83,6 +83,11 @@ test("the board shows a week of events and todos, by day", async ({ page }) => {
   await expect(page.getByLabel("Note title")).toHaveValue(`${iso(TUE)} Design review`);
   await page.getByRole("button", { name: "Back" }).click();
   await expect(day(page, WED).locator(".todo-text")).toHaveText(["Draft the rollout plan"]);
+
+  // Clicking a todo opens its note, at its line.
+  await day(page, WED).locator(".todo-text", { hasText: "Draft the rollout plan" }).click();
+  await expect(page.getByLabel("Note title")).toHaveValue("Rollout todos");
+  await expect(editor(page).locator(".cm-activeLine")).toContainText("Draft the rollout plan");
 });
 
 test("ticking, dragging to another day and adding edit the notes", async ({ page }) => {
@@ -119,4 +124,33 @@ test("ticking, dragging to another day and adding edit the notes", async ({ page
       hasText: "Draft the rollout plan",
     }),
   ).toHaveCount(1);
+});
+
+test("a todo's text is edited from its pencil or its menu", async ({ page }) => {
+  await page.keyboard.press("Meta+Shift+t");
+  const today = page.locator(".board-day.is-today");
+  // Overdue, so on today.
+  const cert = today.locator(".board-todo", { hasText: "Renew the certificate" });
+  await cert.hover();
+  await cert.getByRole("button", { name: "Edit: Renew the certificate" }).click();
+  const field = page.getByRole("textbox", { name: "Edit todo" });
+  await expect(field).toBeFocused();
+  await page.keyboard.type(" for api.example.com");
+  await page.keyboard.press("Enter");
+  await expectFile(VAULT, "Rollout todos.md", (t) =>
+    t.includes("- [ ] Renew the certificate for api.example.com 📅 2026-01-02\n"),
+  );
+  await expect(today.locator(".todo-text", { hasText: "for api.example.com" })).toHaveCount(1);
+
+  // Right-click: Edit, and leaving the field saves.
+  await today
+    .locator(".board-todo", { hasText: "Renew the certificate" })
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Edit" }).click();
+  await page.keyboard.press("Meta+a");
+  await page.keyboard.type("Renew the TLS certificate");
+  await page.keyboard.press("Tab");
+  await expectFile(VAULT, "Rollout todos.md", (t) =>
+    t.includes("- [ ] Renew the TLS certificate 📅 2026-01-02\n"),
+  );
 });

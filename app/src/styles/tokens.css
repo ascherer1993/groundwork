@@ -28,6 +28,9 @@
   --text-heading: #141413;
   --link: #3f5bd8;
   --code-bg: #f4f4f2;
+  /* The editor's code block lines: --code-bg over --bg, but see-through, so
+     the selection (drawn behind the text) shows on them. */
+  --code-line-bg: rgba(60, 60, 20, 0.056);
   --math: #8a4baf;
   --code-keyword: #a1287a;
   --code-string: #3a7d2c;
@@ -67,6 +70,7 @@
   --kind-note: var(--text-muted);
   --kind-page: #2d8a6e;
   --kind-bundle: #a35fd0;
+  --kind-canvas: #c76a1f;
 
   --radius: 6px;
   --sidebar-width: 260px;
@@ -99,6 +103,7 @@
     --text-heading: #f2f2f0;
     --link: #93a6ff;
     --code-bg: #29292b;
+    --code-line-bg: rgba(255, 255, 255, 0.05);
     --math: #d4a5f0;
     --code-keyword: #e08bc6;
     --code-string: #9ccf7f;
@@ -135,5 +140,6 @@
 
     --kind-page: #5cc5a3;
     --kind-bundle: #c995ee;
+    --kind-canvas: #eaa05f;
   }
 }

@@ -9,6 +9,7 @@ import {
   LayoutList,
   Lock,
   PanelsTopLeft,
+  PencilRuler,
   type LucideIcon,
 } from "lucide-react";
 import { type DragEvent, useEffect, useRef, useState } from "react";
@@ -16,7 +17,8 @@ import { api } from "../api/client";
 import type { NodeKind } from "../api/generated/NodeKind";
 import type { TreeNode } from "../api/generated/TreeNode";
 import type { ProjectInfo } from "../api/generated/ProjectInfo";
-import { displayName, projectViewPath } from "../lib/paths";
+import { newCanvas, newCanvasSubnote } from "../lib/canvasFiles";
+import { CANVAS_EXT, displayName, projectViewPath } from "../lib/paths";
 import { allSubnotes, type Grouped, groupSubnotes } from "../lib/subnotes";
 import { openNoteWorkspace } from "../lib/commands";
 import { changePassword, encryptNote, removeEncryption } from "../lib/encryption";
@@ -31,6 +33,7 @@ const ICONS: Record<Exclude<NodeKind, "folder">, LucideIcon> = {
   note: FileText,
   page: Globe,
   pageBundle: PanelsTopLeft,
+  canvas: PencilRuler,
   asset: File,
 };
 
@@ -85,6 +88,11 @@ async function newSubnote(node: TreeNode) {
   });
 }
 
+/** The kinds of note beyond plain Markdown; one for now. */
+function specialtyNotes(create: () => void): MenuEntry[] {
+  return [{ label: "Canvas…", action: create }];
+}
+
 function menuFor(node: TreeNode, subnotes: TreeNode[] = []): MenuEntry[] {
   const ws = useWorkspace.getState();
   const ui = useUi.getState();
@@ -97,6 +105,10 @@ function menuFor(node: TreeNode, subnotes: TreeNode[] = []): MenuEntry[] {
   if (isFolder) {
     entries.push(
       { label: "New note", action: () => void ws.newNote(node.path) },
+      {
+        label: "New specialty note",
+        items: specialtyNotes(() => void newCanvas(node.path)),
+      },
       {
         label: "New folder",
         action: () =>
@@ -145,6 +157,10 @@ function menuFor(node: TreeNode, subnotes: TreeNode[] = []): MenuEntry[] {
     );
     if (node.kind === "note") {
       entries.push({ label: "New subnote…", action: () => void newSubnote(node) });
+      entries.push({
+        label: "New specialty subnote",
+        items: specialtyNotes(() => void newCanvasSubnote(node.path)),
+      });
       entries.push({ label: "Open workspace", action: () => void openNoteWorkspace(node.path) });
       if (!ticketAt(node.path)) {
         entries.push({
@@ -260,7 +276,7 @@ function RenameInput({ node }: { node: TreeNode }) {
     setRenaming(null);
     const name = value.trim();
     if (!name || name === base) return;
-    const suffix = node.kind === "note" ? ".md" : ext;
+    const suffix = node.kind === "note" ? ".md" : node.kind === "canvas" ? CANVAS_EXT : ext;
     const folder = node.path.slice(0, Math.max(0, node.path.lastIndexOf("/")));
     await renameWithUndo(node.path, join(folder, name + suffix));
   }

@@ -3,4 +3,4 @@
 /**
  * What a vault entry is, as far as Groundwork is concerned.
  */
-export type NodeKind = "folder" | "note" | "page" | "pageBundle" | "asset";
+export type NodeKind = "folder" | "note" | "page" | "pageBundle" | "canvas" | "asset";

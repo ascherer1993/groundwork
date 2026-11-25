@@ -33,6 +33,13 @@ impl Todo {
     pub fn is_open(&self) -> bool {
         matches!(self.task.status, TaskStatus::Todo | TaskStatus::Other)
     }
+
+    /// A checkbox with no text (dates and other markers aside), like the
+    /// empty `- [ ]` a template leaves to type into. Not a todo yet, so views
+    /// over the vault leave it out.
+    pub fn is_blank(&self) -> bool {
+        self.task.text.trim().is_empty()
+    }
 }
 
 /// The id of a task: its note, its line and a hash of its text.
@@ -55,6 +62,10 @@ pub enum TaskChange {
     /// `0`–`5` for `p0`–`p5`.
     Priority {
         priority: u8,
+    },
+    /// Replaces the text, keeping the status, dates, priority and block id.
+    Text {
+        text: String,
     },
 }
 
@@ -251,7 +262,7 @@ pub fn list(
     };
     let mut todos: Vec<Todo> = all(index, daily)
         .into_iter()
-        .filter(|t| filter.matches(t, &note_tags(&t.path), today))
+        .filter(|t| !t.is_blank() && filter.matches(t, &note_tags(&t.path), today))
         .collect();
     todos.sort_by(by_urgency);
     todos
@@ -279,6 +290,7 @@ pub struct DayView {
 /// (they're already on the page), except those on `own` lines (zero-based,
 /// inclusive): the ones beside the block, which it shows as its own. Undated
 /// ones count as that day's, and done or cancelled ones stay, under done.
+/// Blank tasks show only among its own, where they're drawn to be typed into.
 pub fn day(
     index: &Index,
     daily: &DailySettings,
@@ -305,7 +317,7 @@ pub fn day(
             }
             continue;
         }
-        if task.status == TaskStatus::Cancelled {
+        if todo.is_blank() || task.status == TaskStatus::Cancelled {
             continue;
         }
         if task.status == TaskStatus::Done {
@@ -471,6 +483,24 @@ mod tests {
         let view = day(&index, &daily(), d("2026-11-05"), note, None);
         assert!(view.later.is_empty() && view.done.is_empty());
         assert_eq!(texts(&view.overdue), ["Old dated", "Ship it"]);
+    }
+
+    #[test]
+    fn blank_tasks_are_left_out() {
+        let note = "Daily/2026-11-05.md";
+        let mut vault = VAULT.to_vec();
+        vault.push(("Daily/2026-11-04.md", "- [ ] \n- [ ] 📅 2026-11-01\n"));
+        vault.push((note, "- [ ] \n\n```todos\nday\n```\n"));
+        let (_dir, index) = temp_vault(&vault);
+        let open = list(&index, &daily(), &TodoFilter::default(), d("2026-11-05"));
+        assert!(!texts(&open).contains(&""), "{:?}", texts(&open));
+
+        // Not carried or overdue from other notes, but still drawn beside
+        // the block, so there's somewhere to type.
+        let view = day(&index, &daily(), d("2026-11-05"), note, Some([0, 4]));
+        assert_eq!(texts(&view.overdue), ["Old dated", "Ship it"]);
+        assert_eq!(texts(&view.carried), ["Old undated", "Written today"]);
+        assert_eq!(texts(&view.due), [""]);
     }
 
     #[test]

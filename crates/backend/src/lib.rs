@@ -159,6 +159,10 @@ impl Backend {
                 setup::set_default_vault(&self.data_dir, session.vault().root())?;
                 to_value(self.setup_status())
             }
+            Request::SetupAddClaudeMd => {
+                setup::add_vault_claude_md(self.session()?.vault().root())?;
+                to_value(self.setup_status())
+            }
             Request::IndexTags => to_value(search::tags(&self.session()?.index())),
             Request::SearchQuery { query, limit } => to_value(search::search(
                 &self.session()?.index(),
@@ -259,6 +263,17 @@ impl Backend {
             }
             Request::FileCreateUntitled { folder } => {
                 let (path, changes) = self.session()?.create_untitled(&folder)?;
+                self.emit(changes);
+                to_value(path)
+            }
+            Request::FileSaveAttachment { source, name, data } => {
+                use base64::Engine;
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(data.as_bytes())
+                    .map_err(|e| {
+                        ApiError::new(ErrorCode::BadRequest, format!("bad attachment data: {e}"))
+                    })?;
+                let (path, changes) = self.session()?.save_attachment(&source, &name, &bytes)?;
                 self.emit(changes);
                 to_value(path)
             }
@@ -423,6 +438,15 @@ impl Backend {
                 })
             }
 
+            Request::DailySettings => to_value(groundwork_core::daily::DailyNoteSettings::read(
+                self.session()?.vault().root(),
+            )),
+            Request::DailySaveSettings { settings } => {
+                to_value(groundwork_core::daily::DailyNoteSettings::save(
+                    self.session()?.vault().root(),
+                    settings,
+                )?)
+            }
             Request::DailyOpen { date } => {
                 let date = match date {
                     Some(d) => parse_date(&d)?,
@@ -643,6 +667,15 @@ impl Backend {
                 session.config()?.repo(&id)?;
                 to_value(session.repos().locate(&id, &path, worktrees.as_deref())?)
             }
+            Request::RepoAdd {
+                path,
+                name,
+                worktrees,
+            } => to_value(self.session()?.add_repo(
+                &path,
+                name.as_deref(),
+                worktrees.as_deref(),
+            )?),
             Request::InboxList => to_value(self.agents.open()),
             Request::InboxHistory => to_value(self.agents.history()),
             Request::InboxAsk {
@@ -736,6 +769,26 @@ impl Backend {
             }
 
             Request::ProjectView { project } => to_value(self.session()?.project_view(&project)?),
+            Request::PeopleList => to_value(self.session()?.people()),
+            Request::TeamsList => to_value(self.session()?.teams()),
+            Request::FrontmatterSet { text, key, value } => {
+                to_value(groundwork_core::frontmatter::set(
+                    &text,
+                    &[(key.as_str(), value.map(|v| v.into_prop()))],
+                ))
+            }
+            Request::FrontmatterRename { text, from, to } => {
+                to_value(groundwork_core::frontmatter::rename(&text, &from, &to))
+            }
+            Request::FrontmatterSetList { text, key, values } => {
+                to_value(groundwork_core::frontmatter::set(
+                    &text,
+                    &[(
+                        key.as_str(),
+                        Some(groundwork_core::frontmatter::Prop::List(values)),
+                    )],
+                ))
+            }
 
             Request::TicketList { filter } => to_value(self.session()?.tickets(&filter)?),
             Request::TicketGit { path } => to_value(self.session()?.ticket_git(&path)?),
@@ -746,11 +799,51 @@ impl Backend {
             }
             Request::TicketClose { path, force } => {
                 let session = self.session()?;
-                let worktree = session.ticket(&path)?.worktree_path;
+                let worktrees = session.ticket(&path)?.repos;
                 let (ticket, _, changes) = session.close_ticket(&path, force.unwrap_or(false))?;
                 self.emit(changes);
-                if let Some(wt) = worktree {
-                    self.terminals.kill_inside(Path::new(&wt));
+                for wt in worktrees.iter().filter_map(|r| r.worktree_path.as_deref()) {
+                    self.terminals.kill_inside(Path::new(wt));
+                }
+                to_value(ticket)
+            }
+            Request::TicketAddRepo { path, repo } => {
+                let created = self.session()?.add_ticket_repo(&path, &repo)?;
+                self.emit(created.changes.clone());
+                (self.events)(Event::WorkspacesChanged);
+                to_value(created)
+            }
+            Request::TicketRemoveRepo { path, repo, force } => {
+                let removed =
+                    self.session()?
+                        .remove_ticket_repo(&path, &repo, force.unwrap_or(false))?;
+                self.emit(removed.changes.clone());
+                if let Some(wt) = &removed.worktree {
+                    self.terminals.kill_inside(Path::new(wt));
+                }
+                if removed.workspace.is_some() {
+                    (self.events)(Event::WorkspacesChanged);
+                }
+                to_value(removed)
+            }
+            Request::VaultRefile { dry_run } => {
+                let (refiled, changes) = self
+                    .session()?
+                    .refile_dated_notes(dry_run.unwrap_or(false))?;
+                self.emit(changes);
+                to_value(refiled)
+            }
+            Request::TicketGather => {
+                let (moved, changes) = self.session()?.gather_tickets()?;
+                self.emit(changes);
+                to_value(moved)
+            }
+            Request::TicketSetDefaultRepo { path, repo } => {
+                let (ticket, workspace, changes) =
+                    self.session()?.set_ticket_default_repo(&path, &repo)?;
+                self.emit(changes);
+                if workspace.is_some() {
+                    (self.events)(Event::WorkspacesChanged);
                 }
                 to_value(ticket)
             }
@@ -787,6 +880,21 @@ impl Backend {
             Request::CommandLogList { limit } => {
                 to_value(CommandLog::new(self.session()?.vault().root()).list(limit.unwrap_or(200)))
             }
+            Request::SpellingCheck { words } => {
+                to_value(self.session()?.spelling().misspelled(&words))
+            }
+            Request::SpellingSuggest { word } => {
+                to_value(self.session()?.spelling().suggest(&word))
+            }
+            Request::SpellingAdd { word } => {
+                self.session()?.spelling().add(&word)?;
+                Ok(Value::Null)
+            }
+            Request::SpellingWords => to_value(self.session()?.spelling().words()),
+            Request::SpellingRemove { word } => {
+                self.session()?.spelling().remove(&word)?;
+                Ok(Value::Null)
+            }
             Request::ActionRun { id, note, cwd } => {
                 let context = self
                     .session()?
@@ -811,11 +919,55 @@ impl Backend {
                     .current_dir(&action.cwd)
                     .stdin(std::process::Stdio::null())
                     .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::piped())
                     .spawn()
                     .map_err(|e| {
                         ApiError::new(ErrorCode::Internal, format!("{}: {e}", action.label))
                     })?;
+                // Keep what it says on stderr (the start of it), so a command
+                // that fails straight away (not installed, a bad path) says
+                // why instead of looking as if it started.
+                let said = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+                if let Some(mut err) = child.stderr.take() {
+                    let said = said.clone();
+                    std::thread::spawn(move || {
+                        use std::io::Read;
+                        let mut buf = [0u8; 4096];
+                        while let Ok(n) = err.read(&mut buf) {
+                            if n == 0 {
+                                break;
+                            }
+                            let mut said = said.lock().unwrap();
+                            if said.len() < 4096 {
+                                said.extend_from_slice(&buf[..n]);
+                            }
+                        }
+                    });
+                }
+                let started = std::time::Instant::now();
+                while started.elapsed() < std::time::Duration::from_secs(3) {
+                    match child.try_wait() {
+                        Ok(Some(status)) if status.success() => return Ok(Value::Null),
+                        Ok(Some(status)) => {
+                            std::thread::sleep(std::time::Duration::from_millis(50));
+                            let said = String::from_utf8_lossy(&said.lock().unwrap())
+                                .trim()
+                                .to_string();
+                            let why = if said.is_empty() {
+                                status.to_string()
+                            } else {
+                                said
+                            };
+                            return Err(ApiError::new(
+                                ErrorCode::Internal,
+                                format!("{} failed: {why}", action.label),
+                            ));
+                        }
+                        Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+                        Err(_) => break,
+                    }
+                }
+                // Still going: let it run.
                 std::thread::spawn(move || child.wait());
                 Ok(Value::Null)
             }
@@ -871,6 +1023,7 @@ impl Backend {
         // Drop the previous session (and its watcher) first.
         self.close_vault();
         let session = Arc::new(Session::open(vault, &self.data_dir)?);
+        groundwork_core::spelling::warm_up();
 
         let weak = Arc::downgrade(&session);
         let events = self.events.clone();

@@ -174,6 +174,11 @@ export function installCommandBar(): () => void {
       registered = null;
       if (!combo) return;
       try {
+        // The registration outlives this page: after a reload (Vite reloads
+        // when its connection drops, as after sleep, or for an edit it can't
+        // hot-swap) the old page's handler is still bound to the combo, so
+        // presses go nowhere and registering again fails. Take it back first.
+        await unregister(toAccelerator(combo)).catch(() => {});
         await register(toAccelerator(combo), (e) => {
           if (e.state === "Pressed") void openCommandBar();
         });

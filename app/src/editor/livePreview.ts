@@ -18,11 +18,19 @@ import {
 } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import { daySpanAt, isDayBlock } from "../markdown/daySpan";
-import { hasScheme, isImage, splitTarget, splitWikilink } from "../markdown/syntax";
+import { hasScheme, isImage, splitTarget, splitWikilink, urlHref } from "../markdown/syntax";
 import { hasMeta, parseTaskMeta, taskMetaHtml } from "../markdown/tasks";
 import { notePath, refreshPreview } from "./context";
 import {
+  propertiesEditing,
+  propertiesSource,
+  revealAt,
+  showPropertiesSource,
+} from "./propertiesSource";
+import { orderedLabel } from "./lists";
+import {
   BulletWidget,
+  ListNumberWidget,
   CheckboxWidget,
   EmbedWidget,
   HrWidget,
@@ -47,11 +55,7 @@ const focused = StateField.define<boolean>({
   provide: () => EditorView.focusChangeEffect.of((_, focusing) => setFocused.of(focusing)),
 });
 
-/**
- * A place jumped to (a search hit, a link to a line): the block holding it
- * shows its source, focused or not, until the selection next moves.
- */
-export const revealAt = StateEffect.define<number>();
+export { revealAt };
 
 const revealed = StateField.define<number | null>({
   create: () => null,
@@ -167,6 +171,21 @@ function buildInline(view: EditorView): DecorationSet {
             return false;
           }
 
+          // A bare URL (`https://…`, `www.…`, an email) or `<https://…>`;
+          // those inside `[text](url)` are the Link case's.
+          case "URL": {
+            const href = urlHref(state.sliceDoc(ref.from, ref.to));
+            if (href) {
+              decos.push(
+                Decoration.mark({
+                  class: "cm-url",
+                  attributes: { "data-href": href, title: `⌘-click to open ${href}` },
+                }).range(ref.from, ref.to),
+              );
+            }
+            return false;
+          }
+
           case "Image": {
             const url = node.getChild("URL");
             if (!url) return false;
@@ -174,9 +193,16 @@ function buildInline(view: EditorView): DecorationSet {
             const external = hasScheme(href);
             const target = external ? href : safeDecode(href);
             const block = isBlockEmbed(target, external);
-            if (block ? within(state, ref.from, ref.to) : active(ref.from, ref.to)) return false;
             const marks = node.getChildren("LinkMark");
             const alt = marks.length >= 2 ? state.sliceDoc(marks[0]!.to, marks[1]!.from) : "";
+            if (block ? within(state, ref.from, ref.to) : active(ref.from, ref.to)) {
+              // An image stays in view below its source, as in Obsidian.
+              if (!block) {
+                const widget = new EmbedWidget(target, alt, source, external, false, true);
+                decos.push(Decoration.widget({ widget, side: 1 }).range(ref.to));
+              }
+              return false;
+            }
             const widget = new EmbedWidget(target, alt, source, external, block);
             decos.push(Decoration.replace({ widget }).range(ref.from, ref.to));
             return false;
@@ -189,6 +215,11 @@ function buildInline(view: EditorView): DecorationSet {
             const block = embed && isBlockEmbed(link.target, false);
             if (block ? within(state, ref.from, ref.to) : active(ref.from, ref.to)) {
               decos.push(Decoration.mark({ class: "cm-wikilink-source" }).range(ref.from, ref.to));
+              if (embed && !block && isImage(link.target)) {
+                const target = link.subpath ? `${link.target}#${link.subpath}` : link.target;
+                const widget = new EmbedWidget(target, link.alias, source, false, false, true);
+                decos.push(Decoration.widget({ widget, side: 1 }).range(ref.to));
+              }
               return false;
             }
             const widget = embed
@@ -245,6 +276,22 @@ function buildInline(view: EditorView): DecorationSet {
           case "ListMark": {
             const item = node.parent;
             const mark = state.sliceDoc(ref.from, ref.to);
+            const ordered = /^(\d+)([.)])$/.exec(mark);
+            if (ordered) {
+              // Nested numbered lists show a, b, c, then i, ii, iii (`lists.ts`).
+              let depth = 0;
+              for (let p = item?.parent; p; p = p.parent) if (p.name === "OrderedList") depth++;
+              const label = orderedLabel(Number(ordered[1]), depth) + ordered[2];
+              if (label !== mark && !active(ref.from, ref.to)) {
+                decos.push(
+                  Decoration.replace({ widget: new ListNumberWidget(label) }).range(
+                    ref.from,
+                    ref.to,
+                  ),
+                );
+              }
+              return;
+            }
             if (!/^[-*+]$/.test(mark) || active(ref.from, ref.to + 1)) return;
             if (item?.getChild("Task")) {
               // Tasks show only their checkbox, as in Obsidian.
@@ -319,6 +366,7 @@ function buildBlocks(state: EditorState): DecorationSet {
     }
   };
 
+  let hasFrontmatter = false;
   tree.iterate({
     enter: (ref) => {
       const node = ref.node;
@@ -334,7 +382,20 @@ function buildBlocks(state: EditorState): DecorationSet {
                 : undefined,
             )
             .join("\n");
-          block(from, to, new PropertiesWidget(yaml, source));
+          hasFrontmatter = true;
+          // The YAML shows only when asked for (the panel's `</>`), or
+          // when there's no text below it for the cursor to go to.
+          const source_ =
+            touches(state, from, to) &&
+            (state.field(propertiesSource, false) || to >= state.doc.length);
+          if (!source_) {
+            decos.push(
+              Decoration.replace({ widget: new PropertiesWidget(yaml, source), block: true }).range(
+                from,
+                to,
+              ),
+            );
+          }
           return false;
         }
         case "MathBlock": {
@@ -387,6 +448,16 @@ function buildBlocks(state: EditorState): DecorationSet {
       }
     },
   });
+  // A note without properties gets a quiet way to add some.
+  if (!hasFrontmatter && source.endsWith(".md")) {
+    decos.push(
+      Decoration.widget({
+        widget: new PropertiesWidget(null, source),
+        block: true,
+        side: -1,
+      }).range(0),
+    );
+  }
   return Decoration.set(decos, true);
 }
 
@@ -396,7 +467,10 @@ const blockField = StateField.define<DecorationSet>({
     if (
       tr.docChanged ||
       tr.selection ||
-      tr.effects.some((e) => e.is(refreshPreview) || e.is(setFocused) || e.is(revealAt))
+      tr.effects.some(
+        (e) =>
+          e.is(refreshPreview) || e.is(setFocused) || e.is(revealAt) || e.is(showPropertiesSource),
+      )
     ) {
       return buildBlocks(tr.state);
     }
@@ -460,4 +534,4 @@ export const structure = ViewPlugin.fromClass(
   { decorations: (v) => v.decorations },
 );
 
-export const blockPreview = [focused, revealed, blockField];
+export const blockPreview = [focused, revealed, propertiesEditing, blockField];

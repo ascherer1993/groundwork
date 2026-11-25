@@ -1,8 +1,9 @@
 /**
  * The terminals follow the notes: when a note opens, its workspace becomes
  * the current one, unless the terminals are locked to the current one. A note's workspace is
- * its own, else the nearest one above it (a folder note's, like
- * `Acme/Acme.md`, or a project overview's); with neither, nothing changes.
+ * its own, else its note's if it's a subnote (`Name.web.md` follows `Name.md`), else the
+ * nearest one above it (a folder note's, like `Acme/Acme.md`, or a project overview's); with
+ * none, nothing changes.
  */
 import type { ProjectInfo } from "../api/generated/ProjectInfo";
 import type { Workspace } from "../api/generated/Workspace";
@@ -14,6 +15,22 @@ import { useWorkspaces } from "./workspaces";
 const parent = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")));
 const base = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
+/**
+ * The notes a subnote could be under, nearest first: `F/Name.a.b.md` →
+ * `F/Name.a.md`, `F/Name.md`. Each key must start with a letter, as in
+ * `lib/subnotes.ts`.
+ */
+export function subnoteParents(path: string): string[] {
+  if (!path.endsWith(".md")) return [];
+  const folder = path.slice(0, path.lastIndexOf("/") + 1);
+  const stem = path.slice(folder.length, -3);
+  const parents: string[] = [];
+  for (let end = stem.lastIndexOf("."); end > 0; end = stem.lastIndexOf(".", end - 1)) {
+    if (/^\p{L}/u.test(stem.slice(end + 1))) parents.push(`${folder}${stem.slice(0, end)}.md`);
+  }
+  return parents;
+}
+
 /** The workspace a note belongs to, if any. */
 export function workspaceFor(
   path: string,
@@ -22,6 +39,10 @@ export function workspaceFor(
 ): Workspace | undefined {
   const own = workspaces.find((w) => w.note === path);
   if (own) return own;
+  for (const note of subnoteParents(path)) {
+    const found = workspaces.find((w) => w.note === note);
+    if (found) return found;
+  }
   for (let folder = parent(path); folder; folder = parent(folder)) {
     const notes = new Set([`${folder}/${base(folder)}.md`]);
     for (const p of projects) if (p.folder === folder && p.overview) notes.add(p.overview);

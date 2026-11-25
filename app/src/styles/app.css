@@ -335,6 +335,10 @@ input {
   color: var(--kind-bundle);
 }
 
+.kind-canvas {
+  color: var(--kind-canvas);
+}
+
 .tree-label {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -432,6 +436,11 @@ input {
   opacity: 0.75;
 }
 
+/* A terminal's repo: quieter than a note's, which is part of its name. */
+.note-tab-under.terminal-tab-repo {
+  color: var(--text-faint);
+}
+
 .watermark {
   display: flex;
   flex-direction: column;
@@ -452,6 +461,102 @@ input {
 
 .watermark kbd {
   margin-left: auto;
+}
+
+/* New tab among the terminals (components/NewTab.tsx) */
+
+.launcher {
+  height: 100%;
+  box-sizing: border-box;
+  overflow: auto;
+  padding: 32px 16px;
+  background: var(--bg);
+}
+
+.launcher-title {
+  max-width: 560px;
+  margin: 0 auto 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.launcher-list {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+
+.launcher-list:focus-visible {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 2px;
+}
+
+.launcher-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.launcher-item.is-selected {
+  background: var(--accent-soft);
+}
+
+.launcher-icon {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.launcher-item.is-selected .launcher-icon {
+  color: var(--accent);
+}
+
+.launcher-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.launcher-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.launcher-star {
+  color: var(--warning);
+  fill: currentColor;
+}
+
+.launcher-detail {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launcher-key {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.launcher-loading,
+.launcher-hint {
+  max-width: 560px;
+  margin: 10px auto 0;
+  color: var(--text-faint);
+  font-size: 12px;
 }
 
 /* Terminal panel */
@@ -581,6 +686,130 @@ input {
 .page-view {
   display: flex;
   height: 100%;
+}
+
+/* A canvas (PLAN §5.17): Excalidraw fills the tab. Inside it, its own
+   variables (--island-bg-color…) follow the canvas's light or dark look. */
+.canvas-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.canvas-view {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  /* Excalidraw's own layers stay below the app's menus and dialogs. */
+  isolation: isolate;
+}
+
+.canvas-view .excalidraw {
+  --ui-font: var(--font-ui);
+}
+
+/* Links to Excalidraw's site: canvases stay offline. */
+.canvas-view .library-menu-browse-button {
+  display: none;
+}
+
+.canvas-tools {
+  position: relative;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--border-radius-lg);
+  background: var(--island-bg-color);
+  box-shadow: var(--shadow-island);
+}
+
+.canvas-tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--border-radius-md);
+  background: transparent;
+  color: var(--icon-fill-color);
+  cursor: pointer;
+}
+
+.canvas-tool:hover {
+  background: var(--button-hover-bg);
+}
+
+.canvas-tool.active {
+  background: var(--color-surface-primary-container);
+  color: var(--color-primary);
+}
+
+.icon-picker {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  max-height: min(420px, 60vh);
+  border-radius: var(--border-radius-lg);
+  background: var(--island-bg-color);
+  box-shadow: var(--shadow-island);
+  color: var(--text-primary-color);
+}
+
+.icon-picker-head {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 1px solid var(--default-border-color);
+}
+
+.icon-picker-head input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--input-border-color);
+  border-radius: var(--border-radius-md);
+  background: var(--input-bg-color);
+  color: var(--text-primary-color);
+  font: inherit;
+}
+
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
+  gap: 2px;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.icon-choice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: var(--border-radius-md);
+  background: transparent;
+  color: var(--icon-fill-color);
+  cursor: pointer;
+}
+
+.icon-choice:hover,
+.icon-choice:focus-visible {
+  background: var(--button-hover-bg);
+  outline: none;
+}
+
+.icon-picker-empty {
+  margin: 0;
+  padding: 12px;
+  color: var(--color-gray-50);
 }
 
 .page-view .page-frame {
@@ -910,6 +1139,11 @@ button.danger-button {
 .menu-check {
   flex: none;
   margin: auto 0 auto auto;
+}
+
+.menu-star {
+  color: var(--accent);
+  fill: currentColor;
 }
 
 .menu button.danger:hover,
@@ -1428,7 +1662,8 @@ button.terminals-name:hover {
   margin-left: auto;
 }
 
-.terminals-header .terminals-state + button.icon {
+.terminals-header .terminals-state + button.icon,
+.terminals-header button.icon + button.icon {
   margin-left: 0;
 }
 
@@ -1472,11 +1707,11 @@ button.terminals-name:hover {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 2px 4px;
+  min-height: 100%;
+  padding: 2px 6px 6px;
 }
 
-.workspaces-header,
-.sessions-header {
+.workspaces-header {
   display: flex;
   align-items: center;
 }
@@ -1497,13 +1732,19 @@ button.terminals-name:hover {
   padding: 0;
 }
 
+.area-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .area-row,
 .area-tab {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
-  padding: 4px 8px 4px 10px;
+  padding: 7px 10px 7px 10px;
   border: none;
   border-radius: 4px;
   background: transparent;
@@ -1548,13 +1789,13 @@ button.terminals-name:hover {
 }
 
 .area-row {
-  padding-left: 24px;
+  padding-left: 26px;
 }
 
 .area-toggle {
   position: absolute;
   top: 50%;
-  left: 6px;
+  left: 7px;
   display: flex;
   padding: 2px;
   border: none;
@@ -1605,22 +1846,36 @@ button.terminals-name:hover {
   background: var(--bg-selected);
 }
 
-.area-name {
-  flex: none;
-  max-width: 60%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
+/* A name, with a smaller, quieter line under it. */
+.area-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
 }
 
-.area-folder,
-.area-tab-title {
-  flex: 1;
+.area-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
+}
+
+.area-name,
+.area-folder,
+.area-tab-title,
+.area-tab-repo {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.area-name {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
 }
 
 .area-folder {
@@ -1628,10 +1883,33 @@ button.terminals-name:hover {
   color: var(--text-faint);
 }
 
+.area-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 4px;
+}
+
 .area-tab {
-  padding-left: 30px;
-  font-size: 12px;
+  padding: 5px 10px 5px 30px;
   color: var(--text-muted);
+}
+
+.area-tab > svg {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.area-tab-title {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+/* Which repo it's in: what tells a ticket's tabs apart. */
+.area-tab-repo {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
 }
 
 .area-row .badge,
@@ -1676,10 +1954,33 @@ button.terminals-name:hover {
   }
 }
 
+/* Folded at the foot of the panel until you open it. */
 .sessions {
-  margin-top: 10px;
+  margin-top: auto;
   padding-top: 6px;
   border-top: 1px solid var(--border);
+}
+
+button.sessions-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 4px;
+  text-align: left;
+}
+
+button.sessions-toggle:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+.sessions-toggle svg {
+  transition: transform 0.12s ease;
+}
+
+.sessions-toggle[aria-expanded="true"] svg {
+  transform: rotate(90deg);
 }
 
 .session {
@@ -2127,7 +2428,22 @@ label.check input {
   overflow: auto;
 }
 
-.settings-scroll h3 {
+.daily-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.daily-settings input::placeholder {
+  color: var(--text-faint);
+}
+
+.daily-hint {
+  color: var(--text-faint);
+}
+
+.settings-scroll h3,
+.settings-subhead {
   margin: 12px 0 4px;
   color: var(--text-faint);
   font-size: 11px;
@@ -2152,6 +2468,29 @@ label.check input {
   gap: 6px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.dictionary-words {
+  flex: 1;
+  min-height: 0;
+  max-height: 260px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.dictionary-words li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 2px 0;
+  border-top: 1px solid var(--border);
+}
+
+.dictionary-words li:first-child {
+  border-top: none;
 }
 
 .quickadd-list {
@@ -2651,6 +2990,26 @@ button.link-button:hover:not(:disabled) {
   min-width: 0;
   line-height: 1.4;
   overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.board-todo-edit {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--text-faint);
+  opacity: 0;
+}
+
+.board-todo:hover .board-todo-edit,
+.board-todo-edit:focus-visible {
+  opacity: 1;
+}
+
+.board-todo.is-editing,
+.board-todo.is-editing .board-todo-body {
+  cursor: auto;
 }
 
 .board-todo.is-closed .todo-text {
@@ -3102,4 +3461,97 @@ button.link-button:hover:not(:disabled) {
 
 .settings-inline input {
   width: 96px;
+}
+
+/* A folder field (FolderInput): the path, and Choose… to pick it. */
+.folder-input {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.folder-input input {
+  flex: 1;
+  min-width: 0;
+}
+
+.folder-input > button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.folder-list {
+  z-index: 130;
+  display: flex;
+  flex-direction: column;
+  max-height: 300px;
+  padding: 0;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.folder-list-input {
+  padding: 8px 10px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.folder-list-input:focus-visible {
+  outline: none;
+}
+
+.folder-list-items {
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.menu .folder-list-items button {
+  color: var(--text);
+}
+
+.menu .folder-list-items button[aria-selected] {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.folder-list-empty {
+  padding: 6px 10px;
+  color: var(--text-faint);
+}
+
+/* The default repo's star in the new-ticket dialog. */
+.repo-choice {
+  display: flex;
+  align-items: center;
+}
+
+.ticket-choices button.repo-star {
+  margin-left: 4px;
+  padding: 1px 3px;
+  color: var(--text-muted);
+}
+
+.ticket-choices button.repo-star.is-default {
+  color: var(--accent);
+}
+
+.ticket-choices button.repo-star.is-default svg {
+  fill: currentColor;
+}
+
+.ticket-repos {
+  flex: none;
+  white-space: nowrap;
+}
+
+.menu button.open {
+  background: var(--bg-hover);
 }

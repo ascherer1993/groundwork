@@ -1,3 +1,5 @@
+import { readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { FIXTURE_VAULT as VAULT } from "./fixtures";
 import { editor, expectFile, openVault, quickOpen } from "./helpers";
@@ -63,6 +65,89 @@ test("⌘⇧D opens today's daily note", async ({ page }) => {
   await page.keyboard.press("Meta+Shift+d");
   await expect(page.getByLabel("Note title")).toHaveValue(today);
   await expectFile(VAULT, `Daily/${today}.md`, (t) => t.length > 0);
+});
+
+test("Settings put daily notes in a folder of Groundwork's own", async ({ page }) => {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const today = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const config = readFileSync(join(VAULT, ".groundwork/config.yml"), "utf8");
+
+  await page.keyboard.press("Meta+,");
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("button", { name: "Daily notes", exact: true }).click();
+  // Obsidian's settings show through until Groundwork's are set.
+  const folder = settings.getByLabel("Daily notes folder");
+  await expect(folder).toHaveAttribute("placeholder", "Daily (from Obsidian)");
+  await expect(settings.getByLabel("Today’s daily note")).toContainText(`Daily/${today}.md`);
+
+  await folder.fill("Journal/Days");
+  await folder.press("Enter");
+  await expect(settings.getByLabel("Today’s daily note")).toContainText(`Journal/Days/${today}.md`);
+  await expectFile(
+    VAULT,
+    ".groundwork/config.yml",
+    (t) => t.startsWith(config) && t.endsWith("daily_notes:\n  folder: Journal/Days\n"),
+  );
+  // A folder outside the vault is refused.
+  await folder.fill("../Elsewhere");
+  await folder.press("Enter");
+  await expect(settings.getByRole("alert")).toContainText("inside the vault");
+  await folder.fill("Journal/Days");
+  await settings.getByRole("button", { name: "Done" }).click();
+
+  await page.keyboard.press("Meta+Shift+d");
+  await expect(page.getByLabel("Note title")).toHaveValue(today);
+  await expectFile(VAULT, `Journal/Days/${today}.md`, (t) => t.length > 0);
+
+  // Emptying the field goes back to Obsidian's, and the config as it was.
+  await page.keyboard.press("Meta+,");
+  await settings.getByLabel("Daily notes folder").fill("");
+  await settings.getByLabel("Daily notes folder").press("Enter");
+  await expect(settings.getByLabel("Today’s daily note")).toContainText(`Daily/${today}.md`);
+  await expectFile(VAULT, ".groundwork/config.yml", (t) => t === config);
+  await settings.getByRole("button", { name: "Done" }).click();
+  rmSync(join(VAULT, "Journal"), { recursive: true });
+});
+
+test("a vault folder can be chosen from a list", async ({ page }) => {
+  const config = readFileSync(join(VAULT, ".groundwork/config.yml"), "utf8");
+  await page.keyboard.press("Meta+,");
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("button", { name: "Daily notes", exact: true }).click();
+  await settings.getByRole("button", { name: "Choose…" }).click();
+
+  // The vault's folders, nested ones too, and its root; hidden ones aren't.
+  const list = page.getByRole("dialog", { name: "Folders for daily notes folder" });
+  const options = list.getByRole("option");
+  await expect(options.first()).toHaveText("Vault root");
+  await expect(list.getByRole("option", { name: "Projects/Acme", exact: true })).toBeVisible();
+  await expect(list.getByRole("option", { name: /^\./ })).toHaveCount(0);
+
+  // Escape closes the list, not Settings.
+  await page.keyboard.press("Escape");
+  await expect(list).toBeHidden();
+  await expect(settings).toBeVisible();
+
+  // Picking one saves it at once.
+  await settings.getByRole("button", { name: "Choose…" }).click();
+  await list.getByLabel("Find a folder").fill("even");
+  await expect(options).toHaveText(["Events"]);
+  await page.keyboard.press("Enter");
+  await expect(settings.getByLabel("Daily notes folder")).toHaveValue("Events");
+  await expect(settings.getByLabel("Today’s daily note")).toContainText("Events/");
+  await expectFile(VAULT, ".groundwork/config.yml", (t) => t.endsWith("  folder: Events\n"));
+
+  // The root is "/", which means the root even over Obsidian's folder.
+  await settings.getByRole("button", { name: "Choose…" }).click();
+  await list.getByRole("option", { name: "Vault root" }).click();
+  await expect(settings.getByLabel("Daily notes folder")).toHaveValue("/");
+  await expectFile(VAULT, ".groundwork/config.yml", (t) => t.endsWith('  folder: ""\n'));
+
+  await settings.getByLabel("Daily notes folder").fill("");
+  await settings.getByLabel("Daily notes folder").press("Enter");
+  await expectFile(VAULT, ".groundwork/config.yml", (t) => t === config);
+  await settings.getByRole("button", { name: "Done" }).click();
 });
 
 test("the command palette lists recent commands first", async ({ page }) => {

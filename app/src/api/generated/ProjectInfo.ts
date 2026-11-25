@@ -3,4 +3,4 @@
 /**
  * A project, for lists.
  */
-export type ProjectInfo = { id: string, name: string, folder: string, overview: string | null, workFolder: string, code: Array<string>, };
+export type ProjectInfo = { id: string, name: string, folder: string, overview: string | null, code: Array<string>, };

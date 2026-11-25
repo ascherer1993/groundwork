@@ -2,13 +2,18 @@ import { create } from "zustand";
 
 export interface MenuItem {
   label: string;
-  action: () => void;
+  /** What choosing it does; an item with `items` opens them instead. */
+  action?: () => void;
+  /** A submenu, shown beside the item. */
+  items?: MenuEntry[];
   danger?: boolean;
   disabled?: boolean;
   /** A swatch of a workspace colour before the label. */
   color?: string;
   /** Marked as the current choice. */
   checked?: boolean;
+  /** Marked with a star: a ticket's default repo. */
+  starred?: boolean;
 }
 
 export type MenuEntry = MenuItem | "separator";
@@ -25,9 +30,10 @@ export interface DialogField {
   placeholder?: string;
   /**
    * A date picker (`YYYY-MM-DD`) rather than text, or a todo's text, with
-   * `@date` and `!priority` suggestions.
+   * `@date` and `!priority` suggestions, or a folder on this Mac, with a
+   * Choose… button for the native folder picker.
    */
-  type?: "date" | "todo" | "password";
+  type?: "date" | "todo" | "password" | "folder";
   /** A menu of these rather than text. */
   options?: { value: string; label: string }[];
 }

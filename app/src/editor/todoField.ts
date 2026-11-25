@@ -1,5 +1,6 @@
-import { autocompletion } from "@codemirror/autocomplete";
-import { EditorState } from "@codemirror/state";
+import { autocompletion, closeCompletion, currentCompletions } from "@codemirror/autocomplete";
+import { selectAll } from "@codemirror/commands";
+import { EditorState, Prec } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { popupTheme } from "./popupTheme";
 import { todoFieldCompletions } from "./todoInput";
@@ -19,6 +20,10 @@ export function todoField(
     value?: string;
     onChange?(text: string): void;
     keep?: boolean;
+    /** Escape (with no completion open). */
+    onCancel?(): void;
+    /** Focus left the field. */
+    onBlur?(): void;
   },
 ): EditorView {
   const view = new EditorView({
@@ -26,6 +31,21 @@ export function todoField(
     state: EditorState.create({
       doc: opts.value ?? "",
       extensions: [
+        // Before the completions' own Escape (same precedence, so listed first),
+        // which also takes it when they're active with nothing to show.
+        Prec.highest(
+          keymap.of([
+            {
+              key: "Escape",
+              run: (v) => {
+                if (!opts.onCancel) return false;
+                if (currentCompletions(v.state).length) return closeCompletion(v);
+                opts.onCancel();
+                return true;
+              },
+            },
+          ]),
+        ),
         // Completion keys take precedence, so Enter picks a suggestion first.
         autocompletion({ override: [todoFieldCompletions], icons: false }),
         keymap.of([
@@ -41,7 +61,14 @@ export function todoField(
               return true;
             },
           },
+          // The field's own text; the browser's would select the note around it.
+          { key: "Mod-a", run: selectAll },
         ]),
+        EditorView.domEventHandlers({
+          blur: () => {
+            opts.onBlur?.();
+          },
+        }),
         // One line only: pasted newlines become spaces.
         EditorState.transactionFilter.of((tr) =>
           tr.newDoc.lines > 1
@@ -83,8 +110,19 @@ export function todoField(
             fontFamily: "var(--font-ui)",
           },
           // Room for the 📅 and priority emoji, so they don't push the line taller.
-          "&.cm-editor .cm-line": { padding: "0", lineHeight: "1.5" },
+          "&.cm-editor .cm-line": {
+            padding: "0",
+            lineHeight: "1.5",
+            // See below: the note's editor hides the browser's caret.
+            caretColor: "var(--accent) !important",
+          },
           "&.cm-editor .cm-placeholder": { color: "var(--text-faint)" },
+          // Inside a note, the note's editor hides the browser's caret (set
+          // on the lines above) and selection on every line within it (it
+          // draws its own), these included. More specific, so these win.
+          "&.cm-editor .cm-line::selection, &.cm-editor .cm-line ::selection": {
+            backgroundColor: "var(--selection) !important",
+          },
         }),
       ],
     }),

@@ -68,6 +68,8 @@ function wikilinks(md: MarkdownIt) {
   };
 }
 
+const IMAGE_SIZE = /(?:^|\|)\s*(\d+)(?:x(\d+))?\s*$/;
+
 /** Marks Markdown links to vault files as internal and defers relative images. */
 function vaultLinks(md: MarkdownIt) {
   md.core.ruler.push("vault_links", (state: StateCore) => {
@@ -85,6 +87,14 @@ function vaultLinks(md: MarkdownIt) {
             token.attrSet("href", "#");
           }
         } else if (token.type === "image") {
+          // `![alt|300](x.png)` is 300px wide, as in Obsidian.
+          const size = token.content.match(IMAGE_SIZE);
+          if (size) {
+            token.attrSet("width", size[1]!);
+            if (size[2]) token.attrSet("height", size[2]);
+            const last = token.children?.at(-1);
+            if (last?.type === "text") last.content = last.content.replace(IMAGE_SIZE, "");
+          }
           const src = String(token.attrGet("src") ?? "");
           if (!hasScheme(src)) {
             token.attrSet("data-src-link", safeDecode(src));

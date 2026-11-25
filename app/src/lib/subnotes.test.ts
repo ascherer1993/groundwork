@@ -71,6 +71,52 @@ describe("groupSubnotes", () => {
   });
 });
 
+describe("canvases as subnotes", () => {
+  const canvas = (path: string): TreeNode => ({
+    name: path.slice(path.lastIndexOf("/") + 1),
+    path,
+    kind: "canvas",
+  });
+  const children: TreeNode[] = [
+    note("M/Standup.md"),
+    canvas("M/Standup.diagram.excalidraw"),
+    note("M/Standup.transcript.md"),
+    canvas("M/Standup.transcript.flow.excalidraw"),
+    canvas("M/Board.excalidraw"),
+    note("M/Board.notes.md"),
+  ];
+  const root: TreeNode = {
+    name: "",
+    path: "",
+    kind: "folder",
+    children: [{ name: "M", path: "M", kind: "folder", children }],
+  };
+
+  it("go under their note, but have no subnotes of their own", () => {
+    const top = groupSubnotes(children);
+    expect(top.map((g) => g.node.name)).toEqual([
+      "Standup.md",
+      "Board.excalidraw",
+      "Board.notes.md",
+    ]);
+    const standup = top[0]!;
+    expect(standup.subnotes.map((g) => g.key)).toEqual(["diagram", "transcript"]);
+    expect(standup.subnotes[1]!.subnotes.map((g) => g.key)).toEqual(["flow"]);
+  });
+
+  it("are labelled by their key", () => {
+    expect(subnoteLabel(root, "M/Standup.diagram.excalidraw")).toEqual({
+      key: "diagram",
+      under: "Standup",
+    });
+    expect(subnoteLabel(root, "M/Standup.transcript.flow.excalidraw")).toEqual({
+      key: "flow",
+      under: "Standup › transcript",
+    });
+    expect(subnoteLabel(root, "M/Board.excalidraw")).toBeNull();
+  });
+});
+
 describe("subnoteLabel", () => {
   const root: TreeNode = {
     name: "",

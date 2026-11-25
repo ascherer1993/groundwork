@@ -121,7 +121,7 @@ impl Vault {
         };
         let size = fs::metadata(&file)?.len();
         let text = match kind {
-            NodeKind::Note | NodeKind::Page | NodeKind::PageBundle => {
+            NodeKind::Note | NodeKind::Page | NodeKind::PageBundle | NodeKind::Canvas => {
                 if size > MAX_READ_BYTES {
                     return Err(CoreError::TooLarge { size });
                 }
@@ -187,6 +187,7 @@ mod tests {
                 "Daily",
                 "Events",
                 "Projects",
+                "Teams",
                 "Templates",
                 "Welcome.md"
             ]

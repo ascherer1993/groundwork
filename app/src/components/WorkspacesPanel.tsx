@@ -5,7 +5,7 @@ import type { TerminalInfo } from "../api/generated/TerminalInfo";
 import type { Workspace } from "../api/generated/Workspace";
 import { showTerminalMenu } from "../state/claude";
 import { useKeyLabel } from "../state/keys";
-import { showSplit } from "../state/tickets";
+import { newTerminalItems, repoOfFolder, showSplit, useTickets } from "../state/tickets";
 import {
   mostUrgent,
   stateOf,
@@ -137,6 +137,7 @@ function AreaRow({
   const shown = useWorkspace(shownTerminal);
   const byId = useTerminals((s) => s.byId);
   const root = useVault((s) => s.vault?.path);
+  useTickets((s) => s.repos);
   const tabs = useWorkspace
     .getState()
     .terminalTabs()
@@ -146,19 +147,13 @@ function AreaRow({
   const menu = async (e: React.MouseEvent) => {
     e.preventDefault();
     const { clientX: x, clientY: y } = e;
-    // A ticket's workspace offers a terminal in each component it touches.
+    // A ticket's workspace offers a terminal in each worktree and component.
     const note = useWorkspaces.getState().list.find((w) => w.id === area)?.note;
-    const context = note ? await api.context({ note }).catch(() => null) : null;
-    const components = (context?.components ?? []).filter((c) => c.absPath);
+    const terminals = await newTerminalItems(area, (cwd) =>
+      switchAnd(area, () => useWorkspace.getState().openTerminal(cwd)),
+    );
     useUi.getState().showMenu(x, y, [
-      {
-        label: "New terminal",
-        action: () => switchAnd(area, () => useWorkspace.getState().openTerminal()),
-      },
-      ...components.map((c) => ({
-        label: `New terminal in ${c.id.slice(c.id.indexOf(":") + 1)}`,
-        action: () => switchAnd(area, () => useWorkspace.getState().openTerminal(c.absPath!)),
-      })),
+      ...terminals,
       ...(note ? [{ label: "Open note", action: () => void showSplit(note, area) }] : []),
       "separator",
       {
@@ -226,11 +221,15 @@ function AreaRow({
           onClick={() => useWorkspaces.getState().pick(area)}
           onContextMenu={(e) => void menu(e)}
         >
-          <span className="area-name">{name}</span>
-          {workspace.pinned && (
-            <Pin size={11} className="area-pin" aria-label="Pinned" role="img" />
-          )}
-          {folder && <span className="area-folder">{shortPath(folder, root)}</span>}
+          <span className="area-text">
+            <span className="area-title">
+              <span className="area-name">{name}</span>
+              {workspace.pinned && (
+                <Pin size={11} className="area-pin" aria-label="Pinned" role="img" />
+              )}
+            </span>
+            {folder && <span className="area-folder">{shortPath(folder, root)}</span>}
+          </span>
           {tabs.length > 0 && <Badge state={mostUrgent(states)} />}
           {shortcut && (
             <kbd className="area-key" title={`Switch to ${name} (${shortcut})`}>
@@ -256,20 +255,29 @@ function AreaRow({
       </div>
       {open && tabs.length > 0 && (
         <ul className="area-tabs" aria-label={`${name} terminals`}>
-          {tabs.map((t, i) => (
-            <li key={t.panel.id}>
-              <button
-                className={`area-tab${t.terminal === shown ? " current" : ""}`}
-                aria-current={t.terminal === shown || undefined}
-                onClick={() => useWorkspace.getState().showTerminal(t.terminal)}
-                onContextMenu={(e) => showTerminalMenu(e, t.terminal)}
-              >
-                <SquareTerminal size={12} />
-                <span className="area-tab-title">{t.panel.title}</span>
-                <Badge state={states[i]!} />
-              </button>
-            </li>
-          ))}
+          {tabs.map((t, i) => {
+            // A ticket's worktrees share one folder name in every repo, so
+            // the repo its shell is in goes underneath.
+            const started = (t.panel.params as { cwd?: string } | undefined)?.cwd;
+            const repo = repoOfFolder(byId[t.terminal]?.cwd ?? started);
+            return (
+              <li key={t.panel.id}>
+                <button
+                  className={`area-tab${t.terminal === shown ? " current" : ""}`}
+                  aria-current={t.terminal === shown || undefined}
+                  onClick={() => useWorkspace.getState().showTerminal(t.terminal)}
+                  onContextMenu={(e) => showTerminalMenu(e, t.terminal)}
+                >
+                  <SquareTerminal size={13} />
+                  <span className="area-text">
+                    <span className="area-tab-title">{t.panel.title}</span>
+                    {repo && <span className="area-tab-repo">{repo}</span>}
+                  </span>
+                  <Badge state={states[i]!} />
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </li>
@@ -281,8 +289,22 @@ function switchAnd(area: string, then: () => unknown) {
   void then();
 }
 
-/** Every terminal the daemon runs, in a tab or not, from any vault. */
+const SESSIONS_KEY = "groundwork.runningTerminalsShown";
+
+function sessionsShown(): boolean {
+  try {
+    return localStorage.getItem(SESSIONS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Every terminal the daemon runs, in a tab or not, from any vault. Folded
+ * under its header until you open it (remembered per machine).
+ */
 function Sessions() {
+  const [open, setOpen] = useState(sessionsShown);
   const tabsVersion = useWorkspace((s) => s.tabsVersion);
   const byId = useTerminals((s) => s.byId);
   const root = useVault((s) => s.vault?.path);
@@ -333,12 +355,34 @@ function Sessions() {
     setTimeout(() => setRefresh((n) => n + 1), 500);
   };
 
+  const toggle = () => {
+    try {
+      localStorage.setItem(SESSIONS_KEY, open ? "0" : "1");
+    } catch {
+      // Not remembered.
+    }
+    setOpen(!open);
+  };
+
+  if (!open) {
+    return (
+      <div className="sessions sessions-folded">
+        <button className="section-header sessions-toggle" aria-expanded={false} onClick={toggle}>
+          <ChevronRight size={12} />
+          Running terminals
+          <span className="count">{sessions.length}</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <section className="sessions" aria-label="Running terminals">
-      <div className="section-header sessions-header">
+      <button className="section-header sessions-toggle" aria-expanded onClick={toggle}>
+        <ChevronRight size={12} />
         Running terminals
         <span className="count">{sessions.length}</span>
-      </div>
+      </button>
       {sessions.length === 0 && <p className="panel-empty muted small">None.</p>}
       <ul className="session-list">
         {sessions.map((t) => {

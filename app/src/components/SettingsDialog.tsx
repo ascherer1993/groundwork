@@ -1,19 +1,34 @@
 import { ArrowDown, ArrowUp, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
+import type { CanvasTheme } from "../api/generated/CanvasTheme";
+import type { DailyFields } from "../api/generated/DailyFields";
+import type { DailyNoteSettings } from "../api/generated/DailyNoteSettings";
 import type { QuickAddChoice } from "../api/generated/QuickAddChoice";
 import { comboOf, displayCombo, usable } from "../lib/keyCombo";
 import { allCommands, bindingOf, type KeyCommand, useKeys } from "../state/keys";
+import { useCanvasSettings } from "../state/canvas";
 import { useLocks } from "../state/locks";
+import { removeFromDictionary, useSpelling } from "../state/spelling";
 import { choiceCommand, useQuickAdd } from "../state/quickadd";
 import { useUi } from "../state/ui";
+import { message } from "../state/vault";
+import { FolderInput } from "./FolderInput";
 import { SearchSettings } from "./SearchSettings";
 
 /**
  * Settings has a section per feature, down its side. A feature's section
  * holds its settings; Keyboard shortcuts lists every feature's commands.
  */
-const SECTIONS = ["Quick add", "Search", "Encrypted notes", "Keyboard shortcuts"] as const;
+const SECTIONS = [
+  "Daily notes",
+  "Quick add",
+  "Search",
+  "Spelling",
+  "Encrypted notes",
+  "Canvases",
+  "Keyboard shortcuts",
+] as const;
 export type Section = (typeof SECTIONS)[number];
 
 /** The section last shown, while the app runs. */
@@ -71,12 +86,18 @@ function SettingsDialogBody() {
           ))}
         </nav>
         <div className="settings-body">
-          {section === "Quick add" ? (
+          {section === "Daily notes" ? (
+            <DailySettings />
+          ) : section === "Quick add" ? (
             <QuickAddSettings />
           ) : section === "Search" ? (
             <SearchSettings />
+          ) : section === "Spelling" ? (
+            <SpellingSettings />
           ) : section === "Encrypted notes" ? (
             <EncryptionSettings />
+          ) : section === "Canvases" ? (
+            <CanvasSettings />
           ) : (
             <ShortcutSettings />
           )}
@@ -88,6 +109,140 @@ function SettingsDialogBody() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ---- Daily notes -----------------------------------------------------------
+
+const DAILY_FIELDS = [
+  { key: "folder", label: "Folder", fallback: "the vault’s root", hint: "Type / for the root." },
+  {
+    key: "format",
+    label: "Date format",
+    fallback: "YYYY-MM-DD",
+    hint: "Moment.js tokens. Slashes make folders: YYYY/MM-MMMM/YYYY-MM-DD files notes by year and month. “File daily notes and events by date…” in the palette moves the ones already written.",
+  },
+  { key: "template", label: "Template", fallback: "none", hint: "" },
+] as const;
+
+/**
+ * Settings › Daily notes. Groundwork's own settings, kept in the vault's
+ * `.groundwork/config.yml`; a field left empty uses Obsidian's.
+ */
+function DailySettings() {
+  const [settings, setSettings] = useState<DailyNoteSettings | null>(null);
+  const empty = { folder: "", format: "", template: "" };
+  const [draft, setDraft] = useState<Record<keyof DailyFields, string>>(empty);
+  const [saved, setSaved] = useState<Record<keyof DailyFields, string>>(empty);
+  const [error, setError] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<string[]>([]);
+
+  const show = (s: DailyNoteSettings) => {
+    setSettings(s);
+    const gw = s.groundwork;
+    const fields = {
+      // An empty folder set on purpose is the root; it shows as "/".
+      folder: gw.folder === "" ? "/" : (gw.folder ?? ""),
+      format: gw.format ?? "",
+      template: gw.template ?? "",
+    };
+    setDraft(fields);
+    setSaved(fields);
+  };
+  useEffect(() => {
+    void api.dailySettings().then(show, (e: unknown) => setError(message(e)));
+    void api.templates().then(setTemplates, () => setTemplates([]));
+  }, []);
+
+  /** Saves the fields, with `pending` over what's typed (a folder just picked). */
+  const save = async (pending: Partial<Record<keyof DailyFields, string>> = {}) => {
+    if (!settings) return;
+    const fields = { ...draft, ...pending };
+    const changed = (Object.keys(fields) as (keyof DailyFields)[]).some(
+      (k) => fields[k].trim() !== saved[k],
+    );
+    if (!changed) return;
+    const value = (v: string) => (v.trim() === "" ? null : v.trim());
+    try {
+      show(
+        await api.saveDailySettings({
+          folder: value(fields.folder),
+          format: value(fields.format),
+          template: value(fields.template),
+        }),
+      );
+      setError(null);
+    } catch (e) {
+      setError(message(e));
+    }
+  };
+
+  return (
+    <>
+      <div className="settings-head">
+        <h2>Daily notes</h2>
+      </div>
+      <p className="muted">
+        ⇧⌘D opens today’s note. These are kept in the vault, in <code>.groundwork/config.yml</code>,
+        and come before Obsidian’s daily notes settings. A field left empty uses Obsidian’s.
+      </p>
+      <div className="settings-scroll daily-settings">
+        {DAILY_FIELDS.map(({ key, label, fallback, hint }) => {
+          const obsidian = settings?.obsidian[key];
+          const placeholder = obsidian ? `${obsidian} (from Obsidian)` : `Default: ${fallback}`;
+          if (key === "folder")
+            return (
+              <div key={key} className="dialog-field">
+                <span>{label}</span>
+                <FolderInput
+                  scope="vault"
+                  label="Daily notes folder"
+                  rootValue="/"
+                  placeholder={placeholder}
+                  value={draft.folder}
+                  disabled={!settings}
+                  onChange={(folder) => setDraft((d) => ({ ...d, folder }))}
+                  onPick={(folder) => void save({ folder })}
+                  onBlur={() => void save()}
+                  onKeyDown={(e) => e.key === "Enter" && void save()}
+                />
+                <span className="daily-hint">{hint}</span>
+              </div>
+            );
+          return (
+            <label key={key} className="dialog-field">
+              <span>{label}</span>
+              <input
+                aria-label={`Daily notes ${label.toLowerCase()}`}
+                list={key === "template" ? "daily-templates" : undefined}
+                placeholder={placeholder}
+                value={draft[key]}
+                disabled={!settings}
+                onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+                onBlur={() => void save()}
+                onKeyDown={(e) => e.key === "Enter" && void save()}
+              />
+              {hint && <span className="daily-hint">{hint}</span>}
+            </label>
+          );
+        })}
+        <datalist id="daily-templates">
+          {templates.map((t) => (
+            <option key={t} value={t.replace(/\.md$/, "")} />
+          ))}
+        </datalist>
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+        {settings && (
+          <p className="muted" aria-label="Today’s daily note">
+            Today’s note: <code>{settings.todayPath}</code>
+          </p>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -123,6 +278,104 @@ function EncryptionSettings() {
           onBlur={commit}
           onKeyDown={(e) => e.key === "Enter" && commit()}
         />
+      </label>
+    </>
+  );
+}
+
+// ---- Spelling --------------------------------------------------------------
+
+/** Settings › Spelling: checking on or off, and the vault's own words (PLAN §5.18). */
+function SpellingSettings() {
+  const enabled = useSpelling((s) => s.enabled);
+  const [words, setWords] = useState<string[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.dictionaryWords().then(setWords, (e: unknown) => setError(message(e)));
+  }, []);
+
+  const remove = async (word: string) => {
+    try {
+      await removeFromDictionary(word);
+      setWords(await api.dictionaryWords());
+    } catch (e) {
+      setError(message(e));
+    }
+  };
+
+  return (
+    <>
+      <div className="settings-head">
+        <h2>Spelling</h2>
+      </div>
+      <p className="muted">
+        Words the dictionary (US English) doesn’t know get a red underline. Right-click one for
+        suggestions, or to add it to this vault’s dictionary. Code, links, tags and the like aren’t
+        checked.
+      </p>
+      <label className="settings-check">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => useSpelling.getState().setEnabled(e.target.checked)}
+        />
+        Check spelling in notes
+      </label>
+      <h3 className="settings-subhead">This vault’s words</h3>
+      <p className="muted">
+        Kept in <code>.groundwork/dictionary.txt</code>, one per line, so they go wherever the vault
+        does.
+      </p>
+      {error && <p className="error">{error}</p>}
+      {words && words.length === 0 && <p className="muted">None yet.</p>}
+      {words && words.length > 0 && (
+        <ul className="dictionary-words" aria-label="This vault’s words">
+          {words.map((w) => (
+            <li key={w}>
+              <span>{w}</span>
+              <button
+                type="button"
+                className="icon"
+                aria-label={`Remove ${w}`}
+                onClick={() => void remove(w)}
+              >
+                <Trash2 size={12} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+// ---- Canvases --------------------------------------------------------------
+
+/** Settings › Canvases: how drawings look (PLAN §5.17). */
+function CanvasSettings() {
+  const theme = useCanvasSettings((s) => s.theme);
+  return (
+    <>
+      <div className="settings-head">
+        <h2>Canvases</h2>
+      </div>
+      <p className="muted">
+        Right-click a folder and choose <strong>New specialty note › Canvas…</strong> to draw on an
+        infinite canvas, or a note for a canvas subnote. Copied and exported images are always
+        light, on a white background.
+      </p>
+      <label className="dialog-field">
+        <span>Look</span>
+        <select
+          aria-label="Canvas look"
+          value={theme}
+          onChange={(e) => useCanvasSettings.getState().setTheme(e.target.value as CanvasTheme)}
+        >
+          <option value="app">Follow the app (light or dark, like macOS)</option>
+          <option value="light">Always light</option>
+          <option value="dark">Always dark</option>
+        </select>
       </label>
     </>
   );
@@ -470,14 +723,20 @@ function ChoiceEditor({
         </label>
         {c.kind === "note" ? (
           <>
-            <label className="dialog-field">
+            <div className="dialog-field">
               <span>In the folder</span>
-              <input
+              <FolderInput
+                scope="vault"
+                label="In the folder"
+                rootValue=""
                 value={c.folder ?? ""}
                 placeholder="Events"
-                onChange={(e) => set({ folder: e.target.value })}
+                onChange={(folder) => set({ folder })}
               />
-            </label>
+              <span className="daily-hint">
+                Date tags file notes by their day: Events/{"{{date:YYYY}}"}/{"{{date:MM-MMMM}}"}.
+              </span>
+            </div>
             <label className="dialog-field">
               <span>Named</span>
               <input

@@ -22,6 +22,7 @@ regex = "1"
 serde.workspace = true
 serde-saphyr = "2"
 serde_json.workspace = true
+spellbook = "0.4"
 thiserror.workspace = true
 trash = "5"
 ts-rs.workspace = true

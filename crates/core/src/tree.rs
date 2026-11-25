@@ -18,6 +18,8 @@ pub enum NodeKind {
     Page,
     /// A folder named `*.page` containing an `index.html`, shown as one item.
     PageBundle,
+    /// A drawing on an infinite canvas (`.excalidraw`, Excalidraw's JSON).
+    Canvas,
     /// Anything else: images, PDFs, data files.
     Asset,
 }
@@ -36,6 +38,9 @@ pub struct TreeNode {
     pub children: Option<Vec<TreeNode>>,
 }
 
+/// A canvas's extension (PLAN §5.17).
+pub(crate) const CANVAS_EXT: &str = ".excalidraw";
+
 pub(crate) fn classify(name: &str, is_dir: bool) -> NodeKind {
     let lower = name.to_ascii_lowercase();
     if is_dir {
@@ -48,6 +53,8 @@ pub(crate) fn classify(name: &str, is_dir: bool) -> NodeKind {
         NodeKind::Note
     } else if lower.ends_with(".html") || lower.ends_with(".htm") {
         NodeKind::Page
+    } else if lower.ends_with(CANVAS_EXT) {
+        NodeKind::Canvas
     } else {
         NodeKind::Asset
     }

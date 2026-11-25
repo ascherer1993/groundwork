@@ -28,7 +28,10 @@ import { useWorkspaces } from "../state/workspaces";
 import { useKeyLabel } from "../state/keys";
 import { useUi } from "../state/ui";
 import { useVault } from "../state/vault";
+import { newTerminalItems, repoOfFolder, useTickets } from "../state/tickets";
+import { useTerminals } from "../state/terminals";
 import { FilePanel } from "./FilePanel";
+import { LauncherPanel } from "./NewTab";
 import { TerminalPanel } from "./TerminalPanel";
 
 /** The dock (`NOTES` or a workspace id) a panel belongs to. */
@@ -37,27 +40,39 @@ export const AreaContext = createContext<string>(NOTES);
 const components = {
   file: FilePanel as (props: IDockviewPanelProps) => React.ReactNode,
   terminal: TerminalPanel as (props: IDockviewPanelProps) => React.ReactNode,
+  launcher: LauncherPanel as (props: IDockviewPanelProps) => React.ReactNode,
 };
 
-/** A terminal's tab, with its menu (Fork session, Resume conversation…). */
+/**
+ * A terminal's tab, with its menu (Fork session, Resume conversation…). In a
+ * repo, the repo's name is underneath, since a ticket's worktrees in every
+ * repo share one folder name.
+ */
 function TerminalTab(props: IDockviewPanelHeaderProps) {
+  const { title, params } = usePanel(props);
+  const { terminal: id, cwd: started } = params as { terminal?: string; cwd?: string };
+  // Where its shell is now, as it `cd`s; where it started until that's known.
+  const cwd = useTerminals((s) => (id ? s.byId[id]?.cwd : undefined)) ?? started;
+  useTickets((s) => s.repos);
+  const repo = repoOfFolder(cwd);
   // Read when clicked: a replacement shell changes it.
   const terminal = () =>
     (props.containerApi.getPanel(props.api.id)?.params as { terminal?: string } | undefined)
       ?.terminal;
+  const handlers = {
+    onContextMenu: (e: React.MouseEvent) => {
+      const id = terminal();
+      if (id) showTerminalMenu(e, id);
+    },
+    // A double click names it.
+    onDoubleClick: () => {
+      const id = terminal();
+      if (id) void renameTab(id);
+    },
+  };
+  if (!repo) return <DockviewDefaultTab {...props} {...handlers} />;
   return (
-    <DockviewDefaultTab
-      {...props}
-      onContextMenu={(e) => {
-        const id = terminal();
-        if (id) showTerminalMenu(e, id);
-      }}
-      // A double click names it.
-      onDoubleClick={() => {
-        const id = terminal();
-        if (id) void renameTab(id);
-      }}
-    />
+    <TwoLineTab {...props} {...handlers} main={title} under={repo} underClass="terminal-tab-repo" />
   );
 }
 
@@ -73,8 +88,15 @@ function usePanel(props: IDockviewPanelHeaderProps) {
       b.dispose();
     };
   }, [props.api]);
-  const params = props.containerApi.getPanel(props.api.id)?.params as { path?: string } | undefined;
-  return { title: props.api.title ?? "", path: params?.path ?? "" };
+  const params = (props.containerApi.getPanel(props.api.id)?.params ?? {}) as Record<
+    string,
+    unknown
+  >;
+  return {
+    title: props.api.title ?? "",
+    path: typeof params.path === "string" ? params.path : "",
+    params,
+  };
 }
 
 /**
@@ -90,16 +112,41 @@ function NoteTab(props: IDockviewPanelHeaderProps) {
     const sub = subnoteLabel(tree, path);
     return sub ? { main: sub.key, under: sub.under } : null;
   }, [tree, path, title]);
+  if (!label) return <DockviewDefaultTab {...props} />;
+  return <TwoLineTab {...props} main={label.main} under={label.under} tooltip={path} />;
+}
+
+/**
+ * A tab with a smaller second line under its name, closing like dockview's
+ * own tab (its button, or a middle click).
+ */
+function TwoLineTab({
+  main,
+  under,
+  underClass,
+  tooltip,
+  onContextMenu,
+  onDoubleClick,
+  ...props
+}: IDockviewPanelHeaderProps & {
+  main: string;
+  under: string;
+  underClass?: string;
+  tooltip?: string;
+  onContextMenu?: (e: React.MouseEvent) => void;
+  onDoubleClick?: (e: React.MouseEvent) => void;
+}) {
   const middle = useRef(false);
   const close = (e: React.SyntheticEvent) => {
     e.preventDefault();
     props.api.close();
   };
-  if (!label) return <DockviewDefaultTab {...props} />;
   return (
     <div
       className="dv-default-tab note-tab"
-      title={path}
+      title={tooltip}
+      onContextMenu={onContextMenu}
+      onDoubleClick={onDoubleClick}
       onPointerDown={(e) => {
         middle.current = e.button === 1;
       }}
@@ -113,8 +160,10 @@ function NoteTab(props: IDockviewPanelHeaderProps) {
       }}
     >
       <span className="dv-default-tab-content note-tab-text">
-        <span className="note-tab-main">{label.main}</span>
-        <span className="note-tab-under">{label.under}</span>
+        <span className="note-tab-main">{main}</span>
+        <span className={underClass ? `note-tab-under ${underClass}` : "note-tab-under"}>
+          {under}
+        </span>
       </span>
       <button
         type="button"
@@ -185,9 +234,16 @@ function Area({ area, layout, shown }: { area: string; layout?: unknown; shown: 
 }
 
 /** Which workspace's terminals these are, and whether they follow the notes. */
-function TerminalsHeader({ name, color }: { name: string; color?: string }) {
+function TerminalsHeader({ id, name, color }: { id: string; name: string; color?: string }) {
   const locked = useWorkspace((s) => s.locked);
   const split = useWorkspace((s) => s.view === "split");
+  const newTerminal = async (e: React.MouseEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const items = await newTerminalItems(id, (cwd) => {
+      void useWorkspace.getState().openTerminal(cwd);
+    });
+    useUi.getState().showMenu(rect.left, rect.bottom + 4, items);
+  };
   return (
     <header className="terminals-header" data-color={color}>
       <button
@@ -201,6 +257,15 @@ function TerminalsHeader({ name, color }: { name: string; color?: string }) {
       {split && (
         <span className="terminals-state muted">{locked ? "Locked" : "Following notes"}</span>
       )}
+      <button
+        type="button"
+        className="icon"
+        aria-label="New terminal in…"
+        title="New terminal in…"
+        onClick={(e) => void newTerminal(e)}
+      >
+        <Plus size={13} />
+      </button>
       <button
         type="button"
         className="icon"
@@ -317,7 +382,11 @@ export function Workspace() {
         onFocusCapture={focus("terminals")}
       >
         {currentWorkspace && (
-          <TerminalsHeader name={currentWorkspace.name} color={currentWorkspace.color} />
+          <TerminalsHeader
+            id={currentWorkspace.id}
+            name={currentWorkspace.name}
+            color={currentWorkspace.color}
+          />
         )}
         <div className="terminal-docks">
           {loaded &&

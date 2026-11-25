@@ -56,6 +56,7 @@ export const KEY_COMMANDS: KeyCommand[] = [
   { id: "toggle-right", label: "Toggle links panel", group: "General", key: "Shift+Cmd+B" },
   { id: "undo-file", label: "Undo the last file change", group: "General", key: "Cmd+Z" },
   { id: "new-note", label: "New note", group: "Notes", key: "Cmd+N" },
+  { id: "new-canvas", label: "New canvas", group: "Notes", key: null },
   { id: "project-view", label: "Open a project’s view…", group: "Notes", key: null },
   { id: "todo-board", label: "Open the todo board", group: "Notes", key: "Shift+Cmd+T" },
   { id: "daily-today", label: "Open today’s daily note", group: "Notes", key: "Shift+Cmd+D" },
@@ -77,7 +78,14 @@ export const KEY_COMMANDS: KeyCommand[] = [
     group: "Views and workspaces",
     key: "Ctrl+Cmd+3",
   },
-  { id: "new-terminal", label: "New terminal", group: "Views and workspaces", key: "Cmd+T" },
+  // Among the notes, a blank note tab; among terminals, the page of where to start one.
+  { id: "new-tab", label: "New tab", group: "Views and workspaces", key: "Cmd+T" },
+  {
+    id: "new-terminal",
+    label: "New terminal",
+    group: "Views and workspaces",
+    key: "Alt+Cmd+T",
+  },
   {
     id: "switch-workspace",
     label: "Switch workspace…",

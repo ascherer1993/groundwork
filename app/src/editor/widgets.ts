@@ -9,11 +9,17 @@ import { CONTENT_RESIZED, setOwn, TODOS_REFRESH } from "../markdown/todos";
 import {
   escapeHtml,
   imageSize,
+  isImage,
   joinTarget,
+  splitTarget,
   type WikiTarget,
   wikiDisplay,
 } from "../markdown/syntax";
 import { notePath } from "./context";
+import { attachImage } from "./images";
+import { displayValue } from "./properties";
+import { openPropertiesSource } from "./propertiesSource";
+import { PropertyPanel } from "./propertyPanel";
 
 /**
  * Fills in a widget's links, embeds and diagrams. They change its height
@@ -56,7 +62,7 @@ function isInteractive(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&
     !!target.closest(
-      "a, input, button, summary, .embed-note, .embed-page, .todos-view, .tickets-view",
+      "a, input, button, summary, .cm-image-resize, .embed-note, .embed-page, .todos-view, .tickets-view",
     )
   );
 }
@@ -157,6 +163,24 @@ export class BulletWidget extends WidgetType {
   }
 }
 
+/** A nested numbered item's label (`b.`, `iv.`), drawn over its number. */
+export class ListNumberWidget extends WidgetType {
+  constructor(readonly label: string) {
+    super();
+  }
+
+  eq(other: ListNumberWidget) {
+    return other.label === this.label;
+  }
+
+  toDOM() {
+    const span = document.createElement("span");
+    span.className = "cm-list-number";
+    span.textContent = this.label;
+    return span;
+  }
+}
+
 export class HrWidget extends WidgetType {
   eq() {
     return true;
@@ -210,6 +234,8 @@ export class EmbedWidget extends WidgetType {
     readonly external = false,
     /** A note or page, filling its line; clicks on it don't edit. */
     readonly block = false,
+    /** An image shown below its source while the cursor is in it. */
+    readonly preview = false,
   ) {
     super();
   }
@@ -220,13 +246,14 @@ export class EmbedWidget extends WidgetType {
       other.alias === this.alias &&
       other.source === this.source &&
       other.external === this.external &&
-      other.block === this.block
+      other.block === this.block &&
+      other.preview === this.preview
     );
   }
 
   toDOM(view: EditorView) {
     const wrap = document.createElement("span");
-    wrap.className = "cm-embed";
+    wrap.className = this.preview ? "cm-embed cm-embed-preview" : "cm-embed";
     wrap.dataset.notePath = this.source;
     if (this.external) {
       const img = document.createElement("img");
@@ -237,6 +264,7 @@ export class EmbedWidget extends WidgetType {
       if (height) img.height = height;
       img.addEventListener("load", () => view.requestMeasure());
       wrap.append(img);
+      attachImage(view, wrap);
       return wrap;
     }
     const placeholder = document.createElement("span");
@@ -248,6 +276,8 @@ export class EmbedWidget extends WidgetType {
       wrap.classList.add("cm-embed-block");
       wrap.append(editSourceButton(view, wrap));
       wrap.addEventListener("mousedown", keepEditorStill);
+    } else if (isImage(splitTarget(this.target).target)) {
+      attachImage(view, wrap);
     }
     hydrateWidget(view, wrap, this.source);
     attachContentHandlers(wrap);
@@ -255,7 +285,8 @@ export class EmbedWidget extends WidgetType {
   }
 
   ignoreEvent(event: Event) {
-    if (this.block) return true;
+    // Images handle their own clicks and drags (see `./images`).
+    if (this.block || event.target instanceof HTMLImageElement) return true;
     return event.type !== "mousedown" || isInteractive(event.target);
   }
 }
@@ -336,10 +367,13 @@ function editSourceButton(view: EditorView, wrap: HTMLElement): HTMLButtonElemen
   return button;
 }
 
-/** Frontmatter as a properties table. */
+/**
+ * Frontmatter as an editable properties panel (`./propertyPanel`); `yaml` is
+ * null for a note without frontmatter, which gets just "Add property".
+ */
 export class PropertiesWidget extends WidgetType {
   constructor(
-    readonly yaml: string,
+    readonly yaml: string | null,
     readonly source: string,
   ) {
     super();
@@ -350,18 +384,28 @@ export class PropertiesWidget extends WidgetType {
   }
 
   toDOM(view: EditorView) {
-    const div = document.createElement("div");
-    div.className = "cm-properties";
-    div.dataset.notePath = this.source;
-    div.innerHTML = propertiesHtml(this.yaml);
-    hydrateWidget(view, div, this.source);
-    attachContentHandlers(div);
-    div.addEventListener("mousedown", (e) => {
-      if (isInteractive(e.target)) return;
-      e.preventDefault();
-      editAt(view, div);
+    const panel = new PropertyPanel(view, this.source, this.yaml, {
+      onSource: () => openPropertiesSource(view),
     });
-    return div;
+    panels.set(panel.root, panel);
+    return panel.root;
+  }
+
+  /** Redraws in place, so a field being edited keeps its focus. */
+  updateDOM(dom: HTMLElement, view: EditorView) {
+    const panel = panels.get(dom);
+    if (
+      !panel ||
+      panel.source !== this.source ||
+      (this.yaml === null) !== dom.classList.contains("cm-properties-none")
+    )
+      return false;
+    panel.update(view, this.yaml);
+    return true;
+  }
+
+  destroy(dom: HTMLElement) {
+    panels.get(dom)?.destroy();
   }
 
   ignoreEvent() {
@@ -369,7 +413,9 @@ export class PropertiesWidget extends WidgetType {
   }
 }
 
-/** Renders frontmatter YAML as a two-column table; values may contain links. */
+const panels = new WeakMap<HTMLElement, PropertyPanel>();
+
+/** Renders frontmatter YAML as a read-only two-column table; values may contain links. */
 export function propertiesHtml(yaml: string): string {
   let data: unknown;
   try {
@@ -384,7 +430,12 @@ export function propertiesHtml(yaml: string): string {
     const values = Array.isArray(value) ? value : [value];
     const cells = values
       .filter((v) => v !== null && v !== undefined && v !== "")
-      .map((v) => `<span class="property-value">${renderInline(formatValue(v))}</span>`)
+      .map((v) => {
+        const raw = formatValue(v);
+        const text = displayValue(key, null, raw);
+        const shown = text === raw ? renderInline(text) : escapeHtml(text);
+        return `<span class="property-value">${shown}</span>`;
+      })
       .join("");
     return `<div class="property"><div class="property-key">${escapeHtml(key)}</div><div class="property-values">${cells || '<span class="muted">—</span>'}</div></div>`;
   });

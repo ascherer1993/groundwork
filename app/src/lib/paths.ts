@@ -2,7 +2,8 @@ import type { NodeKind } from "../api/generated/NodeKind";
 
 /**
  * How a vault entry is labelled in the UI. Like Obsidian, notes drop `.md`;
- * other files keep their extension, shown muted.
+ * canvases drop `.excalidraw` (their icon says what they are); other files
+ * keep their extension, shown muted.
  */
 export function displayName(name: string, kind: NodeKind): { base: string; ext: string } {
   if (kind === "folder") return { base: name, ext: "" };
@@ -10,7 +11,15 @@ export function displayName(name: string, kind: NodeKind): { base: string; ext: 
   if (dot <= 0) return { base: name, ext: "" };
   const base = name.slice(0, dot);
   const ext = name.slice(dot);
-  return kind === "note" ? { base, ext: "" } : { base, ext };
+  return kind === "note" || kind === "canvas" ? { base, ext: "" } : { base, ext };
+}
+
+/** A canvas's extension: Excalidraw's own JSON (PLAN §5.17). */
+export const CANVAS_EXT = ".excalidraw";
+
+/** A drawing on an infinite canvas. */
+export function isCanvasPath(path: string): boolean {
+  return path.toLowerCase().endsWith(CANVAS_EXT);
 }
 
 /** An HTML page: a single `.html` file or a `.page` bundle. */
@@ -42,7 +51,22 @@ export function projectOfView(path: string | null | undefined): string | null {
 
 export const TODO_BOARD = "todos:board";
 
+/** A blank tab (⌘T among the notes), waiting for a note to be picked. */
+export const NEW_TAB = "new:tab";
+
 /** A view's path, not a file's. */
 export function isViewPath(path: string | null | undefined): boolean {
-  return projectOfView(path) !== null || path === TODO_BOARD;
+  return projectOfView(path) !== null || path === TODO_BOARD || path === NEW_TAB;
+}
+
+/**
+ * The folder a Quick add folder's notes are all in: the part before its first
+ * date tag (`Events` for `Events/{{date:YYYY}}/{{date:MM-MMMM}}`).
+ */
+export function folderBase(folder: string): string {
+  const trimmed = folder.trim().replace(/^\/+|\/+$/g, "");
+  const at = trimmed.indexOf("{{");
+  if (at < 0) return trimmed;
+  const head = trimmed.slice(0, at);
+  return head.includes("/") ? head.slice(0, head.lastIndexOf("/")) : "";
 }

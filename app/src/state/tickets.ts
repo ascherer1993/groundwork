@@ -17,7 +17,7 @@ import type { Ticket } from "../api/generated/Ticket";
 import { openExternalUrl } from "../lib/fileUrl";
 import { launchAgent } from "./claude";
 import { projectViewPath } from "../lib/paths";
-import { confirmDialog, formDialog, useUi } from "./ui";
+import { confirmDialog, formDialog, type MenuEntry, useUi } from "./ui";
 import { message, onVaultChange, useVault } from "./vault";
 import { isTerminal, type TerminalParams, useWorkspace } from "./workspace";
 import { useWorkspaces } from "./workspaces";
@@ -111,12 +111,13 @@ export async function locateRepo(id: string): Promise<boolean> {
   const values = await formDialog({
     title: `Where is ${repo?.name ?? id}?`,
     message:
-      "Its main checkout on this Mac (any folder in it). Worktrees go in a folder beside it unless you choose one.",
+      "Its main checkout on this Mac (any folder in it). Unless you choose a folder, worktrees go in “<checkout>-worktrees” beside it (dev/api → dev/api-worktrees).",
     fields: [
-      { label: "Checkout", value: repo?.location?.path ?? "~/" },
+      { label: "Checkout", value: repo?.location?.path ?? "~/", type: "folder" },
       {
         label: "Worktrees folder",
         value: repo?.location?.worktrees ?? "",
+        type: "folder",
         placeholder: "<checkout>-worktrees",
       },
     ],
@@ -240,6 +241,446 @@ export async function restoreTicket(path: string): Promise<void> {
       return;
     }
   }
+}
+
+/**
+ * The repo a folder on this Mac is in (its main checkout or its worktrees
+ * folder, the innermost if they nest), by name. `null` outside every
+ * located repo.
+ */
+export function repoOfFolder(folder: string | undefined): string | null {
+  if (!folder) return null;
+  const inside = (root: string) =>
+    folder === root || folder.startsWith(root.endsWith("/") ? root : `${root}/`);
+  let best: { id: string; length: number } | null = null;
+  for (const r of useTickets.getState().repos) {
+    for (const root of [r.location?.path, r.location?.worktrees]) {
+      if (root && inside(root) && (!best || root.length > best.length))
+        best = { id: r.id, length: root.length };
+    }
+  }
+  return best ? repoName(best.id) : null;
+}
+
+/** A repo's name, as `repos.yml` gives it. */
+export function repoName(id: string): string {
+  return useTickets.getState().repos.find((r) => r.id === id)?.name ?? id;
+}
+
+/**
+ * Gives a ticket a worktree in another repo (asking which, and where it's
+ * checked out if this Mac doesn't know), then runs its setup in a new
+ * terminal there, in the ticket's workspace.
+ */
+export async function addTicketRepo(path: string, repo?: string): Promise<void> {
+  await useTickets.getState().load();
+  const ticket = ticketAt(path);
+  if (!ticket) return;
+  if (!repo) {
+    const have = new Set(ticket.worktree ? ticket.repos.map((r) => r.id) : []);
+    const choices = useTickets.getState().repos.filter((r) => !have.has(r.id));
+    useUi.getState().openPalette({
+      placeholder: `Add a repo to “${ticket.title}”…`,
+      items: [
+        ...choices.map((r) => ({
+          id: r.id,
+          label: r.name,
+          detail: r.location ? (r.description ?? undefined) : "not located on this Mac yet",
+          run: () => addTicketRepo(path, r.id),
+        })),
+        {
+          id: "new-repo",
+          label: "Another repo, from its checkout…",
+          detail: "adds it to the vault’s repos",
+          run: async () => {
+            const id = await addRepo();
+            if (id) await addTicketRepo(path, id);
+          },
+        },
+      ],
+    });
+    return;
+  }
+  for (;;) {
+    try {
+      const created = await api.addTicketRepo(path, repo);
+      void useTickets.getState().load();
+      const added = created.ticket.repos.find((r) => r.id === repo)?.worktreePath;
+      const workspace = created.workspace;
+      if (workspace) {
+        await useWorkspaces.getState().refresh();
+        await useWorkspaces.getState().ready(workspace.id);
+        const ws = useWorkspace.getState();
+        ws.showWorkspace(workspace.id, ws.view === "note" ? "split" : ws.view);
+        await ws.openTerminal(added ?? undefined, { run: setupLine(created.setup) });
+      }
+      useUi.getState().notify(`Added ${repoName(repo)} to “${created.ticket.title}”`);
+      return;
+    } catch (err) {
+      const missing = message(err).match(NOT_LOCATED)?.[1];
+      if (missing && (await locateRepo(missing))) continue;
+      if (!missing) useUi.getState().notify(message(err));
+      return;
+    }
+  }
+}
+
+/**
+ * Adds a repo the vault doesn't know yet (`repos.yml`), from its checkout on
+ * this Mac. Resolves its id once added.
+ */
+export async function addRepo(): Promise<string | null> {
+  const values = await formDialog({
+    title: "Add a repo",
+    message:
+      "Choose its checkout on this Mac. It's added to the vault's repos (.groundwork/repos.yml), where setup and components can be added later.",
+    fields: [
+      { label: "Checkout", value: "~/", type: "folder" },
+      { label: "Name", placeholder: "its folder’s name" },
+    ],
+    confirmLabel: "Add repo",
+  });
+  const [checkout, name] = values ?? [];
+  if (!checkout?.trim() || checkout.trim() === "~/") return null;
+  try {
+    const repo = await api.addRepo(checkout.trim(), name?.trim() || undefined);
+    await useTickets.getState().load();
+    useUi.getState().notify(`Added ${repo.name}`);
+    return repo.id;
+  } catch (err) {
+    useUi.getState().notify(message(err));
+    return null;
+  }
+}
+
+/**
+ * Takes a repo off a ticket, after asking: its worktree goes and the
+ * terminals working in it end; the branch stays, so adding the repo again
+ * brings its commits back. Uncommitted changes need a second, explicit yes.
+ */
+export async function removeTicketRepo(path: string, repo: string): Promise<void> {
+  const ticket = ticketAt(path);
+  const name = repoName(repo);
+  const worktree = ticket?.repos.find((r) => r.id === repo)?.worktreePath;
+  const active = ticket?.status !== "closed";
+  const ok = await confirmDialog({
+    title: `Remove ${name} from “${ticket?.title ?? path}”?`,
+    message:
+      active && worktree
+        ? `Its worktree is removed and terminals working in it end. The branch ${ticket?.branch ?? ""} stays, so adding ${name} again brings its commits back.`
+        : `${name} is taken off the ticket.`,
+    confirmLabel: "Remove repo",
+  });
+  if (!ok) return;
+  let force = false;
+  for (;;) {
+    try {
+      const removed = await api.removeTicketRepo(path, repo, force);
+      await Promise.all([useTickets.getState().load(), useWorkspaces.getState().refresh()]);
+      useUi.getState().notify(`Removed ${name} from “${removed.ticket.title}”`);
+      return;
+    } catch (err) {
+      const text = message(err);
+      if (!force && /not removed: it has uncommitted changes/.test(text)) {
+        force = await confirmDialog({
+          title: `${name} has uncommitted changes`,
+          message: "They're lost if its worktree is removed. Remove it anyway?",
+          confirmLabel: "Remove anyway",
+          danger: true,
+        });
+        if (force) continue;
+        return;
+      }
+      useUi.getState().notify(text);
+      return;
+    }
+  }
+}
+
+/**
+ * Moves ticket notes kept in project folders into the vault's tickets
+ * folder, after asking. Links to them are rewritten, and each keeps the
+ * projects its old folder gave it.
+ */
+export async function gatherTickets(): Promise<void> {
+  const ok = await confirmDialog({
+    title: "Move tickets into the tickets folder?",
+    message:
+      "Ticket notes in other folders (such as a project’s Work folder) move into the vault’s tickets folder, with their subnotes. Links to them are updated, and a ticket that belonged to a project only by its folder gets that project in its properties. Folders left empty go to the Trash.",
+    confirmLabel: "Move tickets",
+  });
+  if (!ok) return;
+  try {
+    const moved = await api.gatherTickets();
+    await useTickets.getState().load();
+    useUi
+      .getState()
+      .notify(
+        moved.length === 0
+          ? "Every ticket is already in the tickets folder"
+          : moved.length === 1
+            ? `Moved “${moved[0]!.from}” to ${moved[0]!.to}`
+            : `Moved ${moved.length} tickets into the tickets folder`,
+      );
+  } catch (err) {
+    useUi.getState().notify(message(err));
+  }
+}
+
+/** Makes one of a ticket's repos its default, where its workspace's terminals start. */
+export async function setDefaultTicketRepo(path: string, repo: string): Promise<void> {
+  try {
+    await api.setDefaultTicketRepo(path, repo);
+    await Promise.all([useTickets.getState().load(), useWorkspaces.getState().refresh()]);
+  } catch (err) {
+    useUi.getState().notify(message(err));
+  }
+}
+
+/** Somewhere a new terminal in a workspace can start. */
+export interface TerminalPlace {
+  label: string;
+  detail?: string;
+  cwd: string;
+  /** The ticket's default repo. */
+  isDefault?: boolean;
+  /** One of the ticket's worktrees (not a component in one). */
+  worktree?: boolean;
+}
+
+const shellQuote = (s: string) =>
+  /^[\w/.+=:,@%-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`;
+
+/**
+ * `--add-dir` options for Claude Code started in `cwd`: the other worktrees
+ * of the ticket it's in (found by `cwd`, else by `workspace`'s note), so it
+ * can read the other repos' code. Empty outside a ticket in several repos.
+ */
+export function addDirsFor(cwd: string | undefined, workspace?: string | null): string {
+  const tickets = useTickets.getState().tickets;
+  const inside = (wt: string) => !!cwd && (cwd === wt || cwd.startsWith(`${wt}/`));
+  let ticket = tickets.find((t) => t.repos.some((r) => r.worktreePath && inside(r.worktreePath)));
+  if (!ticket && workspace) {
+    const note = useWorkspaces.getState().list.find((w) => w.id === workspace)?.note;
+    ticket = note ? ticketAt(note) : undefined;
+  }
+  if (!ticket?.worktree || ticket.status === "closed") return "";
+  return ticket.repos
+    .map((r) => r.worktreePath)
+    .filter((wt): wt is string => !!wt && !inside(wt))
+    .map((wt) => ` --add-dir ${shellQuote(wt)}`)
+    .join("");
+}
+
+/**
+ * Where a workspace's new terminals can start besides its folder: for a
+ * ticket's, each of its worktrees (the default first), then each component
+ * it touches. Also the ticket, for menus that add or change its repos.
+ */
+export async function terminalPlaces(
+  area: string,
+): Promise<{ ticket?: Ticket; places: TerminalPlace[] }> {
+  const note = useWorkspaces.getState().list.find((w) => w.id === area)?.note;
+  if (!note) return { places: [] };
+  const [context] = await Promise.all([
+    api.context({ note }).catch(() => null),
+    useTickets.getState().tickets.length ? null : useTickets.getState().load(),
+  ]);
+  const ticket = context?.ticket ?? ticketAt(note);
+  const places: TerminalPlace[] = [];
+  const repos = ticket?.worktree ? ticket.repos : [];
+  repos.forEach((r, i) => {
+    if (r.worktreePath)
+      places.push({
+        label: repoName(r.id),
+        detail: r.worktreePath,
+        cwd: r.worktreePath,
+        isDefault: i === 0 && repos.length > 1,
+        worktree: true,
+      });
+  });
+  for (const c of context?.components ?? []) {
+    if (!c.absPath) continue;
+    const name = c.id.slice(c.id.indexOf(":") + 1);
+    places.push({
+      label: repos.length > 1 ? `${name} (${repoName(c.id.slice(0, c.id.indexOf(":")))})` : name,
+      detail: c.path,
+      cwd: c.absPath,
+    });
+  }
+  return { ticket: ticket ?? undefined, places };
+}
+
+/**
+ * A workspace's new-terminal menu: its folder, then its ticket's worktrees
+ * (the default starred) and components, then the vault root unless that's
+ * already its folder, then the ticket's repo choices.
+ * `open` starts the terminal (in the workspace's folder without a `cwd`).
+ */
+export async function newTerminalItems(
+  area: string,
+  open: (cwd?: string) => void,
+): Promise<MenuEntry[]> {
+  const { ticket, places } = await terminalPlaces(area);
+  const items: MenuEntry[] = [{ label: "New terminal", action: () => open() }];
+  for (const p of places)
+    items.push({
+      label: `New terminal in ${p.label}`,
+      starred: p.isDefault,
+      action: () => open(p.cwd),
+    });
+  // For working on the vault itself, without adding it as a repo.
+  const root = useVault.getState().vault?.path;
+  const folder = useWorkspaces.getState().list.find((w) => w.id === area)?.cwd;
+  if (root && (!folder || bare(folder) !== bare(root)))
+    items.push({ label: "New terminal in vault root", action: () => open(root) });
+  items.push("separator");
+  // Claude with the whole vault, knowing what the workspace is for.
+  if (root)
+    items.push({
+      label: "New Claude at vault root, with context",
+      action: () => void claudeAtRoot(area, contextDirs(area, places)),
+    });
+  // Claude in a worktree, able to read the ticket's other repos too.
+  const worktrees = places.filter((p) => p.worktree);
+  if (worktrees.length > 1)
+    for (const p of worktrees)
+      items.push({
+        label: `New Claude in ${p.label}`,
+        starred: p.isDefault,
+        action: () => void claudeIn(area, p.cwd),
+      });
+  const repos = ticket ? repoMenuItems(ticket) : [];
+  if (repos.length) items.push("separator", ...repos);
+  return items;
+}
+
+const bare = (path: string) => path.replace(/\/+$/, "");
+
+/**
+ * What Claude at the vault root is given with `--add-dir` for a workspace:
+ * its ticket's worktrees, or else its folder when that's outside the vault.
+ */
+function contextDirs(area: string, places: TerminalPlace[]): string[] {
+  const worktrees = places.filter((p) => p.worktree).map((p) => p.cwd);
+  if (worktrees.length) return worktrees;
+  const root = useVault.getState().vault?.path;
+  const folder = useWorkspaces.getState().list.find((w) => w.id === area)?.cwd;
+  if (!root || !folder) return [];
+  const inVault = bare(folder) === bare(root) || folder.startsWith(`${bare(root)}/`);
+  return inVault ? [] : [folder];
+}
+
+/**
+ * Claude Code at the vault root, able to work in `dirs` too and to read
+ * their `CLAUDE.md`s. Its SessionStart hook adds the workspace's ticket (or
+ * folder) to its context, from the terminal's workspace.
+ */
+export function claudeAtRootCommand(dirs: string[]): string {
+  if (!dirs.length) return "claude";
+  const add = dirs.map((d) => ` --add-dir ${shellQuote(d)}`).join("");
+  return `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude${add}`;
+}
+
+async function claudeAtRoot(area: string, dirs: string[]) {
+  const root = useVault.getState().vault?.path;
+  if (!root) return;
+  const ws = useWorkspace.getState();
+  if (ws.docks[area]) ws.showWorkspace(area, ws.view === "note" ? "split" : ws.view);
+  await ws.openTerminal(root, { run: claudeAtRootCommand(dirs), workspace: area });
+}
+
+/** A choice on a workspace's new-tab page (⌘T among its terminals). */
+export interface LaunchItem {
+  label: string;
+  /** Where, or what it sees. */
+  detail?: string;
+  kind: "claude" | "terminal";
+  /** The ticket's default repo. */
+  starred?: boolean;
+  launch(): Promise<void>;
+}
+
+/**
+ * The new-tab page's choices for a workspace, Claude at the vault root
+ * first (the default): then a terminal at the vault root, in each of the
+ * ticket's worktrees and components, and in the workspace's folder; then
+ * Claude in each worktree.
+ */
+export async function launchItems(area: string): Promise<LaunchItem[]> {
+  const { places } = await terminalPlaces(area);
+  const root = useVault.getState().vault?.path;
+  const folder = useWorkspaces.getState().list.find((w) => w.id === area)?.cwd;
+  const open = (cwd: string, run?: string) => () =>
+    useWorkspace.getState().openTerminal(cwd, { run, workspace: area });
+  const items: LaunchItem[] = [];
+  if (root) {
+    const dirs = contextDirs(area, places);
+    items.push({
+      label: "Claude at the vault root, with context",
+      detail: dirs.length ? `also sees ${dirs.join(", ")}` : root,
+      kind: "claude",
+      launch: () => claudeAtRoot(area, dirs),
+    });
+    items.push({
+      label: "Terminal at the vault root",
+      detail: root,
+      kind: "terminal",
+      launch: open(root),
+    });
+  }
+  for (const p of places)
+    items.push({
+      label: `Terminal in ${p.label}`,
+      detail: p.detail ?? p.cwd,
+      kind: "terminal",
+      starred: p.isDefault,
+      launch: open(p.cwd),
+    });
+  const listed = [root, ...places.map((p) => p.cwd)].filter(Boolean).map((p) => bare(p!));
+  if (folder && !listed.includes(bare(folder)))
+    items.push({
+      label: `Terminal in ${bare(folder).slice(bare(folder).lastIndexOf("/") + 1)}`,
+      detail: folder,
+      kind: "terminal",
+      launch: open(folder),
+    });
+  for (const p of places.filter((p) => p.worktree))
+    items.push({
+      label: `Claude in ${p.label}`,
+      detail: p.cwd,
+      kind: "claude",
+      starred: p.isDefault,
+      launch: () => claudeIn(area, p.cwd),
+    });
+  return items;
+}
+
+/** Starts Claude Code in a new tab of a workspace, seeing the ticket's other worktrees. */
+async function claudeIn(area: string, cwd: string) {
+  const ws = useWorkspace.getState();
+  if (ws.docks[area]) ws.showWorkspace(area, ws.view === "note" ? "split" : ws.view);
+  await ws.openTerminal(cwd, { run: `claude${addDirsFor(cwd, area)}` });
+}
+
+/** A menu's items for a ticket's repos: make one the default, or add another. */
+export function repoMenuItems(ticket: Ticket) {
+  const items: { label: string; action: () => void }[] = [];
+  const repos = ticket.worktree ? ticket.repos : [];
+  if (repos.length > 1)
+    for (const r of repos.slice(1))
+      items.push({
+        label: `Make ${repoName(r.id)} the default`,
+        action: () => void setDefaultTicketRepo(ticket.path, r.id),
+      });
+  if (ticket.status !== "closed")
+    items.push({ label: "Add repo…", action: () => void addTicketRepo(ticket.path) });
+  for (const r of repos)
+    items.push({
+      label: `Remove ${repoName(r.id)}…`,
+      action: () => void removeTicketRepo(ticket.path, r.id),
+    });
+  return items;
 }
 
 /** The note's workspace, made (and linked from the note) if it has none. */

@@ -37,12 +37,26 @@ pub struct Ticket {
     pub projects: Vec<String>,
     /// What it touches: `repo` or `repo:component`.
     pub code: Vec<String>,
+    /// The default repo: the first of `repos`.
     pub repo: Option<String>,
-    /// The worktree's folder name.
+    /// The worktrees' folder name, the same in every repo.
     pub worktree: Option<String>,
+    /// The same in every repo.
     pub branch: Option<String>,
     pub workspace: Option<String>,
-    /// Where the worktree is (or would be) on this machine, once the repo is located.
+    /// Where the default repo's worktree is (or would be) on this machine, once the repo is located.
+    pub worktree_path: Option<String>,
+    /// Every repo it has a worktree in, the default first.
+    pub repos: Vec<TicketRepo>,
+}
+
+/// One of a ticket's repos.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TicketRepo {
+    pub id: String,
+    /// Where its worktree is (or would be) on this machine, once the repo is located.
     pub worktree_path: Option<String>,
 }
 
@@ -87,9 +101,13 @@ pub struct NewTicket {
     pub projects: Vec<String>,
     #[ts(optional, as = "Option<Vec<String>>")]
     pub code: Vec<String>,
-    /// From `code` or the projects' code when they use one repo.
+    /// The default repo. Without it or `repos`, every repo in `code`, else
+    /// the projects' repo when they use one.
     #[ts(optional)]
     pub repo: Option<String>,
+    /// More repos, each getting a worktree on the same branch.
+    #[ts(optional, as = "Option<Vec<String>>")]
+    pub repos: Vec<String>,
     /// An existing note to turn into the ticket ("Add worktree").
     #[ts(optional)]
     pub note: Option<String>,
@@ -278,8 +296,31 @@ pub struct ProjectInfo {
     pub name: String,
     pub folder: String,
     pub overview: Option<String>,
-    pub work_folder: String,
     pub code: Vec<String>,
+}
+
+/// What `remove_ticket_repo` did.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct RemovedTicketRepo {
+    pub ticket: Ticket,
+    /// The workspace, when it moved to another worktree.
+    pub workspace: Option<Workspace>,
+    /// The worktree taken away, whose terminals should end.
+    pub worktree: Option<String>,
+    #[serde(skip)]
+    #[ts(skip)]
+    pub changes: Vec<FileChange>,
+}
+
+/// A note moved by `gather_tickets`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MovedNote {
+    pub from: String,
+    pub to: String,
 }
 
 /// How many recently changed project notes `context` lists.
@@ -287,6 +328,18 @@ const RECENT_NOTES: usize = 5;
 
 /// `Session::note_projects`, with the index already in hand.
 pub(crate) fn note_projects_in(index: &Index, config: &Config, path: &str) -> Vec<String> {
+    let mut ids = linked_projects_in(index, config, path);
+    if let Some(p) = config.project_of_folder(path)
+        && !ids.contains(&p.id)
+    {
+        ids.push(p.id.clone());
+    }
+    ids
+}
+
+/// The projects a note's `projects:` frontmatter links to, leaving out the
+/// folder it's in.
+fn linked_projects_in(index: &Index, config: &Config, path: &str) -> Vec<String> {
     let fm = index.note(path).and_then(|n| n.frontmatter.as_ref());
     let mut ids: Vec<String> = Vec::new();
     for item in fm_list(fm, "projects") {
@@ -310,11 +363,6 @@ pub(crate) fn note_projects_in(index: &Index, config: &Config, path: &str) -> Ve
             ids.push(p.id.clone());
         }
     }
-    if let Some(p) = config.project_of_folder(path)
-        && !ids.contains(&p.id)
-    {
-        ids.push(p.id.clone());
-    }
     ids
 }
 
@@ -337,6 +385,21 @@ pub(crate) fn fm_list(fm: Option<&Value>, key: &str) -> Vec<String> {
             .collect(),
         _ => Vec::new(),
     }
+}
+
+/// A ticket's repos, the default first: `repos:`, else the older `repo:`.
+fn ticket_repo_ids(fm: Option<&Value>) -> Vec<String> {
+    let mut ids = fm_list(fm, "repos");
+    if ids.is_empty() {
+        ids.extend(fm_str(fm, "repo"));
+    }
+    let mut seen = Vec::new();
+    ids.retain(|id| {
+        let new = !seen.contains(id);
+        seen.push(id.clone());
+        new
+    });
+    ids
 }
 
 pub(crate) fn file_stem(path: &str) -> &str {
@@ -440,6 +503,86 @@ impl Session {
             .collect())
     }
 
+    /// Adds a repo to `.groundwork/repos.yml` from its checkout on this Mac
+    /// (any folder in it), named after its folder unless `name` is given,
+    /// with the base branch git reports; then records where it is. The rest
+    /// (setup, components, actions) can be added to the file later.
+    pub fn add_repo(
+        &self,
+        path: &str,
+        name: Option<&str>,
+        worktrees: Option<&str>,
+    ) -> Result<RepoInfo> {
+        let dir = crate::workspaces::expand_home(path.trim());
+        if !dir.is_absolute() || !git::is_repo(&dir) {
+            return Err(CoreError::InvalidPath(format!(
+                "no git repo at {}",
+                dir.display()
+            )));
+        }
+        let checkout = git::toplevel(&dir).unwrap_or(dir);
+        let folder = checkout
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let name = name
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .unwrap_or(&folder)
+            .to_string();
+        let id = slugify(&name);
+        if id.is_empty() {
+            return Err(CoreError::InvalidPath("give the repo a name".into()));
+        }
+        let config = self.config()?;
+        let real = std::fs::canonicalize(&checkout).unwrap_or(checkout.clone());
+        if let Some((known, _)) = self
+            .repos()
+            .all()
+            .into_iter()
+            .find(|(r, l)| config.repos.contains_key(r) && Path::new(&l.path) == real)
+        {
+            return Err(CoreError::Conflict(format!(
+                "{} is already the {known} repo",
+                real.display()
+            )));
+        }
+        if config.repos.contains_key(&id) {
+            return Err(CoreError::Conflict(format!(
+                "there's already a repo called {id} in .groundwork/repos.yml"
+            )));
+        }
+        let base = git::default_branch(&checkout).unwrap_or_else(|| "main".into());
+
+        let file = self.vault().root().join(".groundwork/repos.yml");
+        let mut text = std::fs::read_to_string(&file).unwrap_or_default();
+        if text.is_empty() {
+            text.push_str(
+                "# Code repos used by this vault's projects. Where each is checked out\n\
+                 # is kept on each machine, not here.\n",
+            );
+        } else if !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push_str(&format!(
+            "{id}:\n  name: {}\n  git:\n    base_branch: {}\n",
+            frontmatter::scalar(&name, false),
+            frontmatter::scalar(&base, false),
+        ));
+        if let Some(dir) = file.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        crate::session::atomic_write(&file, &text)?;
+        self.forget_config();
+        // Its location goes too, if it can't be recorded.
+        self.repos()
+            .locate(&id, &checkout.display().to_string(), worktrees)?;
+        self.repo_list()?
+            .into_iter()
+            .find(|r| r.id == id)
+            .ok_or(CoreError::NotFound(id))
+    }
+
     pub fn project_list(&self) -> Result<Vec<ProjectInfo>> {
         Ok(self
             .config()?
@@ -450,7 +593,6 @@ impl Session {
                 name: p.name,
                 folder: p.folder,
                 overview: p.overview,
-                work_folder: p.work_folder,
                 code: p.code,
             })
             .collect())
@@ -529,15 +671,20 @@ impl Session {
                 let key = key.as_deref()?;
                 Some(config.tracker_for(key)?.url_for(key))
             });
-        let repo = fm_str(fm, "repo");
         let worktree = fm_str(fm, "worktree");
-        let worktree_path = match (&repo, &worktree) {
-            (Some(r), Some(w)) => self
-                .repos()
-                .get(r)
-                .map(|l| l.worktree(w).display().to_string()),
-            _ => None,
-        };
+        let repos: Vec<TicketRepo> = ticket_repo_ids(fm)
+            .into_iter()
+            .map(|id| TicketRepo {
+                worktree_path: worktree.as_ref().and_then(|w| {
+                    self.repos()
+                        .get(&id)
+                        .map(|l| l.worktree(w).display().to_string())
+                }),
+                id,
+            })
+            .collect();
+        let repo = repos.first().map(|r| r.id.clone());
+        let worktree_path = repos.first().and_then(|r| r.worktree_path.clone());
         Some(Ticket {
             path: path.to_string(),
             title: file_stem(path).to_string(),
@@ -552,6 +699,7 @@ impl Session {
             branch: fm_str(fm, "branch"),
             workspace: fm_str(fm, "workspace"),
             worktree_path,
+            repos,
         })
     }
 
@@ -598,7 +746,7 @@ impl Session {
                 filter
                     .repo
                     .as_ref()
-                    .is_none_or(|r| t.repo.as_ref() == Some(r))
+                    .is_none_or(|r| t.repos.iter().any(|tr| &tr.id == r))
             })
             .filter(|t| project.as_ref().is_none_or(|p| t.projects.contains(p)))
             .filter(|t| filter.component.as_ref().is_none_or(|c| t.code.contains(c)))
@@ -609,19 +757,55 @@ impl Session {
         Ok(tickets)
     }
 
-    /// The ticket's worktree's git state (all defaults when there's none).
+    /// The git state of the ticket's worktrees, added up: changes in any,
+    /// commits unpushed and behind in all, on the remote only if all are
+    /// (all defaults when there's none on disk).
     pub fn ticket_git(&self, path: &str) -> Result<GitState> {
         let config = self.config()?;
         let ticket = self.ticket(path)?;
-        let (Some(repo), Some(wt)) = (&ticket.repo, &ticket.worktree_path) else {
-            return Ok(GitState::default());
-        };
-        let base = config.repo(repo).map(|r| r.git.base_branch.clone())?;
-        let mut state = git::state(Path::new(wt), &base);
+        let mut total: Option<GitState> = None;
+        for r in &ticket.repos {
+            let Some(wt) = &r.worktree_path else { continue };
+            let base = config.repo(&r.id).map(|r| r.git.base_branch.clone())?;
+            let state = git::state(Path::new(wt), &base);
+            if !state.exists {
+                continue;
+            }
+            total = Some(match total {
+                None => state,
+                Some(mut t) => {
+                    t.dirty |= state.dirty;
+                    t.unpushed += state.unpushed;
+                    t.behind += state.behind;
+                    t.on_remote &= state.on_remote;
+                    t
+                }
+            });
+        }
+        let mut state = total.unwrap_or_default();
         if state.exists && state.branch.is_none() {
             state.branch = ticket.branch;
         }
         Ok(state)
+    }
+
+    /// Each of the ticket's worktrees on disk, with what closing it would lose.
+    fn worktree_warnings(&self, config: &Config, ticket: &Ticket) -> Result<Vec<String>> {
+        let mut problems = Vec::new();
+        for r in &ticket.repos {
+            let Some(wt) = &r.worktree_path else { continue };
+            let repo = config.repo(&r.id)?;
+            let warnings = git::state(Path::new(wt), &repo.git.base_branch).warnings();
+            if warnings.is_empty() {
+                continue;
+            }
+            problems.push(if ticket.repos.len() > 1 {
+                format!("in {}, {}", repo.id, warnings.join(", "))
+            } else {
+                warnings.join(", ")
+            });
+        }
+        Ok(problems)
     }
 
     /// Creates a ticket: its worktree (unless adopting one or there's no
@@ -668,31 +852,49 @@ impl Session {
             config.component(code)?;
         }
         let repo_of = |code: &String| code.split(':').next().unwrap_or(code).to_string();
-        let repo_id = match given(&new.repo) {
-            Some(r) => Some(config.repo(r)?.id.clone()),
-            None => {
-                let mut repos: Vec<String> = new.code.iter().map(repo_of).collect();
-                if repos.is_empty() {
-                    repos = projects
-                        .iter()
-                        .flat_map(|p| p.code.iter().map(repo_of))
-                        .collect();
-                }
-                repos.sort();
-                repos.dedup();
-                match repos.as_slice() {
-                    [one] => Some(one.clone()),
-                    [] => None,
-                    _ => {
-                        return Err(CoreError::InvalidPath(format!(
-                            "which repo? the ticket could use {}",
-                            repos.join(" or ")
-                        )));
-                    }
+        let mut repo_ids: Vec<String> = Vec::new();
+        for r in given(&new.repo)
+            .into_iter()
+            .chain(new.repos.iter().map(String::as_str))
+        {
+            let id = config.repo(r.trim())?.id.clone();
+            if !repo_ids.contains(&id) {
+                repo_ids.push(id);
+            }
+        }
+        if repo_ids.is_empty() {
+            // Every repo the code touches, in the order given.
+            for id in new.code.iter().map(repo_of) {
+                if !repo_ids.contains(&id) {
+                    repo_ids.push(id);
                 }
             }
-        };
-        let repo: Option<&Repo> = repo_id.as_deref().map(|r| config.repo(r)).transpose()?;
+        }
+        if repo_ids.is_empty() {
+            // Projects using several repos don't say which this one touches.
+            let mut repos: Vec<String> = projects
+                .iter()
+                .flat_map(|p| p.code.iter().map(repo_of))
+                .collect();
+            repos.sort();
+            repos.dedup();
+            match repos.as_slice() {
+                [one] => repo_ids.push(one.clone()),
+                [] => {}
+                _ => {
+                    return Err(CoreError::InvalidPath(format!(
+                        "which repo? the ticket could use {}",
+                        repos.join(" or ")
+                    )));
+                }
+            }
+        }
+        let repos: Vec<&Repo> = repo_ids
+            .iter()
+            .map(|r| config.repo(r))
+            .collect::<Result<_>>()?;
+        let repo: Option<&Repo> = repos.first().copied();
+        let repo_id = repo.map(|r| r.id.clone());
         if projects.is_empty()
             && let Some(home) = repo.and_then(|r| r.home_project.as_deref())
         {
@@ -742,15 +944,21 @@ impl Session {
             ));
         }
 
-        // The worktree.
+        // The worktrees: one per repo, with the default repo's names.
         let mut setup = Vec::new();
-        let mut worktree: Option<(String, PathBuf, String)> = None;
+        // (folder name, branch, each repo's worktree)
+        let mut worktree: Option<(String, String, Vec<PathBuf>)> = None;
         if let Some(repo) = repo.filter(|_| !new.no_worktree) {
-            let location = self.repos().require(&repo.id)?;
             let branch_name = name_format(&repo.git.branch_format, key.as_deref(), &slug, &title);
             let wt_name = name_format(&repo.git.worktree_name, key.as_deref(), &slug, &title);
             match &adopt {
                 Some(path) => {
+                    if repos.len() > 1 {
+                        return Err(CoreError::InvalidPath(
+                            "adopt a worktree with one repo; add the others afterwards".into(),
+                        ));
+                    }
+                    let location = self.repos().require(&repo.id)?;
                     let path = std::fs::canonicalize(path).map_err(|_| {
                         CoreError::NotFound(format!("no worktree at {}", path.display()))
                     })?;
@@ -778,13 +986,14 @@ impl Session {
                             location.worktrees
                         )));
                     }
-                    worktree = Some((name, path, found.branch.unwrap_or(branch_name)));
+                    let branch = found.branch.unwrap_or(branch_name);
+                    worktree = Some((name, branch, vec![path]));
                 }
                 None => {
-                    let path = location.worktree(&wt_name);
-                    git::add_worktree(location.path(), &path, &branch_name, &repo.git.base_branch)?;
-                    setup = setup_steps(&config, repo, &new.code, &location.path, &path);
-                    worktree = Some((wt_name, path, branch_name));
+                    let (paths, steps) =
+                        self.add_worktrees(&config, &repos, &new.code, &wt_name, &branch_name)?;
+                    setup = steps;
+                    worktree = Some((wt_name, branch_name, paths));
                 }
             }
         }
@@ -792,58 +1001,57 @@ impl Session {
         // The note.
         let mut changes = Vec::new();
         let mut cursor = None;
-        let path = match &existing_note {
-            Some(note) => {
-                self.vault().resolve(note)?;
-                note.clone()
-            }
-            None => {
-                let folder = home.map_or(config.work_folder.as_str(), |p| p.work_folder.as_str());
-                let name = match tracker {
-                    Some(t) if !t.note_name.is_empty() => {
-                        name_format(&t.note_name, key.as_deref(), &slug, &title)
-                    }
-                    _ => name_format("{{key}} {{title}}", key.as_deref(), &slug, &title),
-                };
-                let path = self.available_path(folder, &safe_name(&name), ".md");
-                let template = home
-                    .and_then(|p| p.tickets.template.clone())
-                    .or_else(|| tracker.and_then(|t| t.template.clone()))
-                    .unwrap_or_else(|| "Templates/Ticket.md".into());
-                let vars: HashMap<String, String> = [
-                    ("ticket.key", key.clone().unwrap_or_default()),
-                    ("ticket.title", title.clone()),
-                    ("ticket.slug", slug.clone()),
-                    ("jira.url", url.clone().unwrap_or_default()),
-                    (
-                        "project.name",
-                        home.map(|p| p.name.clone()).unwrap_or_default(),
-                    ),
-                    ("repo.id", repo_id.clone().unwrap_or_default()),
-                ]
-                .into_iter()
-                .map(|(k, v)| (k.to_string(), v))
-                .collect();
-                if self.vault().resolve(&template)?.is_file() {
-                    let (c, ch) = self.create_from_template_with(&template, &path, vars)?;
-                    cursor = c;
-                    changes.extend(ch);
-                } else {
-                    let text = format!("# {}\n\n", file_stem(&path));
-                    changes.extend(
-                        self.create_file(
+        let path =
+            match &existing_note {
+                Some(note) => {
+                    self.vault().resolve(note)?;
+                    note.clone()
+                }
+                None => {
+                    let folder = config.tickets_folder.as_str();
+                    let name = match tracker {
+                        Some(t) if !t.note_name.is_empty() => {
+                            name_format(&t.note_name, key.as_deref(), &slug, &title)
+                        }
+                        _ => name_format("{{key}} {{title}}", key.as_deref(), &slug, &title),
+                    };
+                    let path = self.available_path(folder, &safe_name(&name), ".md");
+                    let template = home
+                        .and_then(|p| p.tickets.template.clone())
+                        .or_else(|| tracker.and_then(|t| t.template.clone()))
+                        .unwrap_or_else(|| "Templates/Ticket.md".into());
+                    let vars: HashMap<String, String> = [
+                        ("ticket.key", key.clone().unwrap_or_default()),
+                        ("ticket.title", title.clone()),
+                        ("ticket.slug", slug.clone()),
+                        ("jira.url", url.clone().unwrap_or_default()),
+                        (
+                            "project.name",
+                            home.map(|p| p.name.clone()).unwrap_or_default(),
+                        ),
+                        ("repo.id", repo_id.clone().unwrap_or_default()),
+                    ]
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v))
+                    .collect();
+                    if self.vault().resolve(&template)?.is_file() {
+                        let (c, ch) = self.create_from_template_with(&template, &path, vars)?;
+                        cursor = c;
+                        changes.extend(ch);
+                    } else {
+                        let text = format!("# {}\n\n", file_stem(&path));
+                        changes.extend(self.create_file(
                             &path,
                             Some(&crate::session::with_created_property(&text)),
-                        )?,
-                    );
+                        )?);
+                    }
+                    path
                 }
-                path
-            }
-        };
+            };
 
         // The workspace.
-        let cwd = match &worktree {
-            Some((_, p, _)) => p.display().to_string(),
+        let cwd = match worktree.as_ref().and_then(|(_, _, paths)| paths.first()) {
+            Some(p) => p.display().to_string(),
             None => self.default_folder(home.map(|p| p.folder.as_str()).unwrap_or(&path)),
         };
         let workspace = self
@@ -868,10 +1076,13 @@ impl Session {
         if !new.code.is_empty() {
             props.push(("code", Some(Prop::List(new.code.clone()))));
         }
-        if let Some(r) = &repo_id {
-            props.push(("repo", Some(Prop::text(r))));
+        // `repos:` are where it has worktrees: none without one.
+        if let Some((_, _, paths)) = &worktree {
+            let ids = repo_ids[..paths.len()].to_vec();
+            props.push(("repos", Some(Prop::List(ids))));
         }
-        if let Some((name, _, branch)) = &worktree {
+        props.push(("repo", None));
+        if let Some((name, branch, _)) = &worktree {
             props.push(("worktree", Some(Prop::text(name))));
             props.push(("branch", Some(Prop::text(branch))));
         }
@@ -906,18 +1117,22 @@ impl Session {
                 ticket.title
             )));
         }
-        if let (Some(repo), Some(wt)) = (&ticket.repo, &ticket.worktree_path) {
-            let wt = Path::new(wt);
+        // Every worktree is checked before any goes.
+        if !force {
+            let problems = self.worktree_warnings(&config, &ticket)?;
+            if !problems.is_empty() {
+                return Err(CoreError::Conflict(format!(
+                    "Not closed: {}.",
+                    problems.join("; ")
+                )));
+            }
+        }
+        for r in &ticket.repos {
+            let Some(wt) = r.worktree_path.as_deref().map(Path::new) else {
+                continue;
+            };
             if wt.exists() {
-                let repo = config.repo(repo)?;
-                let location = self.repos().require(&repo.id)?;
-                let warnings = git::state(wt, &repo.git.base_branch).warnings();
-                if !warnings.is_empty() && !force {
-                    return Err(CoreError::Conflict(format!(
-                        "Not closed: {}.",
-                        warnings.join(", ")
-                    )));
-                }
+                let location = self.repos().require(&r.id)?;
                 git::remove_worktree(location.path(), wt, force)?;
             }
         }
@@ -950,15 +1165,30 @@ impl Session {
         }
         let mut setup = Vec::new();
         let cwd = match (&ticket.repo, &ticket.worktree, &ticket.branch) {
-            (Some(repo), Some(name), Some(branch)) => {
-                let repo = config.repo(repo)?;
-                let location = self.repos().require(&repo.id)?;
-                let wt = location.worktree(name);
-                if !wt.exists() {
-                    git::add_worktree(location.path(), &wt, branch, &repo.git.base_branch)?;
-                    setup = setup_steps(&config, repo, &ticket.code, &location.path, &wt);
-                }
-                wt.display().to_string()
+            (Some(_), Some(name), Some(branch)) => {
+                // Back in each repo whose worktree is gone.
+                let repos: Vec<&Repo> = ticket
+                    .repos
+                    .iter()
+                    .map(|r| config.repo(&r.id))
+                    .collect::<Result<_>>()?;
+                let missing: Vec<&Repo> = repos
+                    .iter()
+                    .copied()
+                    .filter(|r| {
+                        self.repos()
+                            .get(&r.id)
+                            .is_none_or(|l| !l.worktree(name).exists())
+                    })
+                    .collect();
+                let (_, steps) =
+                    self.add_worktrees(&config, &missing, &ticket.code, name, branch)?;
+                setup = steps;
+                self.repos()
+                    .require(&repos[0].id)?
+                    .worktree(name)
+                    .display()
+                    .to_string()
             }
             _ => {
                 let home = ticket.projects.first().and_then(|p| config.project(p));
@@ -985,6 +1215,318 @@ impl Session {
         })
     }
 
+    /// Adds a worktree named `name` on `branch` in each repo, with their
+    /// setup. Every repo must be located and free of the name first; if one
+    /// fails, those already made are taken away again.
+    fn add_worktrees(
+        &self,
+        config: &Config,
+        repos: &[&Repo],
+        code: &[String],
+        name: &str,
+        branch: &str,
+    ) -> Result<(Vec<PathBuf>, Vec<SetupStep>)> {
+        let mut planned = Vec::new();
+        for repo in repos {
+            let location = self.repos().require(&repo.id)?;
+            let path = location.worktree(name);
+            if path.exists() {
+                return Err(CoreError::AlreadyExists(path.display().to_string()));
+            }
+            planned.push((*repo, location, path));
+        }
+        let mut made: Vec<(PathBuf, PathBuf)> = Vec::new();
+        let mut setup = Vec::new();
+        for (repo, location, path) in &planned {
+            if let Err(e) = git::add_worktree(location.path(), path, branch, &repo.git.base_branch)
+            {
+                for (checkout, wt) in &made {
+                    let _ = git::remove_worktree(checkout, wt, true);
+                }
+                return Err(e);
+            }
+            made.push((location.path().to_path_buf(), path.clone()));
+            copy_ignored(repo, location.path(), path);
+            setup.extend(setup_steps(config, repo, code, &location.path, path));
+        }
+        Ok((planned.into_iter().map(|(_, _, p)| p).collect(), setup))
+    }
+
+    /// Gives an active ticket a worktree in another repo, on its branch (or,
+    /// for a ticket with none yet, a branch named by that repo's formats).
+    /// The first repo becomes the default, and the workspace starts there.
+    /// The setup is for the new worktree only.
+    pub fn add_ticket_repo(&self, path: &str, repo: &str) -> Result<CreatedTicket> {
+        let config = self.config()?;
+        let ticket = self.ticket(path)?;
+        if !ticket.is_active() {
+            return Err(CoreError::Conflict(format!(
+                "{} is closed; restore it first",
+                ticket.title
+            )));
+        }
+        let repo = config.repo(repo.trim())?;
+        // An older ticket can name a repo without having a worktree in it.
+        let has_worktrees = ticket.worktree.is_some() && ticket.branch.is_some();
+        if has_worktrees && ticket.repos.iter().any(|r| r.id == repo.id) {
+            return Err(CoreError::Conflict(format!(
+                "{} already has a worktree in {}",
+                ticket.title, repo.id
+            )));
+        }
+        let (name, branch, new_names) = match (&ticket.worktree, &ticket.branch) {
+            (Some(w), Some(b)) => (w.clone(), b.clone(), false),
+            _ => {
+                let stem = file_stem(path);
+                let title = ticket
+                    .key
+                    .as_deref()
+                    .map_or(stem, |k| stem.strip_prefix(k).map_or(stem, str::trim_start));
+                let slug = slugify(title);
+                let key = ticket.key.as_deref();
+                (
+                    name_format(&repo.git.worktree_name, key, &slug, title),
+                    name_format(&repo.git.branch_format, key, &slug, title),
+                    true,
+                )
+            }
+        };
+        let (paths, setup) = self.add_worktrees(&config, &[repo], &ticket.code, &name, &branch)?;
+
+        let mut ids: Vec<String> = Vec::new();
+        if has_worktrees {
+            ids.extend(ticket.repos.iter().map(|r| r.id.clone()));
+        }
+        ids.push(repo.id.clone());
+        let mut props: Vec<(&str, Option<Prop>)> =
+            vec![("repos", Some(Prop::List(ids))), ("repo", None)];
+        if new_names {
+            props.push(("worktree", Some(Prop::text(&name))));
+            props.push(("branch", Some(Prop::text(&branch))));
+        }
+        let mut changes = self.set_properties(path, &props)?;
+
+        // The first worktree is where the workspace starts.
+        let first = !has_worktrees || ticket.repos.is_empty();
+        let cwd = paths[0].display().to_string();
+        let workspace = match ticket
+            .workspace
+            .as_deref()
+            .and_then(|id| self.workspaces().list().into_iter().find(|w| w.id == id))
+        {
+            Some(ws) if first => Some(self.workspaces().update(
+                &ws.id,
+                &crate::workspaces::WorkspaceChange {
+                    cwd: Some(&cwd),
+                    ..Default::default()
+                },
+            )?),
+            Some(ws) => Some(ws),
+            None => {
+                let (ws, ch) = self.note_workspace(path)?;
+                changes.extend(ch);
+                Some(ws)
+            }
+        };
+        Ok(CreatedTicket {
+            ticket: self.ticket(path)?,
+            workspace,
+            setup,
+            cursor: None,
+            changes,
+        })
+    }
+
+    /// Takes a repo off a ticket: removes its worktree (refusing, unless
+    /// `force`, when it has uncommitted changes; the branch stays, so adding
+    /// the repo again brings the committed work back) and drops it from `repos:`. When it
+    /// was the default, the next repo becomes the default and the workspace
+    /// starts there, or in the note's folder when none is left. Returns the
+    /// workspace if it changed, and the removed worktree's path, whose
+    /// terminals the caller ends.
+    pub fn remove_ticket_repo(
+        &self,
+        path: &str,
+        repo: &str,
+        force: bool,
+    ) -> Result<RemovedTicketRepo> {
+        let config = self.config()?;
+        let ticket = self.ticket(path)?;
+        let Some(index) = ticket.repos.iter().position(|r| r.id == repo.trim()) else {
+            return Err(CoreError::NotFound(format!(
+                "{} has no worktree in {}",
+                ticket.title,
+                repo.trim()
+            )));
+        };
+        let removed = ticket.repos[index].clone();
+        let worktree = removed
+            .worktree_path
+            .as_deref()
+            .map(Path::new)
+            .filter(|wt| ticket.is_active() && wt.exists());
+        if let Some(wt) = worktree {
+            // Its commits stay on the branch, so only changes not yet
+            // committed would be lost.
+            // (`repos.yml` may no longer list the repo: whether it's dirty
+            // doesn't depend on the base branch.)
+            let base = config
+                .repo(&removed.id)
+                .map_or_else(|_| "main".to_string(), |r| r.git.base_branch.clone());
+            if !force && git::state(wt, &base).dirty {
+                return Err(CoreError::Conflict(format!(
+                    "{} not removed: it has uncommitted changes.",
+                    removed.id
+                )));
+            }
+            let location = self.repos().require(&removed.id)?;
+            git::remove_worktree(location.path(), wt, force)?;
+        }
+
+        let rest: Vec<String> = ticket
+            .repos
+            .iter()
+            .filter(|r| r.id != removed.id)
+            .map(|r| r.id.clone())
+            .collect();
+        let list = (!rest.is_empty()).then_some(Prop::List(rest));
+        let changes = self.set_properties(path, &[("repos", list), ("repo", None)])?;
+
+        let workspace = match &ticket.workspace {
+            Some(id) if index == 0 && ticket.is_active() => {
+                let cwd = ticket
+                    .repos
+                    .get(1)
+                    .and_then(|r| r.worktree_path.clone())
+                    .filter(|wt| Path::new(wt).is_dir())
+                    .unwrap_or_else(|| self.default_folder(path));
+                if self.workspaces().list().iter().any(|w| &w.id == id) {
+                    Some(self.workspaces().update(
+                        id,
+                        &crate::workspaces::WorkspaceChange {
+                            cwd: Some(&cwd),
+                            ..Default::default()
+                        },
+                    )?)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        Ok(RemovedTicketRepo {
+            ticket: self.ticket(path)?,
+            workspace,
+            worktree: worktree.map(|wt| wt.display().to_string()),
+            changes,
+        })
+    }
+
+    /// Moves every ticket note that isn't in the vault's tickets folder into
+    /// it, with its subnotes, rewriting links to them. A ticket that belonged
+    /// to a project only by sitting in its folder gets that project in
+    /// `projects:` first, so it stays in it. Folders the move leaves empty
+    /// go to the Trash.
+    pub fn gather_tickets(&self) -> Result<(Vec<MovedNote>, Vec<FileChange>)> {
+        let config = self.config()?;
+        let folder = config.tickets_folder.clone();
+        let prefix = format!("{folder}/");
+        let mut paths: Vec<String> = self
+            .tickets(&TicketFilter {
+                status: Some("all".into()),
+                ..Default::default()
+            })?
+            .into_iter()
+            .map(|t| t.path)
+            .filter(|p| !p.starts_with(&prefix))
+            .collect();
+        paths.sort();
+        let mut moved = Vec::new();
+        let mut changes = Vec::new();
+        let mut left: Vec<String> = Vec::new();
+        for path in paths {
+            if let Some(project) = config.project_of_folder(&path) {
+                let linked = linked_projects_in(&self.index(), &config, &path);
+                if !linked.contains(&project.id) {
+                    let mut values: Vec<String> = {
+                        let index = self.index();
+                        let fm = index.note(&path).and_then(|n| n.frontmatter.as_ref());
+                        fm_list(fm, "projects")
+                    };
+                    values.push(self.project_link(project, &path));
+                    changes.extend(
+                        self.set_properties(&path, &[("projects", Some(Prop::List(values)))])?,
+                    );
+                }
+            }
+            let to = self.available_path(&folder, file_stem(&path), ".md");
+            let (_, ch) = self.rename(&path, &to)?;
+            changes.extend(ch);
+            if let Some((parent, _)) = path.rsplit_once('/')
+                && !left.iter().any(|l| l == parent)
+            {
+                left.push(parent.to_string());
+            }
+            moved.push(MovedNote { from: path, to });
+        }
+        // The emptied folders, innermost first, stopping at a project's own.
+        left.sort_by_key(|f| std::cmp::Reverse(f.len()));
+        for mut dir in left {
+            loop {
+                let full = self.vault().root().join(&dir);
+                let empty = std::fs::read_dir(&full)
+                    .is_ok_and(|entries| entries.flatten().all(|e| e.file_name() == ".DS_Store"));
+                if !empty || config.projects.iter().any(|p| p.folder == dir) {
+                    break;
+                }
+                changes.extend(self.delete(&dir)?);
+                match dir.rsplit_once('/') {
+                    Some((parent, _)) => dir = parent.to_string(),
+                    None => break,
+                }
+            }
+        }
+        Ok((moved, changes))
+    }
+
+    /// Makes one of the ticket's repos its default: first in `repos:`, and
+    /// where its workspace starts when the worktree is there. Returns the
+    /// workspace if it changed.
+    pub fn set_ticket_default_repo(
+        &self,
+        path: &str,
+        repo: &str,
+    ) -> Result<(Ticket, Option<Workspace>, Vec<FileChange>)> {
+        let ticket = self.ticket(path)?;
+        let Some(chosen) = ticket.repos.iter().find(|r| r.id == repo.trim()) else {
+            return Err(CoreError::NotFound(format!(
+                "{} has no worktree in {repo}",
+                ticket.title
+            )));
+        };
+        let mut ids = vec![chosen.id.clone()];
+        ids.extend(
+            ticket
+                .repos
+                .iter()
+                .filter(|r| r.id != chosen.id)
+                .map(|r| r.id.clone()),
+        );
+        let changes =
+            self.set_properties(path, &[("repos", Some(Prop::List(ids))), ("repo", None)])?;
+        let workspace = match (&ticket.workspace, &chosen.worktree_path) {
+            (Some(id), Some(wt)) if Path::new(wt).is_dir() => Some(self.workspaces().update(
+                id,
+                &crate::workspaces::WorkspaceChange {
+                    cwd: Some(wt),
+                    ..Default::default()
+                },
+            )?),
+            _ => None,
+        };
+        Ok((self.ticket(path)?, workspace, changes))
+    }
+
     /// Worktrees of located repos that no ticket note refers to.
     pub fn stray_worktrees(&self) -> Result<Vec<StrayWorktree>> {
         let config = self.config()?;
@@ -994,7 +1536,8 @@ impl Session {
                 ..Default::default()
             })?
             .into_iter()
-            .filter_map(|t| t.worktree_path.map(PathBuf::from))
+            .flat_map(|t| t.repos)
+            .filter_map(|r| r.worktree_path.map(PathBuf::from))
             .collect();
         let mut strays = Vec::new();
         for (id, location) in self.repos().all() {
@@ -1096,6 +1639,33 @@ impl Session {
         Ok(Vec::new())
     }
 
+    /// What an agent in a terminal should know: its folder's context, or,
+    /// where that names no ticket or repo (the vault root, say), the
+    /// context of its workspace's note (a ticket, with every worktree's
+    /// path). The workspace comes back when its context was used.
+    pub fn terminal_context(
+        &self,
+        cwd: &Path,
+        workspace: Option<&str>,
+    ) -> Result<(Context, Option<Workspace>)> {
+        let here = self.context(None, Some(cwd))?;
+        if here.ticket.is_some() || here.repo.is_some() {
+            return Ok((here, None));
+        }
+        let Some(workspace) =
+            workspace.and_then(|id| self.workspaces().list().into_iter().find(|w| w.id == id))
+        else {
+            return Ok((here, None));
+        };
+        let context = match &workspace.note {
+            Some(note) if self.vault().resolve(note).is_ok_and(|p| p.is_file()) => {
+                self.context(Some(note), None)?
+            }
+            _ => here,
+        };
+        Ok((context, Some(workspace)))
+    }
+
     /// Context for a note, or for a folder (absolute) on this machine.
     pub fn context(&self, note: Option<&str>, cwd: Option<&Path>) -> Result<Context> {
         let config = self.config()?;
@@ -1155,7 +1725,8 @@ impl Session {
                 .collect(),
             None => Vec::new(),
         };
-        let repo_id = ticket.as_ref().and_then(|t| t.repo.clone()).or(repo_id);
+        // In one of a ticket's worktrees, that repo; for the note, its default.
+        let repo_id = repo_id.or_else(|| ticket.as_ref().and_then(|t| t.repo.clone()));
         Ok(self.finish_context(&config, note, ticket, projects, repo_id, in_checkout))
     }
 
@@ -1170,12 +1741,18 @@ impl Session {
     ) -> Context {
         let repo = repo_id.as_deref().and_then(|r| config.repos.get(r));
         let location = repo.and_then(|r| self.repos().get(&r.id));
-        // Where the code is: the ticket's worktree if it's on disk, else
-        // the folder we were asked about, else the main checkout.
-        let worktree = ticket
-            .as_ref()
-            .and_then(|t| t.worktree_path.clone())
-            .filter(|p| Path::new(p).is_dir());
+        // Each of the ticket's worktrees that's on disk, by repo.
+        let worktrees: HashMap<String, String> = ticket
+            .iter()
+            .flat_map(|t| &t.repos)
+            .filter_map(|r| {
+                let wt = r.worktree_path.clone()?;
+                Path::new(&wt).is_dir().then(|| (r.id.clone(), wt))
+            })
+            .collect();
+        // Where the code is: the ticket's worktree in this repo if it's on
+        // disk, else the folder we were asked about, else the main checkout.
+        let worktree = repo.and_then(|r| worktrees.get(&r.id).cloned());
         let code_root = worktree
             .clone()
             .map(PathBuf::from)
@@ -1205,13 +1782,12 @@ impl Session {
             let Ok((r, Some((name, c)))) = config.component(id) else {
                 continue;
             };
-            let abs = (Some(r.id.as_str()) == repo.map(|r| r.id.as_str()))
-                .then(|| {
-                    code_root
-                        .as_ref()
-                        .map(|root| root.join(&c.path).display().to_string())
-                })
-                .flatten();
+            let root = match worktrees.get(&r.id) {
+                Some(wt) => Some(PathBuf::from(wt)),
+                None if Some(r.id.as_str()) == repo.map(|r| r.id.as_str()) => code_root.clone(),
+                None => None,
+            };
+            let abs = root.map(|root| root.join(&c.path).display().to_string());
             components.push(ComponentContext {
                 id: format!("{}:{name}", r.id),
                 path: c.path.clone(),
@@ -1277,6 +1853,7 @@ impl Session {
         let actions = self.actions(
             config,
             ticket.as_ref(),
+            worktree.as_deref(),
             &projects,
             repo,
             &components,
@@ -1300,6 +1877,7 @@ impl Session {
         &self,
         config: &Config,
         ticket: Option<&Ticket>,
+        worktree: Option<&str>,
         projects: &[ProjectRef],
         repo: Option<&Repo>,
         components: &[ComponentContext],
@@ -1316,9 +1894,7 @@ impl Session {
         if let Some(c) = checkout {
             vars.insert("repo.path".into(), c.display().to_string());
         }
-        let worktree = ticket
-            .and_then(|t| t.worktree_path.clone())
-            .filter(|p| Path::new(p).is_dir());
+        let worktree = worktree.map(str::to_string);
         if let Some(w) = &worktree {
             vars.insert("worktree.path".into(), w.clone());
         }
@@ -1343,14 +1919,62 @@ impl Session {
             .unwrap_or_else(|| vault.clone());
 
         let mut actions: Vec<Action> = Vec::new();
+        // VS Code: the worktree we're in, and for a ticket in several repos,
+        // all of them in one window (each with its own changes in Source
+        // Control) and each of the others on its own.
+        let code = vscode_cli();
+        let on_disk: Vec<(&str, &String)> = ticket
+            .iter()
+            .flat_map(|t| &t.repos)
+            .filter_map(|r| {
+                let wt = r.worktree_path.as_ref()?;
+                Path::new(wt).is_dir().then_some((r.id.as_str(), wt))
+            })
+            .collect();
+        let repo_name = |id: &str| {
+            config
+                .repos
+                .get(id)
+                .map_or(id.to_string(), |r| r.display_name().to_string())
+        };
         if let Some(w) = &worktree {
+            let label = match repo {
+                Some(r) if on_disk.len() > 1 => format!("Open {} in VS Code", r.display_name()),
+                _ => "Open in VS Code".into(),
+            };
             actions.push(Action {
                 id: "open-vscode".into(),
-                label: "Open in VS Code".into(),
+                label,
                 kind: "shell".into(),
-                run: format!("code {}", shell_quote(w)),
+                run: format!("{code} {}", shell_quote(w)),
                 inputs: Vec::new(),
                 cwd: w.clone(),
+                source: "built-in".into(),
+            });
+        }
+        if on_disk.len() > 1 {
+            let folders: Vec<String> = on_disk.iter().map(|(_, p)| shell_quote(p)).collect();
+            actions.push(Action {
+                id: "open-vscode-ticket".into(),
+                label: "Open all worktrees in VS Code".into(),
+                kind: "shell".into(),
+                run: format!("{code} -n {}", folders.join(" ")),
+                inputs: Vec::new(),
+                cwd: on_disk[0].1.clone(),
+                source: "built-in".into(),
+            });
+        }
+        for (id, wt) in &on_disk {
+            if Some(*wt) == worktree.as_ref() {
+                continue;
+            }
+            actions.push(Action {
+                id: format!("open-vscode:{id}"),
+                label: format!("Open {} in VS Code", repo_name(id)),
+                kind: "shell".into(),
+                run: format!("{code} {}", shell_quote(wt)),
+                inputs: Vec::new(),
+                cwd: (*wt).clone(),
                 source: "built-in".into(),
             });
         }
@@ -1606,6 +2230,55 @@ impl Session {
     }
 }
 
+/// A `copy:` or `link:` entry as a path inside the checkout, or `None` for
+/// one that's empty or would leave it.
+fn inside_checkout(rel: &str) -> Option<&Path> {
+    let rel = Path::new(rel.trim());
+    let leaves = rel.as_os_str().is_empty()
+        || rel.is_absolute()
+        || rel
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir));
+    (!leaves).then_some(rel)
+}
+
+/// Brings the repo's files git ignores into a new worktree: `link:` ones as
+/// symlinks to the checkout's, then `copy:` ones copied. Anything already
+/// there is left; missing ones, and paths that would leave the checkout, are
+/// skipped.
+fn copy_ignored(repo: &Repo, checkout: &Path, worktree: &Path) {
+    for rel in repo.link.iter().filter_map(|r| inside_checkout(r)) {
+        let (from, to) = (checkout.join(rel), worktree.join(rel));
+        if from.exists() && to.symlink_metadata().is_err() {
+            if let Some(dir) = to.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::os::unix::fs::symlink(&from, &to);
+        }
+    }
+    fn copy(from: &Path, to: &Path) -> std::io::Result<()> {
+        if from.is_dir() {
+            std::fs::create_dir_all(to)?;
+            for entry in std::fs::read_dir(from)? {
+                let entry = entry?;
+                copy(&entry.path(), &to.join(entry.file_name()))?;
+            }
+        } else if !to.exists() {
+            if let Some(dir) = to.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            std::fs::copy(from, to)?;
+        }
+        Ok(())
+    }
+    for rel in repo.copy.iter().filter_map(|r| inside_checkout(r)) {
+        let from = checkout.join(rel);
+        if from.exists() {
+            let _ = copy(&from, &worktree.join(rel));
+        }
+    }
+}
+
 /// The repo's setup at the worktree root, then each component's in its
 /// folder, for the components of this repo in `code`.
 fn setup_steps(
@@ -1671,6 +2344,21 @@ pub fn setup_line(steps: &[SetupStep]) -> Option<String> {
     Some(parts.join(" && "))
 }
 
+/// How to run VS Code's `code` command, quoted for a shell. Its app bundle
+/// carries the CLI, so this works without "Install 'code' command in PATH";
+/// with no VS Code in the usual places, plain `code` from the login shell.
+pub fn vscode_cli() -> String {
+    let bundle = "Visual Studio Code.app/Contents/Resources/app/bin/code";
+    let mut places = vec![PathBuf::from("/Applications").join(bundle)];
+    if let Some(home) = dirs::home_dir() {
+        places.push(home.join("Applications").join(bundle));
+    }
+    places
+        .into_iter()
+        .find(|p| p.is_file())
+        .map_or_else(|| "code".into(), |p| shell_quote(&p.to_string_lossy()))
+}
+
 pub fn shell_quote(s: &str) -> String {
     if !s.is_empty()
         && s.chars()
@@ -1732,6 +2420,18 @@ mod tests {
 
         fn worktrees(&self) -> PathBuf {
             self.repo.with_file_name("repo-worktrees")
+        }
+
+        /// A second repo, `acme-infra`, located beside the first.
+        fn infra(&self) -> PathBuf {
+            let dir = self.dir.path().join("infra");
+            fs::create_dir_all(&dir).unwrap();
+            let repo = git::tests::repo_with_origin(&dir);
+            self.session
+                .repos()
+                .locate("acme-infra", repo.to_str().unwrap(), None)
+                .unwrap();
+            repo.with_file_name("repo-worktrees")
         }
     }
 
@@ -1801,7 +2501,6 @@ mod tests {
             p.overview.as_deref(),
             Some("Projects/Test Project/Test Project.md")
         );
-        assert_eq!(p.work_folder, "Projects/Test Project/Work");
         assert!(changes.iter().any(|c| c.path == "Projects/Test Project"));
         assert!(
             t.read("Projects/Test Project/Test Project.md")
@@ -1892,9 +2591,29 @@ mod tests {
             Err(CoreError::RepoNotLocated(r)) if r == "acme-platform"
         ));
         s.locate();
+        // Files git ignores: copied in, or linked to the checkout's
+        // (.claude/settings.local.json is missing: skipped).
+        fs::write(s.repo.join(".env"), "PORT=1\n").unwrap();
+        fs::create_dir_all(s.repo.join("config/local")).unwrap();
+        fs::write(s.repo.join("config/local/keys.json"), "{}").unwrap();
+        fs::write(s.repo.join("CLAUDE.local.md"), "Never push.\n").unwrap();
         let created = s.session.create_ticket(&new).unwrap();
         let t = &created.ticket;
-        assert_eq!(t.path, "Projects/Acme/Work/TEAM-200 Fix signup.md");
+        let copied = PathBuf::from(t.worktree_path.as_ref().unwrap());
+        assert_eq!(fs::read_to_string(copied.join(".env")).unwrap(), "PORT=1\n");
+        assert!(copied.join("config/local/keys.json").is_file());
+        assert_eq!(
+            fs::read_link(copied.join("CLAUDE.local.md")).unwrap(),
+            fs::canonicalize(&s.repo).unwrap().join("CLAUDE.local.md")
+        );
+        // One file: a change in the checkout shows in the worktree.
+        fs::write(s.repo.join("CLAUDE.local.md"), "Never push. Ever.\n").unwrap();
+        assert_eq!(
+            fs::read_to_string(copied.join("CLAUDE.local.md")).unwrap(),
+            "Never push. Ever.\n"
+        );
+        assert!(!copied.join(".claude").exists());
+        assert_eq!(t.path, "Tickets/TEAM-200 Fix signup.md");
         assert_eq!(t.key.as_deref(), Some("TEAM-200"));
         assert_eq!(
             t.url.as_deref(),
@@ -1993,11 +2712,11 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
-        assert_eq!(adhoc.ticket.path, "Work/Try new cache.md");
+        assert_eq!(adhoc.ticket.path, "Tickets/Try new cache.md");
         assert_eq!(adhoc.ticket.branch.as_deref(), Some("try-new-cache"));
         assert!(adhoc.ticket.projects.is_empty() && adhoc.ticket.key.is_none());
 
-        // No repo: a note and a workspace in the project folder.
+        // No repo: a note in the tickets folder, a workspace in the project's.
         let plain = s
             .session
             .create_ticket(&NewTicket {
@@ -2007,7 +2726,8 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
-        assert_eq!(plain.ticket.path, "Projects/Acme/Work/Plan offsite.md");
+        assert_eq!(plain.ticket.path, "Tickets/Plan offsite.md");
+        assert_eq!(plain.ticket.projects, ["acme"]);
         assert!(plain.ticket.worktree.is_none());
         assert!(
             plain
@@ -2064,7 +2784,7 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
-        assert_eq!(adopted.ticket.path, "Work/TEAM-300 Hotfix.md");
+        assert_eq!(adopted.ticket.path, "Tickets/TEAM-300 Hotfix.md");
         assert_eq!(adopted.ticket.worktree.as_deref(), Some("TEAM-300-hotfix"));
         assert!(adopted.setup.is_empty());
         assert!(s.session.stray_worktrees().unwrap().is_empty());
@@ -2171,6 +2891,47 @@ mod tests {
     }
 
     #[test]
+    fn a_terminal_outside_the_worktrees_gets_its_workspaces_ticket() {
+        let s = Setup::new();
+        s.locate();
+        let t = s
+            .session
+            .create_ticket(&new_ticket("TEAM-201", "Fix login"))
+            .unwrap()
+            .ticket;
+        let workspace = t.workspace.clone().unwrap();
+        let wt = PathBuf::from(t.worktree_path.clone().unwrap());
+        let root = s.session.vault().root().to_path_buf();
+
+        // At the vault root, in the ticket's workspace: the ticket's context.
+        let (ctx, used) = s.session.terminal_context(&root, Some(&workspace)).unwrap();
+        assert_eq!(used.map(|w| w.id), Some(workspace.clone()));
+        let ticket = ctx.ticket.unwrap();
+        assert_eq!(ticket.key.as_deref(), Some("TEAM-201"));
+        assert_eq!(
+            ticket.repos[0].worktree_path.as_deref(),
+            Some(wt.to_str().unwrap())
+        );
+
+        // In a worktree, the folder says it all.
+        let (ctx, used) = s.session.terminal_context(&wt, Some(&workspace)).unwrap();
+        assert!(used.is_none());
+        assert_eq!(ctx.ticket.unwrap().key.as_deref(), Some("TEAM-201"));
+
+        // No workspace, or one that's gone: just the folder's.
+        for id in [None, Some("ws-gone")] {
+            let (ctx, used) = s.session.terminal_context(&root, id).unwrap();
+            assert!(used.is_none() && ctx.ticket.is_none());
+        }
+
+        // A workspace with no note is still named, for its folder.
+        let plain = s.session.workspaces().create("Scratch", "/tmp").unwrap();
+        let (ctx, used) = s.session.terminal_context(&root, Some(&plain.id)).unwrap();
+        assert!(ctx.ticket.is_none());
+        assert_eq!(used.map(|w| w.name), Some("Scratch".to_string()));
+    }
+
+    #[test]
     fn any_note_can_have_a_workspace() {
         let s = Setup::new();
         let (ws, _) = s.session.note_workspace("Welcome.md").unwrap();
@@ -2195,5 +2956,454 @@ mod tests {
         s.session.delete_workspace(&ws.id).unwrap();
         assert!(!s.read("Welcome.md").contains("workspace:"));
         assert_eq!(s.session.workspaces().list().len(), 1);
+    }
+
+    #[test]
+    fn a_ticket_spans_repos_with_one_workspace() {
+        let s = Setup::new();
+        s.locate();
+        let infra = s.infra();
+
+        // Code in two repos: a worktree in each, on one branch, one workspace.
+        let created = s
+            .session
+            .create_ticket(&NewTicket {
+                code: vec!["acme-platform:web".into(), "acme-infra:network".into()],
+                ..new_ticket("TEAM-500", "Move login")
+            })
+            .unwrap();
+        let t = &created.ticket;
+        let web = s.worktrees().join("TEAM-500-move-login");
+        let net = infra.join("TEAM-500-move-login");
+        assert!(web.join("README.md").is_file() && net.join("README.md").is_file());
+        assert_eq!(t.repo.as_deref(), Some("acme-platform"));
+        assert_eq!(
+            t.repos,
+            [
+                TicketRepo {
+                    id: "acme-platform".into(),
+                    worktree_path: Some(web.display().to_string())
+                },
+                TicketRepo {
+                    id: "acme-infra".into(),
+                    worktree_path: Some(net.display().to_string())
+                },
+            ]
+        );
+        let setup: Vec<_> = created.setup.iter().map(|s| s.command.as_str()).collect();
+        assert_eq!(setup, ["npm install", "terraform init"]);
+        let text = s.read(&t.path);
+        assert!(
+            text.contains("repos: [acme-platform, acme-infra]\n"),
+            "{text}"
+        );
+        assert!(!text.contains("repo:"), "{text}");
+        assert_eq!(s.session.workspaces().list().len(), 1);
+        let ws = created.workspace.unwrap();
+        assert_eq!(
+            ws.cwd,
+            fs::canonicalize(&web).unwrap().display().to_string()
+        );
+
+        // Listed under either repo; git state over both.
+        for repo in ["acme-platform", "acme-infra"] {
+            let found = s
+                .session
+                .tickets(&TicketFilter {
+                    repo: Some(repo.into()),
+                    ..Default::default()
+                })
+                .unwrap();
+            assert!(found.iter().any(|f| f.path == t.path), "{repo}");
+        }
+        fs::write(net.join("main.tf"), "\n").unwrap();
+        let git = s.session.ticket_git(&t.path).unwrap();
+        assert!(git.exists && git.dirty && !git.on_remote);
+
+        // Context: components in their own repo's worktree; from inside the
+        // infra worktree, that repo.
+        let ctx = s.session.context(Some(&t.path), None).unwrap();
+        assert_eq!(ctx.repo.as_ref().unwrap().id, "acme-platform");
+        let paths: Vec<_> = ctx
+            .components
+            .iter()
+            .map(|c| c.abs_path.clone().unwrap())
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                web.join("apps/web").display().to_string(),
+                net.join("network").display().to_string()
+            ]
+        );
+        assert!(
+            ctx.actions.iter().any(
+                |a| a.id == "open-vscode:acme-infra" && a.label == "Open Acme infra in VS Code"
+            )
+        );
+        // With two worktrees, the one we're in says which repo it is.
+        assert!(ctx.actions.iter().any(|a| a.id == "open-vscode"
+            && a.label == "Open Acme platform in VS Code"
+            && a.run == format!("{} {}", vscode_cli(), web.display())));
+        let both = ctx
+            .actions
+            .iter()
+            .find(|a| a.id == "open-vscode-ticket")
+            .unwrap();
+        assert_eq!(
+            both.run,
+            format!("{} -n {} {}", vscode_cli(), web.display(), net.display())
+        );
+        let inside = s.session.context(None, Some(&net)).unwrap();
+        assert_eq!(inside.note.as_deref(), Some(t.path.as_str()));
+        let repo = inside.repo.unwrap();
+        assert_eq!(repo.id, "acme-infra");
+        assert_eq!(repo.worktree_path.as_deref(), Some(net.to_str().unwrap()));
+
+        // The default can move; the workspace follows it.
+        let (moved, changed, _) = s
+            .session
+            .set_ticket_default_repo(&t.path, "acme-infra")
+            .unwrap();
+        assert_eq!(moved.repo.as_deref(), Some("acme-infra"));
+        assert!(
+            s.read(&t.path)
+                .contains("repos: [acme-infra, acme-platform]\n")
+        );
+        assert_eq!(changed.unwrap().cwd, net.display().to_string());
+        assert!(s.session.set_ticket_default_repo(&t.path, "nope").is_err());
+
+        // Closing checks every worktree before removing any.
+        let err = s
+            .session
+            .close_ticket(&t.path, false)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("in acme-infra, it has uncommitted changes"),
+            "{err}"
+        );
+        assert!(web.exists() && net.exists());
+        s.session.close_ticket(&t.path, true).unwrap();
+        assert!(!web.exists() && !net.exists());
+        let restored = s.session.restore_ticket(&t.path).unwrap();
+        assert!(web.exists() && net.exists());
+        assert_eq!(restored.setup.len(), 2);
+        assert_eq!(
+            restored.workspace.unwrap().cwd,
+            fs::canonicalize(&net).unwrap().display().to_string()
+        );
+    }
+
+    #[test]
+    fn repos_are_added_to_a_ticket_later() {
+        let s = Setup::new();
+        s.locate();
+        // A repo that isn't located stops a ticket before anything is made.
+        let both = NewTicket {
+            repos: vec!["acme-platform".into(), "acme-infra".into()],
+            ..new_ticket("TEAM-700", "Both")
+        };
+        assert!(matches!(
+            s.session.create_ticket(&both),
+            Err(CoreError::RepoNotLocated(r)) if r == "acme-infra"
+        ));
+        assert!(!s.worktrees().join("TEAM-700-both").exists());
+        let infra = s.infra();
+
+        // An older ticket with `repo:` gains a second; it becomes `repos:`.
+        let old = "Projects/Acme/Work/TEAM-123 Fix login.md";
+        let wt = s.worktrees().join("TEAM-123-fix-login");
+        git::add_worktree(&s.repo, &wt, "TEAM-123-fix-login", "main").unwrap();
+        assert_eq!(s.session.ticket(old).unwrap().repos.len(), 1);
+        let added = s.session.add_ticket_repo(old, "acme-infra").unwrap();
+        let ids: Vec<_> = added.ticket.repos.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["acme-platform", "acme-infra"]);
+        assert!(infra.join("TEAM-123-fix-login/README.md").is_file());
+        assert_eq!(added.setup.len(), 1, "only the new worktree's setup");
+        let text = s.read(old);
+        assert!(
+            text.contains("repos: [acme-platform, acme-infra]\n"),
+            "{text}"
+        );
+        assert!(!text.contains("repo:"), "{text}");
+        assert!(text.contains("people: [\"[[Jane Doe]]\"]"), "{text}");
+        assert!(
+            s.session.add_ticket_repo(old, "acme-infra").is_err(),
+            "twice"
+        );
+        assert!(s.session.add_ticket_repo(old, "nope").is_err());
+
+        // A ticket with no repo yet: its first one names the branch and
+        // moves the workspace there.
+        let plain = s
+            .session
+            .create_ticket(&NewTicket {
+                key: Some("TEAM-600".into()),
+                title: Some("Plan migration".into()),
+                projects: vec!["acme".into()],
+                no_worktree: true,
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(plain.ticket.repos.is_empty());
+        let first = s
+            .session
+            .add_ticket_repo(&plain.ticket.path, "acme-infra")
+            .unwrap();
+        assert_eq!(
+            first.ticket.branch.as_deref(),
+            Some("TEAM-600-plan-migration")
+        );
+        let net = infra.join("TEAM-600-plan-migration");
+        assert!(net.is_dir());
+        let ws = first.workspace.unwrap();
+        assert_eq!(ws.id, plain.workspace.unwrap().id);
+        assert_eq!(
+            ws.cwd,
+            fs::canonicalize(&net).unwrap().display().to_string()
+        );
+    }
+
+    #[test]
+    fn repos_are_added_from_a_checkout() {
+        let s = Setup::new();
+        let dir = s.dir.path().join("other");
+        fs::create_dir_all(&dir).unwrap();
+        let checkout = git::tests::repo_with_origin(&dir);
+        fs::create_dir_all(checkout.join("src")).unwrap();
+
+        let info = s
+            .session
+            .add_repo(
+                checkout.join("src").to_str().unwrap(),
+                Some("Billing API"),
+                None,
+            )
+            .unwrap();
+        assert_eq!(info.id, "billing-api");
+        assert_eq!(info.name, "Billing API");
+        assert_eq!(info.location.unwrap().path, checkout.display().to_string());
+        let yml = s.read(".groundwork/repos.yml");
+        assert!(
+            yml.starts_with("# Code repos"),
+            "kept what was there: {yml}"
+        );
+        assert!(
+            yml.ends_with("billing-api:\n  name: Billing API\n  git:\n    base_branch: main\n"),
+            "{yml}"
+        );
+        assert_eq!(
+            s.session
+                .config()
+                .unwrap()
+                .repo("billing-api")
+                .unwrap()
+                .git
+                .base_branch,
+            "main"
+        );
+        assert!(s.session.config().unwrap().repo("acme-platform").is_ok());
+
+        // Not twice, by name or by checkout; not somewhere that isn't a repo.
+        assert!(
+            s.session
+                .add_repo(checkout.to_str().unwrap(), None, None)
+                .is_err()
+        );
+        let again = s
+            .session
+            .add_repo(checkout.to_str().unwrap(), Some("Other name"), None)
+            .unwrap_err()
+            .to_string();
+        assert!(again.contains("already the billing-api repo"), "{again}");
+        assert!(
+            s.session
+                .add_repo(s.dir.path().to_str().unwrap(), None, None)
+                .is_err()
+        );
+
+        // A ticket can use it straight away.
+        let created = s
+            .session
+            .create_ticket(&NewTicket {
+                repos: vec!["billing-api".into()],
+                ..new_ticket("TEAM-800", "Bill it")
+            })
+            .unwrap();
+        assert!(Path::new(created.ticket.worktree_path.as_deref().unwrap()).is_dir());
+    }
+
+    #[test]
+    fn repos_are_removed_from_a_ticket() {
+        let s = Setup::new();
+        s.locate();
+        let infra = s.infra();
+        let created = s
+            .session
+            .create_ticket(&NewTicket {
+                repos: vec!["acme-platform".into(), "acme-infra".into()],
+                ..new_ticket("TEAM-900", "Both repos")
+            })
+            .unwrap();
+        let path = created.ticket.path.clone();
+        let ws = created.workspace.unwrap();
+        let web = s.worktrees().join("TEAM-900-both-repos");
+        let net = infra.join("TEAM-900-both-repos");
+
+        // Work that would be lost stops it, unless forced.
+        fs::write(web.join("scratch.txt"), "x").unwrap();
+        let err = s
+            .session
+            .remove_ticket_repo(&path, "acme-platform", false)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("acme-platform not removed: it has uncommitted changes"),
+            "{err}"
+        );
+        assert!(web.is_dir());
+        assert!(s.session.remove_ticket_repo(&path, "nope", false).is_err());
+
+        // The default goes: the next repo is the default, and the workspace
+        // starts there. The branch stays.
+        let removed = s
+            .session
+            .remove_ticket_repo(&path, "acme-platform", true)
+            .unwrap();
+        assert!(!web.exists() && net.is_dir());
+        assert_eq!(removed.worktree.as_deref(), Some(web.to_str().unwrap()));
+        let ids: Vec<_> = removed.ticket.repos.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["acme-infra"]);
+        assert!(s.read(&path).contains("repos: [acme-infra]\n"));
+        let moved = removed.workspace.unwrap();
+        assert_eq!(moved.id, ws.id);
+        assert_eq!(moved.cwd, net.display().to_string());
+        let branch = std::process::Command::new("git")
+            .args([
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                "refs/heads/TEAM-900-both-repos",
+            ])
+            .current_dir(&s.repo)
+            .status()
+            .unwrap();
+        assert!(branch.success(), "the branch stays");
+
+        // The last one: no `repos:` left, the workspace in the note's folder,
+        // and adding a repo back makes it the default again.
+        let removed = s
+            .session
+            .remove_ticket_repo(&path, "acme-infra", false)
+            .unwrap();
+        assert!(!net.exists() && removed.ticket.repos.is_empty());
+        let text = s.read(&path);
+        assert!(!text.contains("repos:"), "{text}");
+        assert!(text.contains("branch: TEAM-900-both-repos"), "{text}");
+        assert!(removed.workspace.unwrap().cwd.ends_with("vault/Tickets"));
+        let back = s.session.add_ticket_repo(&path, "acme-platform").unwrap();
+        assert!(web.is_dir() && !web.join("scratch.txt").exists());
+        assert_eq!(
+            back.workspace.unwrap().cwd,
+            fs::canonicalize(&web).unwrap().display().to_string()
+        );
+    }
+
+    #[test]
+    fn tickets_are_gathered_into_the_tickets_folder() {
+        let s = Setup::new();
+        // Belongs to Acme only by its folder; its subnote goes with it.
+        let only_folder = "Projects/Acme/Work/TEAM-50 Old.md";
+        fs::write(
+            s.session.vault().root().join(only_folder),
+            "---\ntype: ticket\nticket: TEAM-50\nstatus: closed\n---\n# Old\n",
+        )
+        .unwrap();
+        fs::write(
+            s.session
+                .vault()
+                .root()
+                .join("Projects/Acme/Work/TEAM-50 Old.web.md"),
+            "web notes\n",
+        )
+        .unwrap();
+        fs::write(
+            s.session.vault().root().join("Welcome 2.md"),
+            "See [[TEAM-50 Old]] and [[Projects/Acme/Work/TEAM-123 Fix login|login]].\n",
+        )
+        .unwrap();
+        s.session.apply_external(&[
+            only_folder.into(),
+            "Projects/Acme/Work/TEAM-50 Old.web.md".into(),
+            "Welcome 2.md".into(),
+        ]);
+        let before = s
+            .session
+            .note_projects(&s.session.config().unwrap(), only_folder);
+        assert_eq!(before, ["acme"]);
+
+        let (moved, _) = s.session.gather_tickets().unwrap();
+        let mut pairs: Vec<_> = moved
+            .iter()
+            .map(|m| (m.from.as_str(), m.to.as_str()))
+            .collect();
+        pairs.sort();
+        assert_eq!(
+            pairs,
+            [
+                (
+                    "Projects/Acme/Work/TEAM-123 Fix login.md",
+                    "Tickets/TEAM-123 Fix login.md"
+                ),
+                (
+                    "Projects/Acme/Work/TEAM-50 Old.md",
+                    "Tickets/TEAM-50 Old.md"
+                ),
+            ]
+        );
+        let root = s.session.vault().root().to_path_buf();
+        assert!(root.join("Tickets/TEAM-50 Old.web.md").is_file());
+        assert!(
+            !root.join("Projects/Acme/Work").exists(),
+            "emptied folder goes"
+        );
+        assert!(root.join("Projects/Acme").is_dir(), "the project's stays");
+
+        // Still in Acme, now by link; the one already linked is unchanged.
+        let config = s.session.config().unwrap();
+        assert_eq!(
+            s.session.note_projects(&config, "Tickets/TEAM-50 Old.md"),
+            ["acme"]
+        );
+        assert!(
+            s.read("Tickets/TEAM-50 Old.md")
+                .contains("projects: [\"[[Acme]]\"]")
+        );
+        let login = s.read("Tickets/TEAM-123 Fix login.md");
+        assert_eq!(login.matches("[[Acme]]").count(), 1, "{login}");
+        assert_eq!(
+            s.session
+                .note_projects(&config, "Tickets/TEAM-123 Fix login.md"),
+            ["acme"]
+        );
+        // Links to them still resolve.
+        let welcome = s.read("Welcome 2.md");
+        assert!(welcome.contains("[[TEAM-50 Old]]"), "{welcome}");
+        assert!(
+            welcome.contains("[[TEAM-123 Fix login|login]]"),
+            "{welcome}"
+        );
+        let index = s.session.index();
+        assert_eq!(
+            index
+                .resolve("TEAM-123 Fix login", "Welcome 2.md")
+                .as_deref(),
+            Some("Tickets/TEAM-123 Fix login.md")
+        );
+        drop(index);
+
+        // Nothing left to move.
+        assert!(s.session.gather_tickets().unwrap().0.is_empty());
     }
 }

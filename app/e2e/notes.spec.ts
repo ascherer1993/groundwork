@@ -24,6 +24,50 @@ test("leaving the title puts the cursor below the properties", async ({ page }) 
   rmSync(join(VAULT, note));
 });
 
+test("people are picked from the contacts into the properties", async ({ page }) => {
+  const note = "People picker.md";
+  writeFileSync(
+    join(VAULT, note),
+    '---\ntype: event\n# who came\npeople: ["[[Jane Doe]]"]\n---\nNotes.\n',
+  );
+  await quickOpen(page, "People picker");
+  const props = editor(page).locator(".cm-properties");
+  const add = props.getByRole("textbox", { name: "Add a person to people" });
+  await add.click();
+
+  // Contacts already there aren't offered; the list narrows as you type.
+  const picker = page.getByRole("listbox", { name: "Add a person" });
+  const options = picker.getByRole("option");
+  await expect(options).toHaveText(["Lee Park", "Priya Shah", "Sam Lee"].map((n) => new RegExp(n)));
+  await page.keyboard.type("sam");
+  await expect(options).toHaveCount(1);
+  await page.keyboard.press("Enter");
+  await expectFile(
+    VAULT,
+    note,
+    (t) =>
+      t === '---\ntype: event\n# who came\npeople: ["[[Jane Doe]]", "[[Sam Lee]]"]\n---\nNotes.\n',
+  );
+
+  // The field stays ready for more; Escape closes the list.
+  await expect(add).toBeFocused();
+  await expect(options).toHaveCount(2);
+  await page.keyboard.press("Escape");
+  await expect(picker).toBeHidden();
+
+  // Each person can be taken out again.
+  await props.locator(".property-value", { hasText: "Jane Doe" }).hover();
+  await props.getByRole("button", { name: "Remove [[Jane Doe]]" }).click();
+  await expectFile(
+    VAULT,
+    note,
+    (t) => t === '---\ntype: event\n# who came\npeople: ["[[Sam Lee]]"]\n---\nNotes.\n',
+  );
+  // The panel stays a panel, rather than turning into the YAML.
+  await expect(props.getByRole("textbox", { name: "Add a person to people" })).toBeVisible();
+  rmSync(join(VAULT, note));
+});
+
 test("edits autosave to disk", async ({ page }) => {
   await quickOpen(page, "Welcome");
   await editor(page).click();
@@ -307,6 +351,10 @@ test("file tree: new projects, and folders made into projects", async ({ page })
   await expect(page.getByRole("menuitem", { name: "Make this a project" })).toHaveCount(0);
   await expect(page.getByRole("menuitem", { name: "New ticket…" })).toBeVisible();
   await page.keyboard.press("Escape");
+
+  // The vault is shared with later specs, which count its projects.
+  for (const name of ["Test Project", "Side gig"])
+    rmSync(join(VAULT, "Projects", name), { recursive: true, force: true });
 });
 
 test("tabs and splits persist across reloads", async ({ page }) => {
@@ -363,4 +411,148 @@ test("clicks land on the clicked line, even below late-rendering blocks", async 
     }
     await page.locator(".inline-title").click();
   }
+});
+
+test("bare URLs are links: ⌘-click opens them, a plain click edits", async ({ page }) => {
+  const note = "Bare URL.md";
+  writeFileSync(
+    join(VAULT, note),
+    "Intro line\nDocs at https://example.com/docs. And www.example.org too.\n",
+  );
+  await quickOpen(page, "Bare URL");
+  const cm = editor(page);
+  await cm.locator(".cm-line").first().click();
+  const urls = cm.locator(".cm-url");
+  await expect(urls).toHaveText(["https://example.com/docs", "www.example.org"]);
+  await expect(urls.nth(1)).toHaveAttribute("data-href", "https://www.example.org");
+  const link = await page.evaluate(
+    "getComputedStyle(document.querySelector('.cm-url span, .cm-url')).color",
+  );
+  const line = await page.evaluate("getComputedStyle(document.querySelector('.cm-line')).color");
+  expect(link).not.toBe(line);
+
+  // The hand shows only while ⌘ is held.
+  const cursor = () => page.evaluate("getComputedStyle(document.querySelector('.cm-url')).cursor");
+  await urls.first().hover();
+  expect(await cursor()).not.toBe("pointer");
+  await page.keyboard.down("Meta");
+  await expect.poll(cursor).toBe("pointer");
+  await page.keyboard.up("Meta");
+  await expect.poll(cursor).not.toBe("pointer");
+
+  // A plain click opens nothing.
+  let popups = 0;
+  page.on("popup", () => popups++);
+  await urls.first().click();
+  await page.waitForTimeout(300);
+  expect(popups).toBe(0);
+
+  const popup = page.waitForEvent("popup");
+  await urls.first().click({ modifiers: ["Meta"] });
+  expect((await popup).url()).toBe("https://example.com/docs");
+  rmSync(join(VAULT, note));
+});
+
+test("Tab nests a numbered item as a, b, c, then i, ii, iii; Shift-Tab brings it back", async ({
+  page,
+}) => {
+  writeFileSync(join(VAULT, "Nested lists.md"), "");
+  await quickOpen(page, "Nested lists");
+  await editor(page).click();
+  const type = async (...steps: string[]) => {
+    for (const step of steps) {
+      if (["Enter", "Tab", "Shift+Tab"].includes(step)) await page.keyboard.press(step);
+      else await page.keyboard.type(step);
+    }
+  };
+  await type("1. One", "Enter", "Tab", "Alpha", "Enter", "Beta", "Enter", "Tab", "Roman one");
+  await type("Enter", "Roman two", "Enter", "Shift+Tab", "Gamma", "Enter", "Shift+Tab", "Two");
+  // The file keeps Markdown's numbers, so Obsidian reads it too.
+  await expectFile(
+    VAULT,
+    "Nested lists.md",
+    (t) =>
+      t ===
+      [
+        "1. One",
+        "   1. Alpha",
+        "   2. Beta",
+        "      1. Roman one",
+        "      2. Roman two",
+        "   3. Gamma",
+        "2. Two",
+      ].join("\n"),
+  );
+  // The editor draws the nested numbers as letters and roman numerals…
+  await expect(editor(page).locator(".cm-list-number")).toHaveText(["a.", "b.", "i.", "ii.", "c."]);
+  // …and so does reading view.
+  await page.keyboard.press("Meta+e");
+  const view = page.getByTestId("reading-view");
+  await expect(view.locator("ol").first()).toHaveCSS("list-style-type", "decimal");
+  await expect(view.locator("ol ol").first()).toHaveCSS("list-style-type", "lower-alpha");
+  await expect(view.locator("ol ol ol").first()).toHaveCSS("list-style-type", "lower-roman");
+  await page.keyboard.press("Meta+e");
+  rmSync(join(VAULT, "Nested lists.md"));
+});
+
+test("wrapped list items line up with their text in live preview and reading view", async ({
+  page,
+}) => {
+  const note = "Wrapped lists.md";
+  // Real words, so spell checking leaves the text in one piece.
+  const long = (word: string) => `${word} ${"wrapping words ".repeat(40)}end`;
+  writeFileSync(
+    join(VAULT, note),
+    [
+      `- ${long("apple")}`,
+      `    - ${long("banana")}`,
+      `1. ${long("cherry")}`,
+      `- [ ] ${long("grape")}`,
+      "",
+    ].join("\n"),
+  );
+  await quickOpen(page, "Wrapped lists");
+
+  /**
+   * Where an item's text starts, and where its last wrapped line starts. A
+   * string, since these specs are typed without the DOM.
+   */
+  type LineUp = { start: number; wrapped: number; rows: number } | null;
+  const lineUp = (root: string, word: string) =>
+    page.evaluate<LineUp>(`(() => {
+      const walker = document.createTreeWalker(document.querySelector(${JSON.stringify(root)}), NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const at = n.textContent.indexOf(${JSON.stringify(word)});
+        if (at < 0) continue;
+        const first = document.createRange();
+        first.setStart(n, at);
+        first.setEnd(n, at + 1);
+        const all = document.createRange();
+        all.selectNodeContents(n);
+        const rows = [...all.getClientRects()];
+        const last = rows.reduce((a, b) => (b.top > a.top ? b : a));
+        return { start: first.getBoundingClientRect().left, wrapped: last.left, rows: rows.length };
+      }
+      return null;
+    })()`);
+
+  const check = async (root: string) => {
+    for (const word of ["apple", "banana", "cherry", "grape"]) {
+      await expect
+        .poll(
+          async () => {
+            const r = await lineUp(root, word);
+            return r && r.rows > 1 && Math.abs(r.wrapped - r.start) <= 1;
+          },
+          { message: `${word} in ${root}` },
+        )
+        .toBe(true);
+    }
+  };
+
+  await check(".cm-content");
+  await page.keyboard.press("Meta+e");
+  await check('[data-testid="reading-view"]');
+  await page.keyboard.press("Meta+e");
+  rmSync(join(VAULT, note));
 });

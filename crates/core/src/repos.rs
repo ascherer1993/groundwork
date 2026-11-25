@@ -104,7 +104,9 @@ impl RepoLocations {
     }
 }
 
-/// `<repo>-worktrees` beside the checkout.
+/// Where a checkout's worktrees go unless told: `<repo>-worktrees` beside it
+/// (`dev/api` → `dev/api-worktrees`), so every repo's checkout and its
+/// worktrees sit side by side in one folder.
 pub fn default_worktrees(checkout: &Path) -> PathBuf {
     let name = checkout
         .file_name()
@@ -147,6 +149,20 @@ mod tests {
         assert_eq!(
             location.worktree("T-1"),
             repo.with_file_name("repo-worktrees/T-1")
+        );
+
+        // A checkout in a folder of its own name (`api/api`) is no exception:
+        // its worktrees still go in `api-worktrees` beside it.
+        let home = dir.path().join("api");
+        fs::create_dir_all(&home).unwrap();
+        let api = git::tests::repo_with_origin(&home);
+        let api = api.with_file_name("api");
+        fs::rename(home.join("repo"), &api).unwrap();
+        let nested = store.locate("api", api.to_str().unwrap(), None).unwrap();
+        let home = fs::canonicalize(&home).unwrap();
+        assert_eq!(
+            nested.worktrees,
+            home.join("api-worktrees").display().to_string()
         );
 
         let other = dir.path().join("trees");

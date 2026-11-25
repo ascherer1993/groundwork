@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 
 use groundwork_core::agent::AgentContext;
+use groundwork_core::daily::DailyFields;
 use groundwork_core::inbox::InboxItem;
 use groundwork_core::quickadd::QuickAddChoice;
 use groundwork_core::settings::AppSettings;
@@ -63,7 +64,8 @@ pub enum Request {
     IndexSettings,
 
     /// → `SetupStatus`: whether the `groundwork` command, the Claude Code
-    /// plugin and the CLI's default vault are set up and current.
+    /// plugin, the CLI's default vault and the vault's `CLAUDE.md` are set
+    /// up and current.
     #[serde(rename = "setup.status")]
     SetupStatus,
 
@@ -79,6 +81,11 @@ pub enum Request {
     /// → `SetupStatus`: makes the open vault the CLI's default.
     #[serde(rename = "setup.useVault")]
     SetupUseVault,
+
+    /// → `SetupStatus`: adds Groundwork's `CLAUDE.md` to the open vault's
+    /// root, unless it has one already, which is left as it is.
+    #[serde(rename = "setup.addClaudeMd")]
+    SetupAddClaudeMd,
 
     /// → `TagCount[]`: every tag and how many notes use it.
     #[serde(rename = "index.tags")]
@@ -190,6 +197,14 @@ pub enum Request {
     /// → `string`: creates `Untitled.md` (or `Untitled 1.md`…) in `folder`.
     #[serde(rename = "file.createUntitled")]
     FileCreateUntitled { folder: String },
+    /// → `string`: saves a pasted or dropped file (base64 `data`) for the note
+    /// `source` in its attachment folder, named after `name`. Returns the path.
+    #[serde(rename = "file.saveAttachment")]
+    FileSaveAttachment {
+        source: String,
+        name: String,
+        data: String,
+    },
     /// → `string`: creates the note an unresolved `[[target]]` in `source`
     /// points to: daily note names in the daily folder, otherwise where
     /// Obsidian's new-note setting says. Returns the path (existing or new).
@@ -298,6 +313,16 @@ pub enum Request {
         project: Option<String>,
     },
 
+    /// → `Refiled`: moves daily notes, and the notes of Quick add choices
+    /// whose folder has date tags, to where their date puts them now, with
+    /// their subnotes, rewriting links. `dryRun` only says what would move.
+    #[serde(rename = "vault.refile", rename_all = "camelCase")]
+    VaultRefile {
+        #[serde(default)]
+        #[ts(optional)]
+        dry_run: Option<bool>,
+    },
+
     /// → `string`: the daily note for `date` (`YYYY-MM-DD`, default today),
     /// created from the daily template if it doesn't exist.
     #[serde(rename = "daily.open")]
@@ -305,6 +330,14 @@ pub enum Request {
         #[ts(optional)]
         date: Option<String>,
     },
+    /// → `DailyNoteSettings`: Groundwork's daily notes settings and
+    /// Obsidian's, which fill in whatever Groundwork's leave unset.
+    #[serde(rename = "daily.settings")]
+    DailySettings,
+    /// → `DailyNoteSettings`: saves Groundwork's daily notes settings (in
+    /// `.groundwork/config.yml`); unset fields fall back to Obsidian's.
+    #[serde(rename = "daily.saveSettings")]
+    DailySaveSettings { settings: DailyFields },
 
     /// → `string | null`: what `history.undo` would revert.
     #[serde(rename = "history.peek")]
@@ -518,6 +551,17 @@ pub enum Request {
         #[ts(optional)]
         worktrees: Option<String>,
     },
+    /// → `RepoInfo`: adds a repo to `.groundwork/repos.yml` from its checkout
+    /// here (any folder in it), named after its folder unless `name` is
+    /// given, and records where it is.
+    #[serde(rename = "repo.add")]
+    RepoAdd {
+        path: String,
+        #[ts(optional)]
+        name: Option<String>,
+        #[ts(optional)]
+        worktrees: Option<String>,
+    },
     /// → `InboxItem[]`: what's open in the inbox, oldest first.
     #[serde(rename = "inbox.list")]
     InboxList,
@@ -597,18 +641,52 @@ pub enum Request {
     #[serde(rename = "project.view")]
     ProjectView { project: String },
 
+    /// → `Person[]`: every contact in the vault, by name.
+    #[serde(rename = "people.list")]
+    PeopleList,
+
+    /// → `Team[]`: every team in the vault (`type: team`, or in `Teams/`), by name.
+    #[serde(rename = "teams.list")]
+    TeamsList,
+
+    /// → `string`: `text` (a note's) with its `key` property set to the list
+    /// `values`, leaving the rest of its frontmatter as written.
+    #[serde(rename = "frontmatter.setList")]
+    FrontmatterSetList {
+        text: String,
+        key: String,
+        values: Vec<String>,
+    },
+    /// → `string`: `text` (a note's) with its `key` property set to `value`
+    /// (removed when it's null), leaving the rest of its frontmatter as
+    /// written. A new property goes last; a note without frontmatter gets it.
+    #[serde(rename = "frontmatter.set")]
+    FrontmatterSet {
+        text: String,
+        key: String,
+        value: Option<PropertyValue>,
+    },
+    /// → `string`: `text` (a note's) with property `from` renamed `to` in
+    /// place; unchanged when `to` is taken or isn't a plain key.
+    #[serde(rename = "frontmatter.rename")]
+    FrontmatterRename {
+        text: String,
+        from: String,
+        to: String,
+    },
+
     /// → `Ticket[]`
     #[serde(rename = "ticket.list")]
     TicketList { filter: TicketFilter },
-    /// → `GitState`: the ticket's worktree.
+    /// → `GitState`: the ticket's worktrees, added up.
     #[serde(rename = "ticket.git")]
     TicketGit { path: String },
     /// → `CreatedTicket`: makes the worktree, the note and a workspace.
     /// Setup isn't run; the app runs it in the workspace's first terminal.
     #[serde(rename = "ticket.create")]
     TicketCreate { ticket: NewTicket },
-    /// → `Ticket`: refuses, unless `force`, when removing the worktree would
-    /// lose work. Ends terminals working in the worktree.
+    /// → `Ticket`: refuses, unless `force`, when removing any of its
+    /// worktrees would lose work. Ends terminals working in them.
     #[serde(rename = "ticket.close")]
     TicketClose {
         path: String,
@@ -619,6 +697,29 @@ pub enum Request {
     /// → `CreatedTicket`
     #[serde(rename = "ticket.restore")]
     TicketRestore { path: String },
+    /// → `CreatedTicket`: a worktree in another repo on the ticket's branch
+    /// (its first, for a ticket with none). Setup is for that worktree only.
+    #[serde(rename = "ticket.addRepo")]
+    TicketAddRepo { path: String, repo: String },
+    /// → `RemovedTicketRepo`: removes its worktree in `repo` (refusing,
+    /// unless `force`, when it has uncommitted changes) and takes the repo off the
+    /// ticket. The branch stays. Ends terminals working in the worktree.
+    #[serde(rename = "ticket.removeRepo")]
+    TicketRemoveRepo {
+        path: String,
+        repo: String,
+        #[serde(default)]
+        #[ts(optional)]
+        force: Option<bool>,
+    },
+    /// → `MovedNote[]`: moves every ticket note outside the vault's tickets
+    /// folder into it, keeping the projects its old folder gave it.
+    #[serde(rename = "ticket.gather")]
+    TicketGather,
+    /// → `Ticket`: makes one of its repos the default, where its workspace
+    /// starts.
+    #[serde(rename = "ticket.setDefaultRepo")]
+    TicketSetDefaultRepo { path: String, repo: String },
     /// → `StrayWorktree[]`: worktrees with no ticket note.
     #[serde(rename = "ticket.strays")]
     TicketStrays,
@@ -661,6 +762,22 @@ pub enum Request {
         #[ts(optional)]
         limit: Option<usize>,
     },
+    /// → `string[]`: the words in `words` that aren't in the dictionary or
+    /// the vault's own words (`.groundwork/dictionary.txt`), in the order given.
+    #[serde(rename = "spelling.check")]
+    SpellingCheck { words: Vec<String> },
+    /// → `string[]`: what a misspelled word might have been, best first.
+    #[serde(rename = "spelling.suggest")]
+    SpellingSuggest { word: String },
+    /// → `null`: adds a word to the vault's dictionary.
+    #[serde(rename = "spelling.add")]
+    SpellingAdd { word: String },
+    /// → `string[]`: the vault's own words, sorted.
+    #[serde(rename = "spelling.words")]
+    SpellingWords,
+    /// → `null`: takes a word out of the vault's dictionary.
+    #[serde(rename = "spelling.remove")]
+    SpellingRemove { word: String },
     /// → `null`: runs a `shell` action from the note's (or folder's) context,
     /// in the background. Terminal and URL actions are run by the app.
     #[serde(rename = "action.run")]
@@ -741,6 +858,33 @@ pub enum Event {
         id: u64,
         command: UiCommand,
     },
+}
+
+/// A property's value as the properties panel writes it.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", content = "value", rename_all = "camelCase")]
+#[ts(export)]
+pub enum PropertyValue {
+    /// `key:` with nothing after it.
+    Empty,
+    Text(String),
+    List(Vec<String>),
+    Number(f64),
+    Bool(bool),
+}
+
+impl PropertyValue {
+    pub fn into_prop(self) -> groundwork_core::frontmatter::Prop {
+        use groundwork_core::frontmatter::Prop;
+        match self {
+            Self::Empty => Prop::Empty,
+            Self::Text(t) => Prop::Text(t),
+            Self::List(l) => Prop::List(l),
+            Self::Number(n) if n.is_finite() => Prop::Raw(n.to_string()),
+            Self::Number(_) => Prop::Empty,
+            Self::Bool(b) => Prop::Raw(b.to_string()),
+        }
+    }
 }
 
 /// What the backend asks the window to do; see `Event::UiCommand`.

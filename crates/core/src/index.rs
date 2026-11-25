@@ -75,6 +75,11 @@ pub struct LinkSettings {
     pub markdown_links: bool,
     pub new_file_location: NewFileLocation,
     pub new_file_folder: String,
+    /// Obsidian's "Default location for new attachments" as written:
+    /// `/` the vault root, `./` beside the note, `./x` a folder beside the
+    /// note, anything else a vault folder. `None` when unset.
+    #[ts(optional)]
+    pub attachment_folder: Option<String>,
 }
 
 /// Change detected by [`Index::upsert`].
@@ -810,6 +815,7 @@ fn read_link_settings(root: &Path) -> LinkSettings {
         use_markdown_links: Option<bool>,
         new_file_location: Option<String>,
         new_file_folder_path: Option<String>,
+        attachment_folder_path: Option<String>,
     }
     let app: AppJson = fs::read(root.join(".obsidian/app.json"))
         .ok()
@@ -832,6 +838,7 @@ fn read_link_settings(root: &Path) -> LinkSettings {
             .unwrap_or_default()
             .trim_matches('/')
             .to_string(),
+        attachment_folder: app.attachment_folder_path,
     }
 }
 

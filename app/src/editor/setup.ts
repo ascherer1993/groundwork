@@ -23,6 +23,7 @@ import {
   keymap,
   placeholder,
   rectangularSelection,
+  ViewPlugin,
 } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import { GFM } from "@lezer/markdown";
@@ -32,17 +33,22 @@ import {
   splitWikilink,
   toggleTaskLine,
   today,
+  urlAt,
 } from "../markdown/syntax";
 import { useUi } from "../state/ui";
 import { message } from "../state/vault";
 import { useWorkspace } from "../state/workspace";
 import { openExternalUrl } from "../lib/fileUrl";
 import { enterLink, leaveLink } from "../lib/linkPreview";
+import { indentListItem, outdentListItem } from "./lists";
 import { wikilinkCompletions } from "./autocomplete";
+import { imageInput } from "./images";
 import { popupTheme } from "./popupTheme";
 import { createdStamps, todoCompletions } from "./todoInput";
 import { type NoteContext, noteContext, notePath } from "./context";
+import { listWrap } from "./listWrap";
 import { blockPreview, inlinePreview, revealAt, structure } from "./livePreview";
+import { spellcheck } from "./spelling";
 import { obsidianSyntax } from "./syntax";
 
 export type EditorMode = "live" | "source";
@@ -93,8 +99,44 @@ const theme = EditorView.theme({
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
     backgroundColor: "var(--selection) !important",
   },
+  // The search panel (⌘F). CodeMirror's own styles for it are light-only,
+  // since this theme doesn't say which mode it's in, so it takes the tokens.
   ".cm-panels": { backgroundColor: "var(--bg-sidebar)", color: "var(--text)" },
+  ".cm-panels.cm-panels-top": { borderBottom: "1px solid var(--border)" },
+  ".cm-panels.cm-panels-bottom": { borderTop: "1px solid var(--border)" },
+  ".cm-panel.cm-search": { padding: "6px 28px 6px 10px", fontFamily: "var(--font-ui)" },
+  ".cm-panel.cm-search label": { color: "var(--text-muted)", fontSize: "12px" },
+  ".cm-panel.cm-search input[type=checkbox]": { accentColor: "var(--accent)" },
+  ".cm-panel.cm-search [name=close]": { color: "var(--text-muted)", cursor: "pointer" },
+  ".cm-panel.cm-search [name=close]:hover": { color: "var(--text)" },
+  ".cm-textfield": {
+    backgroundColor: "var(--bg-input)",
+    color: "var(--text)",
+    border: "1px solid var(--border)",
+    borderRadius: "4px",
+    padding: "3px 6px",
+    font: "13px var(--font-ui)",
+  },
+  ".cm-textfield::placeholder": { color: "var(--text-faint)" },
+  ".cm-textfield:focus": { outline: "none", borderColor: "var(--accent)" },
+  ".cm-button": {
+    backgroundImage: "none",
+    backgroundColor: "var(--bg-elevated)",
+    color: "var(--text)",
+    border: "1px solid var(--border)",
+    borderRadius: "4px",
+    padding: "3px 8px",
+    font: "12px var(--font-ui)",
+    textTransform: "none",
+    cursor: "pointer",
+  },
+  ".cm-button:hover": { backgroundColor: "var(--bg-hover)" },
+  ".cm-button:active": { backgroundImage: "none", backgroundColor: "var(--bg-selected)" },
   ".cm-searchMatch": { backgroundColor: "var(--highlight)" },
+  ".cm-searchMatch.cm-searchMatch-selected": {
+    backgroundColor: "var(--highlight)",
+    outline: "1px solid var(--warning)",
+  },
   ".cm-placeholder": { color: "var(--text-faint)" },
 });
 
@@ -127,6 +169,14 @@ function clickTarget(view: EditorView, event: MouseEvent): boolean {
     return true;
   }
 
+  // Bare URLs open in the browser on ⌘-click; a plain click edits them.
+  const url = el.closest<HTMLElement>(".cm-url");
+  if (url?.dataset.href && newTab) {
+    event.preventDefault();
+    void openExternalUrl(url.dataset.href);
+    return true;
+  }
+
   // In source mode (or with the cursor in a link), Cmd-click follows the link.
   if (newTab) {
     const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
@@ -141,6 +191,12 @@ function clickTarget(view: EditorView, event: MouseEvent): boolean {
         void useWorkspace.getState().openLink(source, href, { newTab: true });
         return true;
       }
+    }
+    const bare = urlAt(line.text, offset);
+    if (bare && !/\]\([^)]*$/.test(line.text.slice(0, offset))) {
+      event.preventDefault();
+      void openExternalUrl(bare);
+      return true;
     }
     for (const m of line.text.matchAll(/\[[^\]\n]*\]\(([^)\s]+)\)/g)) {
       if (offset >= m.index && offset <= m.index + m[0].length) {
@@ -194,12 +250,41 @@ const handlers = EditorView.domEventHandlers({
   },
 });
 
+/**
+ * Marks the editor `cm-meta-held` while ⌘ (or Ctrl) is down, so links that
+ * open on ⌘-click show the hand. The pointer moving says so too, for ⌘
+ * pressed while another window had focus.
+ */
+const metaHeld = ViewPlugin.fromClass(
+  class {
+    constructor(readonly view: EditorView) {
+      for (const type of ["keydown", "keyup", "mousemove"] as const)
+        window.addEventListener(type, this.track, true);
+      window.addEventListener("blur", this.clear);
+    }
+    track = (e: KeyboardEvent | MouseEvent) => {
+      this.view.dom.classList.toggle("cm-meta-held", e.metaKey || e.ctrlKey);
+    };
+    clear = () => this.view.dom.classList.remove("cm-meta-held");
+    destroy() {
+      for (const type of ["keydown", "keyup", "mousemove"] as const)
+        window.removeEventListener(type, this.track, true);
+      window.removeEventListener("blur", this.clear);
+    }
+  },
+);
+
 /** Live preview vs. source, switchable without recreating the editor. */
 export const modeCompartment = new Compartment();
 
 export function modeExtensions(mode: EditorMode): Extension {
   return mode === "live"
-    ? [blockPreview, inlinePreview, EditorView.contentAttributes.of({ "data-mode": "live" })]
+    ? [
+        blockPreview,
+        inlinePreview,
+        listWrap,
+        EditorView.contentAttributes.of({ "data-mode": "live" }),
+      ]
     : [EditorView.contentAttributes.of({ "data-mode": "source" })];
 }
 
@@ -251,11 +336,16 @@ export function editorExtensions(host: EditorHost, mode: EditorMode): Extension[
       ...searchKeymap,
       ...historyKeymap,
       ...defaultKeymap,
+      // On a list item, Tab nests it and Shift-Tab brings it out, renumbering.
+      { key: "Tab", run: indentListItem, shift: outdentListItem },
       indentWithTab,
     ]),
     structure,
     modeCompartment.of(modeExtensions(mode)),
     handlers,
+    metaHeld,
+    imageInput,
+    spellcheck,
     hoverPreview,
     theme,
     popupTheme,

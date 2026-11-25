@@ -75,39 +75,41 @@ My Vault/
     page-state/                   # state for single-file .html pages
   Templates/                      # respected from Obsidian/Templater settings
   Daily/
+  Tickets/                        # every ticket note, whatever its projects (§5.6)
   Contacts/                       # convention: one note per person (type: person)
   Events/                         # convention: one note per event or meeting (type: event)
   Notes/                          # shared ideas and concepts, linked from any project
   Projects/
-    Integrations/                 # a project for the shared, repo-wide work
+    Platform/                     # a project for the shared, repo-wide work
       .groundwork.yml             # ← marks this folder as a Project
-      Integrations.md             # overview note (any name; referenced in config)
-      Work/                       # tickets that don't belong to one integration
-    Lincoln/
-      .groundwork.yml             # code: the lincoln-web and lincoln-lambda components
-      Lincoln.md
+      Platform.md                 # overview note (any name; referenced in config)
+    Acme/
+      .groundwork.yml             # code: the acme-web and acme-worker components
+      Acme.md
       Meetings/  Decisions/  ...  # any structure you like
-      Work/                       # the project's ticket folder (name configurable)
-        INT-123 Fix login.md      # one note per ticket
       demos/
         login-flow.page/          # an HTML bundle (folder with .page suffix)
           index.html
           app.js
           state.json              # written by the page via the bridge API
         sketch.html               # a single-file HTML page
-    Empower/                      # same repo as Lincoln, different components
+        Architecture.excalidraw   # a canvas (§5.17)
+    Globex/                       # same repo as Acme, different components
     Kyoto Trip/                   # a project with no code at all
       .groundwork.yml
 ```
 
-A project is any folder containing `.groundwork.yml`. Inside a project, any subfolder structure is allowed. Only the overview note and the work folder are special.
+A project is any folder containing `.groundwork.yml`. Inside a project, any subfolder structure is allowed. Only the overview note is special. Tickets aren't kept in project folders (§5.6).
 
 **Projects, repos and notes are separate things.** A project is a body of knowledge: meetings, people, decisions, tickets. A repo is code. A project may use code from one or more repos, or none. A repo may serve many projects: in a monorepo, each project usually maps to a few of its components. Notes link freely across all of this, as in Obsidian; a concept note shared by two projects lives once and is linked from both.
 
 ### 4.2 Obsidian settings Groundwork respects (read-only)
 
 - `app.json`: `newLinkFormat` (shortest/relative/absolute), `useMarkdownLinks`, attachment folder
-- `daily-notes.json`: folder, date format, template
+  - Images pasted or dropped into a note are saved to `attachmentFolderPath` (`/` the vault root, `./` beside the note, `./x` a folder beside it, else a vault folder) and embedded as `![[...]]` in the vault's link style. When the vault hasn't set it, Groundwork uses `attachments/` rather than Obsidian's default of the root. Pasted images are named as Obsidian names them (`Pasted image 20261110143012.png`); dropped ones keep their names, numbered if taken. Text copied with a picture of itself (spreadsheets, Word) pastes as text.
+  - Dragging an embedded image's corner in live preview writes its width as Obsidian does: `![[x.png|400]]`, `![alt|400](x.png)`.
+  - Clicking an image in live preview shows its source with the image still below it, as in Obsidian. Dragging the image moves its embed: one alone on its line takes the line along, and one dropped at the start of a line gets its own.
+- `daily-notes.json`: folder, date format, template, unless Groundwork's own `daily_notes:` (in `.groundwork/config.yml`) sets them (§5.3)
 - `templates.json` and the Templater plugin `data.json`: templates folder
 
 ### 4.3 Repos and components — `.groundwork/repos.yml` (portable)
@@ -115,9 +117,9 @@ A project is any folder containing `.groundwork.yml`. Inside a project, any subf
 Every code repo the vault refers to, defined once. Projects and tickets refer to a repo by id, and to part of one as `repo:component`.
 
 ```yaml
-integrations:
-  name: Integrations monorepo
-  description: Partner integrations. One web app and one Lambda per partner, plus shared libraries.
+platform:
+  name: Platform monorepo
+  description: Customer apps. One web app and one background worker per customer, plus shared libraries.
   git:
     base_branch: main
     branch_format: "{{key}}-{{slug}}"
@@ -126,57 +128,56 @@ integrations:
     - npm install
     - cp "{{repo.path}}/.env" .env
   docs: [CLAUDE.md, docs/architecture.md]   # where agents should start reading
-  home_project: Integrations        # where tickets with no single project go (optional)
+  home_project: Platform            # the project a new ticket here gets when none is given (optional)
   components:                       # optional; parts of the repo that work differently
     shared:
       path: packages/shared
       description: Auth, HTTP clients and models used by every integration.
-    lincoln-web:
-      path: apps/lincoln
-      description: Lincoln's partner portal (Next.js).
-      setup: [npm run build -w apps/lincoln]
+    acme-web:
+      path: apps/acme
+      description: Acme's customer portal (Next.js).
+      setup: [npm run build -w apps/acme]
       commands:                     # named commands for people, actions and agents
-        dev: npm run dev -w apps/lincoln
-        test: npm test -w apps/lincoln
-      docs: [apps/lincoln/README.md]
-    lincoln-lambda:
-      path: lambdas/lincoln-sync
-      description: Nightly sync Lambda (Python, SAM).
+        dev: npm run dev -w apps/acme
+        test: npm test -w apps/acme
+      docs: [apps/acme/README.md]
+    acme-worker:
+      path: workers/acme-sync
+      description: Nightly sync job (Python).
       commands:
         test: make test
-        invoke: sam local invoke SyncFunction
+        run: python -m sync --once
 ```
 
 - **Everything is optional.** A repo can be just an id and git settings. Components exist only where a part of the repo needs its own setup, commands or explanation.
 - **Point, don't duplicate.** The repo's own `CLAUDE.md`, READMEs and scripts stay the source of truth for how its code works. `repos.yml` holds what the repo can't know: which projects use which parts, worktree conventions, personal setup steps, and pointers (`docs`) to where to start reading.
 - `{{repo.path}}` is the main checkout on this machine; `{{worktree.path}}` and `{{component.path}}` resolve inside the current worktree.
 
-### 4.4 Project config — `Projects/Lincoln/.groundwork.yml` (portable)
+### 4.4 Project config — `Projects/Acme/.groundwork.yml` (portable)
 
 ```yaml
-name: Lincoln
-overview: Lincoln.md
-work_folder: Work
+name: Acme
+overview: Acme.md
 code:                             # optional: what this project's work touches
-  - integrations:lincoln-web
-  - integrations:lincoln-lambda
-  - integrations:shared
+  - platform:acme-web
+  - platform:acme-worker
+  - platform:shared
 tickets:                          # optional overrides of the vault's tracker settings
   template: Templates/Ticket.md
   match:                          # how a new ticket is routed here (see §5.6)
-    jira_components: [Lincoln]
+    jira_components: [Acme]
 actions: []                       # project-specific buttons (see 4.7)
 ```
 
 - A project without `code` (a trip, a hobby, a reading list) simply has no repos, worktrees or ticket flow. It still gets notes, todos, actions and, if you want one, a workspace whose terminals open in the project folder.
-- The project's id is its folder name, slugified (`lincoln`), unless `id:` is set.
+- The project's id is its folder name, slugified (`acme`), unless `id:` is set.
 - **Ticket trackers are vault-level**, in `.groundwork/config.yml`, because one tracker often serves many projects and a vault may use several trackers:
 
 ```yaml
 trackers:
-  - id: jira-int
-    key_pattern: "INT-\\d+"
-    url: "https://company.atlassian.net/browse/{{key}}"
+  - id: jira
+    key_pattern: "TEAM-\\d+"
+    url: "https://example.atlassian.net/browse/{{key}}"
     note_name: "{{key}} {{title}}"
     template: Templates/Ticket.md
 ```
@@ -185,49 +186,60 @@ trackers:
 
 ```json
 { "vaults": { "<vault-id>": { "repos": {
-  "integrations": { "path": "/Users/aaron/dev/integrations",
-                    "worktrees": "/Users/aaron/dev/integrations-worktrees" }
+  "platform": { "path": "/Users/aaron/dev/platform",
+                "worktrees": "/Users/aaron/dev/platform-worktrees" }
 }}}}
 ```
 
-The first time something needs a repo on a new machine, Groundwork asks you to locate it once (suggesting `<repo>-worktrees` as the worktree directory). Every project that uses the repo shares that mapping. Notes never contain absolute paths.
+The first time something needs a repo on a new machine, Groundwork asks you to locate it once (suggesting `<repo>-worktrees` beside the checkout as the worktree directory, so a repo's checkout and its worktrees sit side by side: `dev/api`, `dev/api-worktrees`). Every project that uses the repo shares that mapping. Notes never contain absolute paths.
 
 ### 4.6 Frontmatter conventions
 
 ```yaml
 # Ticket note
 type: ticket
-ticket: INT-123
-jira: https://company.atlassian.net/browse/INT-123
-projects: ["[[Lincoln]]", "[[Empower]]"]   # every project it affects; the first is its home
-code: [integrations:shared, integrations:lincoln-web]   # what it touches (optional)
-repo: integrations
-worktree: INT-123-fix-login      # name inside the repo's worktree dir
-branch: INT-123-fix-login
+ticket: TEAM-123
+jira: https://example.atlassian.net/browse/TEAM-123
+projects: ["[[Acme]]", "[[Globex]]"]      # every project it affects; the first is its home
+code: [platform:shared, platform:acme-web]   # what it touches (optional)
+repos: [platform, web]           # where it has worktrees; the first is the default (★)
+worktree: TEAM-123-fix-login     # name inside each repo's worktree dir
+branch: TEAM-123-fix-login       # the same branch in every repo
 status: active                   # active | closed
 people: ["[[Jane Doe]]"]
 
 # Any note can belong to projects other than the folder it's in
-projects: ["[[Lincoln]]", "[[Empower]]"]
+projects: ["[[Acme]]", "[[Globex]]"]
 
 # Any note that has a workspace
 workspace: ws-7f3a               # id of a machine-local workspace record
+
+# Any note: other notes it refers to (picked in the properties panel)
+references: ["[[Auth design]]", "[[Jane Doe]]"]
+
+# A contact's teams: notes in Teams/ or with type: team
+team: ["[[Platform]]"]
+```
+
+A ticket written before multi-repo tickets has `repo: platform`, read as `repos: [platform]`; it becomes `repos:` the first time its repos change.
+
+```yaml
 
 # Person
 type: person
 company: ...
 role: ...
-projects: ["[[Lincoln]]"]
+projects: ["[[Acme]]"]
 
 # Event (a meeting, call, conference, deadline…); `type: meeting` counts too
 type: event
 date: 2026-11-05
 time: "14:00"                    # optional
 people: ["[[Jane Doe]]"]
-projects: ["[[Lincoln]]"]
+projects: ["[[Acme]]"]
 ```
 
-**People and events live in top-level folders** (`Contacts/`, `Events/`), never inside a project, so a note made mid-meeting never needs moving. They belong to projects through `projects:`, which Quick add fills in from what you're working on (§5.13).
+**People, events and tickets live in top-level folders** (`Contacts/`, `Events/`, `Tickets/`), never inside a project, so a note made mid-meeting never needs moving, and a ticket that gains or loses a project stays put. They belong to projects through `projects:`, which Quick add fills in from what you're working on (§5.13).
 
 **Project membership** of any note (tickets, meetings, people, concepts, todos): the projects linked in its `projects:` frontmatter, plus the project folder it sits in. `projects:` holds ordinary links to the projects' overview notes, so a project's overview shows all its tickets and related notes as backlinks, in Obsidian too.
 
@@ -242,11 +254,11 @@ actions:
     kind: shell
     run: code "{{worktree.path}}"
     show_on: [worktree]          # worktree toolbar, note context menu, palette...
-  - id: lincoln-dev
-    label: Run Lincoln portal
+  - id: acme-dev
+    label: Run Acme portal
     kind: terminal                # opens a tab in the workspace and runs it
     run: "{{component.commands.dev}}"
-    component: integrations:lincoln-web
+    component: platform:acme-web
   - id: new-ticket
     label: New ticket from Jira
     kind: agent                   # launches a visible Claude Code session
@@ -335,6 +347,8 @@ You type `!p1` and it turns into the marker. The CLI and agents always use the `
 
 ## 5. Subsystem designs
 
+**Folder fields** (`FolderInput`) can be typed or picked with a **Choose…** button, so no folder ever has to be typed. A folder on this Mac (a workspace's folder, a repo's checkout and worktrees folder, a terminal's "Another folder…") uses the native folder picker, which browser mode doesn't have, so there it's typing only. A folder in the vault (the daily notes folder, a Quick add choice's folder) is picked from a searchable list of the vault's folders, so the value stays vault-relative; it works in browser mode too.
+
 ### 5.1 Vault core (`crates/core`)
 
 - **Parse:** frontmatter, wikilinks, embeds, Markdown links, headings, block ids (`^id`), tags (inline and frontmatter), aliases.
@@ -361,9 +375,17 @@ You type `!p1` and it turns into the marker. The CLI and agents always use the `
   - `%%comments%%`
   - footnotes
   - task lists with clickable checkboxes
+  - **Nested numbered lists** (added 2026-11-11) count 1, 2, 3; then a, b, c; then i, ii, iii; then over again, in live preview and reading view alike. Only the drawing changes: the file keeps Markdown's numbers (`   1.`), so Obsidian and GitHub read it as written. On a list item, **Tab** nests it under the item above (lined up with that item's text, or its children if it has some; a tab when the list uses tabs), taking what's under it along; a numbered item starts again at 1, or carries on after the children already there. **Shift-Tab** brings it back out after its parent and carries on the parent's numbering. The numbers after it at both levels follow, when they were in sequence (a `1. 1. 1.` list stays so). Tab on a list's first item does nothing; elsewhere Tab and Shift-Tab indent as before. `app/src/editor/lists.ts`.
+  - **Wrapped list items hang** (added 2026-11-11): when a bullet, numbered, lettered or task item wraps, its next lines start where its text does, not back under the bullet, number or checkbox, so items stay apart. In live preview the indent is measured per line (`app/src/editor/listWrap.ts`); reading view does it with CSS (bullets and numbers hang natively; tasks get the same indent). Source mode wraps as plain text.
   - tables
-  - frontmatter shown as a properties panel
+  - frontmatter shown as a properties panel, edited in place as in Obsidian (`app/src/editor/propertyPanel.ts`; added 2026-11-12). Clicking the panel never turns it into YAML: in live preview the cursor stays below the frontmatter (clicks, arrows and selections that would land in it land just below; `editor/propertiesSource.ts`), and the YAML shows only through the panel's **`</>`** button or a search hit inside it, until the cursor leaves it.
+    - Each property has an editor for its type, worked out from its value (and its name before it has one): **Text** (shown rendered, with clickable links; click to edit, `[[` suggests notes, Enter saves, Escape cancels), **List** (chips with **×**, and a field where Enter adds a value; pasting lines adds one each; bare URLs show as links), **Number**, **Checkbox**, **Date**, **Date & time**. Nested values show as JSON and open the YAML.
+    - A property's name is a button with a menu: **Rename…** (in place, keeping its value as written), **Type** (converts the value; the choice is kept for the session when YAML can't hold it, as for an empty date) and **Remove property**.
+    - **+ Add property** at the bottom asks for a name (suggesting common ones) and a type (guessed from the name: `links` and `tags` are lists, `date` and `due` dates), then focuses the new value. A note without frontmatter shows only that button, on hover, and gets frontmatter when a property is added.
+    - Picked lists suggest from the vault as you type, leaving out what's there, and write links: `people:` (contacts: §5.13's people, `type: person` or `contact`, or in `Contacts/`; API `people.list`), `projects:`, a contact's `team:` (teams: notes with `type: team`, or in `Teams/`; API `teams.list`; typing a new name offers **Create team “…”**, a note in `Teams/`), and `references:` (any note), and `tags:` suggests the vault's tags. Every note shows an empty `references` row, and a contact an empty `team` row, until they have one, so they're filled in without typing their names. A ticket's `repos:` still go through the ticket flows (below).
+    - Every change is made in place by `frontmatter.rs` (`frontmatter.set`, `frontmatter.setList`, `frontmatter.rename`), keeping other properties and comments, and goes through the editor, so it can be undone. Obsidian's per-vault types (`.obsidian/types.json`) aren't read yet.
 - **Navigation:** Cmd-click a link to open it in a new tab, hold ⌘ over a link to preview it (the preview closes once the pointer leaves both the link and the preview), and get autocomplete for `[[`.
+  - Bare URLs (`https://…`, `www.…`, email addresses, `<https://…>`) show as links in live preview; ⌘-click opens them in the browser (holding ⌘ shows the hand over them) and a plain click edits them, so a pasted link stays easy to change. In source mode ⌘-click opens them too. Reading view links them as usual.
 
 ### 5.3 Templates & daily notes
 
@@ -396,7 +418,9 @@ There's one simple `{{…}}` syntax. It's a superset of Obsidian's core template
 - Text inside code spans and fenced code blocks is never expanded.
 - `\{{date}}` escapes a tag, so it's output literally.
 
-Daily notes follow `daily-notes.json`. Cmd+Shift+D opens today's note. Daily notes and todos work together (§5.11).
+Daily notes follow Groundwork's own settings, then Obsidian's. **Settings › Daily notes** sets the folder, date format and template, kept in the vault as `daily_notes:` in `.groundwork/config.yml` (edited in place, so the rest of the file stays as written). Each field left empty falls back to `.obsidian/daily-notes.json`, then the defaults (the vault's root, `YYYY-MM-DD`, no template); an empty folder set on purpose (`/` in Settings) means the root even when Obsidian says otherwise. Settings shows Obsidian's values as placeholders and where today's note will go. (Decided 2026-11-09: Groundwork's settings always win, so the app needn't depend on Obsidian's file.) Cmd+Shift+D opens today's note. Daily notes and todos work together (§5.11).
+
+**Year and month folders** (added 2026-11-24): a format with slashes nests daily notes, as in Obsidian: `YYYY/MM-MMMM/YYYY-MM-DD` puts Nov 24 at `Daily/2026/11-November/2026-11-24.md`. A daily note is told by its name (the format's last segment) anywhere in the daily folder, so `[[2026-11-24]]` still finds or creates it, and its todos, day block and board all work wherever it sits. Changing the format only places new notes; **File daily notes and events by date…** (palette; `groundwork refile [--dry-run]`, `vault.refile`, `crates/core/src/refile.rs`) moves the ones already written, together with the notes of Quick add choices whose folder has date tags (§5.13). It says first what will move. Each moves with its subnotes through the ordinary rename, so links are rewritten. A note already at the destination is left alone and reported, and folders the moves empty go to the Trash.
 
 **In the app (built in Phase 2):**
 - The templates folder comes from Obsidian's `templates.json` (default `Templates/`).
@@ -434,16 +458,33 @@ Daily notes follow `daily-notes.json`. Cmd+Shift+D opens today's note. Daily not
   - status badges: running, waiting on you, finished, idle
   - it's independent of notes
   - (added 2026-11-06, after cmux) a workspace can have a **colour** (one of eight, from its menu's Colour…; down the left edge of the workspace and its terminals in the list, and of the terminals' header), be **pinned** to the top (Pin to top: a Pinned section above the groups, with a pin by the name), and be **dragged** to another place in its section. The order is the order of `workspaces.json` (`workspace.move`); within a section, workspaces keep it. ⌘1–9, "Switch workspace…" and Next/Previous workspace follow the list as shown (`state/workspaceOrder.ts`).
+- **A terminal's tab says its repo** (added 2026-11-10) in a smaller, grey line under its title when its shell is in a located repo's checkout or worktrees folder, following the shell as it `cd`s. A ticket's worktrees share one folder name in every repo, so the title alone can't tell them apart.
 - **Terminal tabs can be named** (a double click on the tab, or its menu's Rename tab…). The name is kept in the tab's params, so it outlives a restart, and shows instead of the title the program sets; an empty name goes back to that.
 - **Notes with a workspace** switch views with the window's own buttons (notes, split, terminals); opening the note makes its workspace current. (They had a Note · Split · Workspace switch of their own above the note until 2026-11-05; it repeated the window's buttons, so it went.)
-- **Ticket workspaces** open their first tab at the worktree root, so agents see the repo's own `CLAUDE.md`. The new-tab menu also offers one tab per component the ticket touches, opened in that component's folder.
+- **Ticket workspaces** open their first tab at the default repo's worktree root, so agents see the repo's own `CLAUDE.md`. The new-tab menu offers each of the ticket's worktrees (the default starred) and each component the ticket touches, opened in that component's folder. Every workspace's new-tab menu also offers the vault root, unless its terminals already start there (the Vault workspace), for working on the vault without adding it as a repo.
+- **⌘T opens a tab where you are** (decided 2026-11-17, replacing ⌘T as "a terminal in the workspace's folder", which is now ⌥⌘T, "New terminal"). Among the notes it's a blank tab (`new:tab`) with the quick switcher over it; the note picked takes the tab's place (and the blank tab isn't added to Back). Closing the switcher leaves the blank tab, offering it and New note. Among a workspace's terminals it's a **new-tab page** (`components/NewTab.tsx`, a `launcher` panel that isn't kept across restarts) listing where the tab can start: **Claude at the vault root, with context** (first and highlighted), a terminal at the vault root, a terminal in each of the ticket's worktrees (the default starred) and components, one in the workspace's folder if not already listed, then Claude in each worktree. ↑↓ choose, ↩ opens, 1–9 pick directly, a click works too, Escape closes it; nothing starts until one is picked, and the new terminal takes the page's place. A second ⌘T goes back to an open page. The "+" menu stays, and has "New Claude at vault root, with context" too.
+- **Claude at the vault root, with context** (decided 2026-11-17): so a session can use the whole vault while knowing what the workspace is for. It starts in the vault root with `--add-dir` for each of the ticket's worktrees (or, for a workspace that isn't a ticket's, its folder when that's outside the vault), with `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1` so the worktrees' `CLAUDE.md`, `CLAUDE.local.md` and `.claude/rules` load. Its SessionStart hook sees the terminal is in no worktree or checkout and adds its workspace's context instead (`Session::terminal_context`, from `GROUNDWORK_WORKSPACE_ID`): the workspace's note (a ticket, with every worktree's path) or its folder. What it doesn't get from the worktrees, which Claude Code only reads from the folder it starts in: their `.claude/settings.json` (permissions, hooks) and `.mcp.json`; and its sessions are listed under the vault, not the repo, for `--resume`. "Claude in <repo>" stays for those.
+- **The Vault workspace** (added 2026-11-09): always first in "Switch workspace…" and the terminals header's menu, made the first time it's picked, in the vault root and pinned to the top. It belongs to no note, so following never switches to it. It isn't the "Agents" workspace, which keeps the command bar's sessions apart.
 - A note has no workspace until you choose "Create workspace" or create a ticket.
 
 ### 5.6 Projects, repos, tickets & worktrees
 
-- **One worktree per ticket**, in its repo's worktree directory, whichever project the ticket belongs to. Tickets from Lincoln and Empower share the `integrations` worktree directory; ticket keys keep the names unique.
-- **Where a ticket's note goes:** the work folder of its home project (the first in `projects:`). A ticket that belongs to no single project goes to the repo's `home_project` if it has one, otherwise to the vault's default work folder (`Work/`, set in `config.yml`).
-- **Ad-hoc tickets.** Projects and tracker keys are both optional. A spike or quick fix can be just a repo plus a slug: `groundwork ticket create --repo integrations --slug try-new-cache`. It gets a branch and worktree (name formats skip `{{key}}` and its separator when there's no key), a workspace and a note in the default work folder, and you can attach it to projects or a Jira key later by editing frontmatter.
+- **One worktree per repo a ticket touches** (decided 2026-11-09, replacing one worktree per ticket: a ticket can span repos). Each is in its repo's worktree directory, whichever project the ticket belongs to, all with the same folder name and branch (named by the default repo's formats). Tickets from Acme and Globex share the `platform` worktree directory; ticket keys keep the names unique.
+  - **One workspace per ticket**, however many repos: its tabs pick their worktree (§5.5), so a ticket doesn't fill the Workspaces view. A workspace belongs to one note and is never shared between tickets; two tickets in the same folder get a workspace each.
+  - **The default repo** is the first in `repos:`, starred in the menus. ⌥⌘T ("New terminal") and the first tab start in its worktree, and so does the workspace's folder. "Make default" moves a repo to the front and changes the workspace's folder.
+  - **Add repo…** (the note bar, the ticket's menus, `groundwork ticket add-repo`) adds a worktree in another repo on the ticket's branch. A ticket can start with no repo at all and get its first worktree this way.
+  - **Repos not in `repos.yml` yet** (added 2026-11-10, since repos were only ever written by hand): "Add repo…", "New worktree in…", the new-ticket dialog and the palette's "Add a repo from its checkout…" (`groundwork repo add <checkout>`) add one from its checkout here: an entry with its name and the base branch git reports, appended so the rest of the file stays as written, and its location recorded. Setup and components can be added to the entry later.
+  - **Close** checks every worktree first and removes none unless all can go; **Restore** brings them all back.
+  - (Added 2026-11-10.) **Files git ignores** that a worktree needs (`.env`, `CLAUDE.local.md`) are listed in the repo's `copy:` in `repos.yml` and copied from the main checkout into each new worktree before setup; missing ones are skipped, and nothing already there is overwritten. (Added 2026-11-13.) Ones listed in `link:` instead are symlinked to the main checkout's, so every worktree shares one file (`CLAUDE.local.md`) and a change shows in all of them.
+  - **Seeing the other repos:** Claude Code sessions Groundwork starts in a ticket's worktree (agent actions, Fork, Resume, and "New Claude in <repo>" in the + menu) get `--add-dir` for each of the ticket's other worktrees, so a contract between repos can be read on both sides. `groundwork context` lists every worktree's path. A `claude` typed by hand can use `/add-dir`.
+  - **Open ticket in VS Code** (the note bar, for a ticket in several repos) opens all its worktrees in one new window, each repo's changes apart in Source Control. The main checkout or one worktree, opened alone, shows only its own changes.
+  - The Tickets view groups a ticket by its default repo; its git state adds up all its worktrees.
+  - Subnotes follow their note's workspace (§5.5), so a ticket's per-repo notes (`TEAM-123 Fix login.web.md`) use the ticket's workspace.
+- **Where a ticket's note goes** (decided 2026-11-10, replacing each home project's work folder): the vault's one tickets folder, `Tickets/` (`tickets_folder` in `config.yml`). A ticket spans repos and may belong to several projects, so no project's folder is the right place for it, and moving the note whenever its projects changed would churn its links. Its projects are only `projects:` links (the first is its home, which the Workspaces view groups it under); a new ticket with none given gets its repo's `home_project`. A ticket has one workspace, whatever its projects and repos.
+  - **Editing a ticket's projects and repos** is picking, never typing keys. The properties panel has a picker for `projects:` (the vault's projects; it writes links to their overview notes) and, on a ticket, for `repos:`, each value with × to remove it. A ticket shows empty `projects` and `repos` rows until it has some. Adding a repo there is "Add repo…" (a worktree on the ticket's branch); removing one is **Remove repo** below. `workspace:` shows the workspace's name, not its id.
+  - **Remove repo** (the properties' ×, the Repos menu's "Remove <repo>…", the palette, `groundwork ticket remove-repo`), added 2026-11-10: removes that repo's worktree, ends terminals working in it and drops it from `repos:`. The branch stays, so adding the repo again brings its commits back; only uncommitted changes would be lost, so only those need a second yes (`--force`). Removing the default makes the next repo the default and moves the workspace's folder there; removing the last leaves no `repos:` (the branch and worktree names stay for the next one) and the workspace in the note's folder.
+  - **Older vaults** kept tickets in project work folders. "Move tickets into the tickets folder…" (palette; `groundwork ticket gather`) moves every ticket note outside `Tickets/` into it with its subnotes, rewriting links. One that belonged to a project only by sitting in its folder gets that project in `projects:` first. Folders it leaves empty go to the Trash. A project's `work_folder:` is no longer read.
+- **Ad-hoc tickets.** Projects and tracker keys are both optional. A spike or quick fix can be just a repo plus a slug: `groundwork ticket create --repo platform --slug try-new-cache`. It gets a branch and worktree (name formats skip `{{key}}` and its separator when there's no key), a workspace and a note in `Tickets/`, and you can attach it to projects or a Jira key later by editing frontmatter.
 - **Starting a worktree** works from wherever you are:
   - a project: its overview note, its folder in the tree, or the tickets view filtered to it (defaults to that project and its repo, or asks which repo when it uses several)
   - a repo: the tickets view grouped by repo, or "New worktree in…" in the command palette
@@ -462,7 +503,7 @@ Daily notes follow `daily-notes.json`. Cmd+Shift+D opens today's note. Daily not
 - **Agent create (default):** "New ticket from Jira" is an agent action.
   1. It opens a visible Claude tab in the repo's main checkout (or the vault, for a ticket with no repo yet).
   2. Claude reads the ticket and picks a slug, title, projects and the components it touches.
-  3. Claude runs `groundwork ticket create --key INT-123 --project lincoln --project empower --code integrations:shared --slug fix-login --title "Fix login"`.
+  3. Claude runs `groundwork ticket create --key TEAM-123 --project acme --project globex --code platform:shared --slug fix-login --title "Fix login"`.
   4. Claude fills in the note's summary.
 
   You can watch it happen and step in. This requires Claude Code to have Jira access; see open questions.
@@ -481,7 +522,7 @@ Daily notes follow `daily-notes.json`. Cmd+Shift+D opens today's note. Daily not
   - the actions available here
   - related notes: the ticket's links, the projects' overviews, and recent meetings and decisions
 
-  It works in reverse too: `groundwork code who apps/lincoln` lists the projects and open tickets that touch a path. The plugin's SessionStart hook injects a short `context` summary into every Groundwork tab, and the skill teaches agents to call `groundwork context --json` whenever they need more.
+  It works in reverse too: `groundwork code who apps/acme` lists the projects and open tickets that touch a path. The plugin's SessionStart hook injects a short `context` summary into every Groundwork tab, and the skill teaches agents to call `groundwork context --json` whenever they need more.
 - **Multi-repo tickets:** not in the first version. The frontmatter keeps room for them (`repo`/`worktree` become a list), and `code` can already name components in several repos.
 
 ### 5.7 Claude Code integration
@@ -499,10 +540,11 @@ Daily notes follow `daily-notes.json`. Cmd+Shift+D opens today's note. Daily not
   - Items show a dock badge and a macOS notification.
   - You can answer from the inbox panel.
 - **Other agents:** behind an `AgentAdapter` interface. Only Claude Code is implemented.
-- **Setup (built in Phase 2): "Set up Claude Code…"** in the command palette, for Claude sessions in any terminal. Terminals inside Groundwork won't need it, since they set `GROUNDWORK_VAULT` and PATH themselves. It has three rows, each reporting *ok*, *missing*, *stale* or *unavailable*, with a button to fix it:
+- **Setup (built in Phase 2): "Set up Claude Code…"** in the command palette, for Claude sessions in any terminal. Terminals inside Groundwork won't need it, since they set `GROUNDWORK_VAULT` and PATH themselves. It has four rows, each reporting *ok*, *missing*, *stale* or *unavailable*, with a button to fix it:
   - **The `groundwork` command:** a symlink in `/usr/local/bin` (on PATH by default; it asks for an admin password only if the folder needs one) to the CLI built next to the app. It's a link, not a copy, so rebuilding or updating the app updates it. It's *stale* if it points at another build, such as an older checkout, or is a plain copy. A leftover `~/.cargo/bin/groundwork` gets a warning.
   - **The plugin:** installed with `claude plugin marketplace add <this checkout>` and `claude plugin install groundwork@groundwork`. Claude Code reads a directory marketplace's plugin live from its folder, so skill edits reach new sessions without reinstalling. It's *stale* when installed from another folder (fixed by removing and re-adding the marketplace, which reinstalls the plugin), when disabled, or when the installed version is behind the folder's (`claude plugin update`). Groundwork finds `claude` on PATH or where its installers put it, since apps opened from the Finder get a minimal PATH. Without it, the row shows the commands to run by hand.
   - **Default vault:** saved in `cli.json` in the app data folder. The CLI uses it after `--vault`, `$GROUNDWORK_VAULT` and the vault around the current folder, and before "the vault the app opened last". A default that no longer exists is an error, not a silent fallback.
+  - (Added 2026-11-11.) **`CLAUDE.md` in the vault:** a short one at the vault root (`crates/core/src/vault-claude.md`) telling any Claude Code session started in the vault to use the `groundwork` skill and command, `groundwork context`, and to leave `.obsidian/` alone. It points at the skill rather than repeating it. Groundwork only ever creates it: a vault with a `CLAUDE.md` of its own (any case) keeps it untouched, and the row notes when that file doesn't mention Groundwork. It's *missing* until added; it never goes *stale*, so it doesn't prompt at launch. Ticket worktrees are outside the vault and don't see it; sessions Groundwork starts there get the context from `groundwork context` and `--add-dir`.
   - **Staleness:** once per launch, Groundwork checks quietly and shows a "Claude Code setup is out of date — Fix…" notice only if something set up earlier is now *stale*. Until the dialog has been opened once, a launch where the command isn't installed shows "Let Claude Code work with your notes, from any terminal — Set up…" instead. `make` only builds the CLI; putting it on PATH and installing the plugin write outside the repo, so they wait for that click.
 
 ### 5.8 CLI (`groundwork`)
@@ -585,12 +627,13 @@ Every command supports `--json` output, so agents can parse it reliably.
 - **Dates in a day block are told from its day.** In any daily note but today's they're dates ("Overdue Thu, Nov 5"), not "today" or "tomorrow", so they agree with the sections.
 - **Using the block:**
   - You can tick, reschedule (`@fri`) or cancel a task from the view. The change is written to the line in the file where the task actually lives.
+  - (Added 2026-11-17.) **Edit** (the pencil beside Reschedule, in `todos` blocks and the Todos panel) turns the todo's text into a field in place: Enter or leaving it saves, Escape cancels. Only the text is shown; its dates, priority and block id stay on the line, after the new text. Typing `@date` or `!p1` changes the due date or priority too, as when adding. The list doesn't redraw while you type. `markdown/todoEdit.ts`, API `todo.update` with `{ kind: "text" }`, CLI `todo edit <id> "text"`.
   - The block's "add todo" field writes a new task into that daily note, under its `## Todos` heading (configurable), due that day. It shows in the block, and the field stays ready for the next.
   - In Obsidian the block shows as plain text, and the note's own todos as ordinary task lines.
 - **Where a new todo goes:** today's daily note, or the note it belongs to (a project's, a ticket's), with a due date; never a future day's note. Every daily note shows what's due that day, wherever it's written. The skill tells agents so (`todo add --due tomorrow`).
-- **Todos panel:** a sidebar view of every open todo, grouped into Overdue, Today, Next 7 days, Later and No date. Its filter box takes words, `#tag`, `path:` and `p1`.
-- **The todo board** (built 2026-11-06): a tab (`todos:board`; ⇧⌘T, "Open the todo board", or the calendar button by the Todos panel's filter) showing a week, Monday to Sunday, a column a day. Each day has its events (notes that are events, as in the project view, dated that day; they open the note), the open todos due that day (or, undated, scheduled for it) and the todos done that day. **Overdue todos show on today**, so none sit unseen on a past day; a week without today has none. Previous and next week, and "This week"; the board remembers the week while the app runs, so coming Back to it from a note keeps it. The panel's filter narrows the todos; events show when it's only words or a path, and must match them. Tick a todo, **drag it to another day** to reschedule it, or **Add** under a day: into today's daily note, due that day. All seven days fit beside both sidebars on a laptop; narrower, the board scrolls sideways with today in view. `todo.board` (`crates/core/src/board.rs`) takes any run of days (up to six weeks), for a month view later.
-- **`todos` block syntax:** `day` gives the day view. Otherwise each line is a filter: `tag:`, `path:` (alias `project:` until projects exist), `due: overdue|today|week|any|none`, `status:`, `priority: p1`, `text:`, `title:`. A first line of `agenda` groups the results like the panel.
+- **Todos panel:** a sidebar view of every open todo. **Group by** (remembered) picks how: by **note** (the default: a section a note, each note's todos most important first, and the note holding the most important todo first), by **priority** (P0 to P5, each soonest due first), or by **due date** (Overdue, Today, Next 7 days, Later and No date, each most important first). *(Changed 2026-11-11: it used to group by due date only, in due-date order.)* Clicking a section's heading folds it, Option-click folds or unfolds them all; folds are remembered per grouping, through filters and restarts. Grouped by note, the first 40 notes show, then "Show more". Its filter box takes words, `#tag`, `path:` and `p1`.
+- **The todo board** (built 2026-11-06): a tab (`todos:board`; ⇧⌘T, "Open the todo board", or the calendar button by the Todos panel's filter) showing a week, Monday to Sunday, a column a day. Each day has its events (notes that are events, as in the project view, dated that day; they open the note), the open todos due that day (or, undated, scheduled for it) and the todos done that day. **Overdue todos show on today**, so none sit unseen on a past day; a week without today has none. Previous and next week, and "This week"; the board remembers the week while the app runs, so coming Back to it from a note keeps it. The panel's filter narrows the todos; events show when it's only words or a path, and must match them. Tick a todo, **drag it to another day** to reschedule it, **edit its text** (a pencil on hover, or right-click › Edit, which also has Reschedule…, Cancel todo… and Open note; added 2026-11-17), or **Add** under a day: into today's daily note, due that day. All seven days fit beside both sidebars on a laptop; narrower, the board scrolls sideways with today in view. `todo.board` (`crates/core/src/board.rs`) takes any run of days (up to six weeks), for a month view later.
+- **`todos` block syntax:** `day` gives the day view. Otherwise each line is a filter: `tag:`, `path:` (alias `project:` until projects exist), `due: overdue|today|week|any|none`, `status:`, `priority: p1`, `text:`, `title:`. A first line of `agenda` groups the results by due date, like the panel; `group: note` or `group: priority` groups them those ways instead.
 - **Typing todos:** on a task line, and in a day block's add field, `@` offers dates (typed text such as `@fri`, `@nov 12`, `@+3d`, or suggestions) followed by priorities (`@p1` narrows to one), and `!` offers priorities only. Both replace an existing due date or priority, not add a second one. A task you write gets `➕ today` once the cursor leaves its line, so half-typed tasks aren't stamped or logged.
 - **Activity log:** task events (`taskAdded`, `taskDone`, `taskCancelled`, `taskReopened`, `taskRescheduled`) come from comparing a note's tasks before and after each change, so edits from Obsidian or Claude are logged too.
   - A task typed in the app counts as added when it gets its `➕` stamp. One from outside counts as added when first seen.
@@ -607,7 +650,7 @@ These all work without the app running:
 
 - `todo list [--due today|overdue|week] [--priority p0-p1] [--project] [--stale 14d] [--json]`
 - `todo add "text" [--due fri] [--priority p2] [--note <note>]`. With no `--note`, the task goes into today's daily note.
-- `todo done|cancel|reschedule <id>`. Ids are `path:line` plus a hash of the task text, so a stale id is caught rather than editing the wrong line.
+- `todo done|cancel|reschedule|edit <id>`. Ids are `path:line` plus a hash of the task text, so a stale id is caught rather than editing the wrong line.
 - `note info <note>`, `activity [--since] [--project] [--json]`
 
 ---
@@ -615,7 +658,7 @@ These all work without the app running:
 ### 5.13 Quick add, people & events, settings (Phase 7)
 - **Settings** (⌘,) has a section per feature down its side. A feature's section holds its settings; **Keyboard shortcuts** is a section of its own that lists every feature's commands, grouped by feature, with a search. Features add commands to the key registry (`app/src/state/keys.ts`), including ones made from configuration (each Quick add choice).
 - **Editor commands** act on the note being edited and have shortcuts like any command: toggle checkbox (⇧⌘2), bulleted and numbered list, bold (⌘B), italic (⌘I), strikethrough, highlight, inline code, link (⌘K), insert today's date and the time.
-- **Quick add** (⇧⌘A) opens a menu of choices. A *note* choice makes a note from a template in a folder, named by a pattern (`{{date}} {{prompt:Title}}`), asking for the template's prompts, a date when the name or template uses one, and a project when it's set to. A *capture* choice adds a line (`- [ ] {{prompt:Todo}}`) to a note: today's daily note, or a fixed one. A capture that adds a todo (`- [ ] …`) types like any add-a-todo field, with the `@date` and `!priority` suggestions, and `@tomorrow` or `!p1` typed without picking one count too. The project offered first is the one you're in: the open note's (`projects:` or its folder), else the current workspace's note's. Choices live in `.groundwork/quickadd.yml` (portable; written by Settings), and when there's none the defaults are **Person** (in `Contacts/`), **Event** (in `Events/`, named `{{date}} {{title}}`) and **Todo** (captured to today's note). A choice's template falls back to a built-in one when the vault has no such file. The CLI runs the same choices (`groundwork add <choice>`), so agents can too.
+- **Quick add** (⇧⌘A) opens a menu of choices. A *note* choice makes a note from a template in a folder, named by a pattern (`{{date}} {{prompt:Title}}`), asking for the template's prompts, a date when the name or template uses one, and a project when it's set to. A *capture* choice adds a line (`- [ ] {{prompt:Todo}}`) to a note: today's daily note, or a fixed one. A capture that adds a todo (`- [ ] …`) types like any add-a-todo field, with the `@date` and `!priority` suggestions, and `@tomorrow` or `!p1` typed without picking one count too. The project offered first is the one you're in: the open note's (`projects:` or its folder), else the current workspace's note's. Choices live in `.groundwork/quickadd.yml` (portable; written by Settings), and when there's none the defaults are **Person** (in `Contacts/`), **Event** (in `Events/`, named `{{date}} {{title}}`) and **Todo** (captured to today's note). A choice's template falls back to a built-in one when the vault has no such file. A note choice's folder can have tags too, so notes are filed by their day: `Events/{{date:YYYY}}/{{date:MM-MMMM}}` (added 2026-11-24). The form then asks for the date. What a tag fills in is cleaned like a name, so it can't climb out of the folder. Everything that looks for events or people by folder (`Events/`, the project view's New event button) uses the part before the first tag. The CLI runs the same choices (`groundwork add <choice>`), so agents can too.
 - **The project view** is a tab per project, listed in the file tree under the project's overview note, and opened from there, the overview note, the palette, a project folder's menu, or the Tickets panel. It lists the project's **events** (newest first; upcoming or past; search; sort by date or title) and **people** (members, whose `projects:` names it, and people mentioned in its notes, with how often; search; filter members or mentioned; sort by name or last seen). Event membership is the usual project membership (§4.6): `projects:` or sitting in the project's folder, so meetings already filed in a project show too.
 
 ### 5.14 Resizable side panels
@@ -629,7 +672,7 @@ These all work without the app running:
 - **Tabs:** a subnote's tab shows its key, with the note it's under in small accent text beneath ("transcript" over "2026-12-01 Standup"); a project's view shows "Project view" over the project's name, so neither looks like the note it sits under.
 - **Renaming or moving** a note takes its subnotes along, keeping their keys (`Session::rename`, one undo for all); links to them are rewritten like any other. The rename is refused before anything moves if a subnote's new name is taken. Renaming a subnote moves only it. **Deleting** a note from the tree trashes its subnotes too, and says so first.
 - **Events:** a subnote in `Events/` or a `Meetings` folder isn't an event of its own (unless its own `type:` says so), so a transcript doesn't show twice in the project view or the todo board.
-- The rules live in `crates/core/src/subnotes.rs`, mirrored for the tree in `app/src/lib/subnotes.ts`. Later, maybe: pages (`Name.key.html`) as subnotes too.
+- The rules live in `crates/core/src/subnotes.rs`, mirrored for the tree in `app/src/lib/subnotes.ts`. A canvas (`Name.key.excalidraw`, §5.17) can be a subnote too; only notes have subnotes. Later, maybe: pages (`Name.key.html`) as subnotes too.
 
 ### 5.16 Encrypted notes (built 2026-11-08)
 - **Encrypting:** right-click a note › **Encrypt…** (or the palette) asks for a password twice and an optional hint, warning that a forgotten password can't be recovered. The note stays a `.md` file at its path (links, renames and the tree work as before); on disk only `encrypted: groundwork-v1` and `hint:` are readable, then a notice and a ```` ```groundwork-encrypted ```` block. The whole note, its own frontmatter included, is sealed with XChaCha20-Poly1305 under an Argon2id key (64 MiB, 3 passes; the cost is stored in the file and authenticated). Format: `crates/core/src/crypt.rs`. Groundwork-only: Obsidian shows the ciphertext.
@@ -638,6 +681,25 @@ These all work without the app running:
 - **Also:** **Change password…** and **Remove encryption…** (both need the password). A lock icon marks encrypted notes in the tree.
 - **What can't see inside:** search (it finds them by name only), the index (no tags, links or todos), embeds and hover previews (a placeholder, even unlocked), and the CLI/Claude: the app socket refuses `crypt.*` except `crypt.lock`, and `Session::write_file` refuses to write over an encrypted note, so todos, quick add and agents can't clobber one. qmd still indexes the (meaningless) ciphertext.
 - Known limits: links inside an encrypted note aren't rewritten when their targets are renamed (the index can't see them); an encrypted note's activity is logged as a plain "modified".
+
+### 5.17 Canvases (built 2026-11-10)
+For drawing how things work, on a call with your screen shared, and pasting the result into Slack.
+- **The file:** `Name.excalidraw`, Excalidraw's own JSON (`"type": "excalidraw"`), so excalidraw.com and Obsidian's Excalidraw plugin open it too. A file kind of its own (`NodeKind::Canvas`); new ones start as an empty scene. Only the drawing, the background and the grid are saved, not where you've scrolled or zoomed, so panning doesn't touch the file. Pasted images are kept inside it (base64), as Excalidraw does. Links to it (`[[Name.excalidraw]]`) resolve and are rewritten on rename like any other.
+- **Making one:** a "specialty note". Right-click a folder › **New specialty note › Canvas…**, or a note › **New specialty subnote › Canvas…** for `Note.key.excalidraw` beside it (§5.15: listed under the note, moved and deleted with it, and its tab's note bar goes back up). The palette has **New canvas…** (where new notes go) and **New canvas subnote of this note…**. The context menu grew submenus for this (`MenuItem.items`); other specialty kinds go in the same submenu.
+- **The view** (`app/src/components/CanvasView.tsx`): Excalidraw 0.18 (MIT) fills the tab: an infinite canvas with shapes, arrows that stay bound to boxes, lines (editable: double-click to move or add points; round edges curve them), freehand, text, the eraser, the laser pointer, frames, a library and hand-drawn or clean styles. It loads with the first canvas opened (`React.lazy`), so the app's first load doesn't carry it. Edits save 300 ms after you stop, and on closing the tab; a change made elsewhere shows up if there's nothing unsaved here. ⌘Z in a canvas is the canvas's undo, not "undo the last file change". Excalidraw's main menu keeps only what fits (export dialog, find, command palette, help, clear, background).
+- **Icons:** the toolbar's icon button opens a picker of common software-engineering icons (servers, databases, clouds, users, locks, git…) and a search over all of Lucide's (`app/src/lib/canvasIcons.ts`). An icon goes in as ordinary shapes (lines, ellipses, rectangles in one group, in the current stroke colour), not a picture, so it follows dark mode and can be recoloured and resized. Branded icon packs (AWS, Azure, Kubernetes…) are for later.
+- **Copy and export** (`app/src/lib/canvas.ts`): **Copy as image** puts a PNG on the clipboard; **Export image** saves a PNG or JPEG (the desktop app asks where with the save dialog and writes it with the `save_image` Tauri command; the browser downloads it). Each takes the selection if there is one, else everything drawn, with 24 px around it, at 2× for Retina screens. Images are always light, on the canvas's background, whatever the canvas shows.
+- **Look:** Settings › Canvases › Look: follow the app (light or dark, as macOS is), always light, or always dark (`canvasTheme` in the app's settings).
+- **Offline:** nothing on a canvas reaches the web. Excalidraw's fonts are served by the app (`vite.config.ts` serves them in development and copies them into the build; `window.EXCALIDRAW_ASSET_PATH`), not its CDN; there's no collaboration, AI, share links or embedded web content (`validateEmbeddable` refuses all), and the library's "Browse libraries" link is hidden. Library items are kept in this browser's storage. e2e checks that opening a canvas makes no outside requests.
+- **Later:** showing a canvas inside a note as a picture (`![[Name.excalidraw]]`); branded icon packs; perhaps a canvas from a template.
+
+### 5.18 Spell checking (built 2026-11-11)
+Misspelled words in a note get a red wavy underline; right-click one for suggestions and **Add “word” to dictionary**. Our own rather than the webview's, so it can skip what isn't prose, use the app's menu, keep the vault's words with the vault, and work the same in browser mode.
+- **The dictionary:** US English, SCOWL's Hunspell `en_US` (size 60, through wooorm's `dictionary-en`; licence beside it), bundled in `crates/core/dictionaries/` and checked with the `spellbook` crate (Hunspell-compatible, pure Rust). It's parsed once, in the background when a vault opens. Other languages are for later.
+- **The vault's words:** `.groundwork/dictionary.txt`, one per line (blank lines and `#` comments allowed), so they sync with the vault and can be edited by hand. "Add to dictionary" appends; it's read again whenever it changes. A word added in lower case also covers it capitalised and in capitals; one with capitals (a name) only as written or in capitals; possessives of either are fine. Settings › Spelling lists them, each with a remove button, and has **Check spelling in notes** (on unless turned off; `spellcheck` in the app's settings).
+- **What's checked** (`app/src/editor/spelling.ts`): words in the visible part of the note, outside code, link targets, wikilinks and embeds, tags, math, comments, HTML, frontmatter and callout types. Words with digits, `_`, `/`, `.`, `@`, `:` and the like (paths, URLs, addresses, versions, identifiers) are left alone, as are single letters, words in capitals (acronyms) and mixed case (iPhone, macOS). Hyphenated words are checked a part at a time. The word being typed isn't underlined until you leave it.
+- **How:** the editor asks the backend about words it hasn't asked about (`spelling.check`, batched, 250 ms after typing or scrolling) and remembers the answers for the vault; suggestions come on right-click (`spelling.suggest`). Words found misspelled are asked about again when the window regains focus, in case the dictionary changed elsewhere. API: `spelling.check`, `spelling.suggest`, `spelling.add`, `spelling.words`, `spelling.remove` (`crates/core/src/spelling.rs`).
+- **Later:** other languages (per vault, or per note through a property); checking titles and the properties panel; "Ignore once".
 
 ## 6. Phases
 
@@ -712,6 +774,7 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
     - The layout persists, so terminals reattach after a reload or relaunch. If a session is gone, a new shell starts in the same folder.
     - xterm.js 6 draws with WebGL when it's available, with colours from `tokens.css` (`--term-*`).
     - Keyboard: Shift+Enter sends ESC CR (a newline in Claude Code), and ⌘ shortcuts go to the app. Web and OSC 8 links open in the browser.
+    - (2026-11-17) **Clicking into the window from another app** clicks what's under the pointer too (`acceptFirstMouse` on the main window), so a click on a terminal puts the keyboard there at once; macOS otherwise only brings the window forward, and the keyboard goes back to wherever it was.
     - Input is sent one call at a time, so keystrokes stay in order.
 - Built in the second half:
   - **Workspaces** have a name, a folder and their own dock layout. They're machine-local, so they're kept per vault in the data folder (`vaults/<key>/workspaces.json`), not the vault. The main area shows the notes layout or one workspace's; ⌘1 is the notes, ⌘2… the workspaces, and "Switch workspace…" is in the palette. Every area's dock stays mounted (hidden), so terminals in other workspaces keep reporting. New terminals start in the workspace's folder with `GROUNDWORK_WORKSPACE_ID` set. Deleting a workspace ends its terminals, after confirming.
@@ -739,31 +802,31 @@ Each phase ends with a **feedback checkpoint**: a short list of things to try, t
   - **Where controls go** (from a UI review, 2026-11-06): beside what they act on. The sidebar header is the vault's name, a menu of what's about the whole vault (Reveal in Finder, Switch vault…), and Today's note. Each sidebar tab keeps its own actions in a toolbar at its top (Files: New note, New folder, Collapse all; Todos: the filter and the todo board). A note's own controls are in its tab's header: Back and Forward, the path, the view modes and the links panel. The quick switcher has no button; ⌘O and the palette open it.
   - **The links panel** opens beside the note in each tab (closed by default), toggled from the tab's header or ⇧⌘B for the active one. It stays open as the tab moves to other notes and follows them; each tab has its own, so two notes side by side can both show theirs. Views with no links (the todo board) have no toggle. The same arrangement can give terminals a side panel later.
   - **Keyboard shortcuts are configurable** in Settings (⌘,): click one and press new keys (they need ⌘, ⌃ or ⌥; Backspace clears). Keys taken from another command leave it with none. Changes are machine-local, in `settings.json` in the data folder (`settings.get` / `settings.set`), and apply in every vault. The registry is `app/src/state/keys.ts`; menus, tooltips and the palette show the current keys.
-  - A terminal with no workspace to go in (⌘T when there's none) gets a new workspace named after its folder.
+  - A terminal with no workspace to go in (⌘T or ⌥⌘T when there's none) gets a new workspace named after its folder.
   - Layouts from before had notes in workspaces and terminals among the notes: the notes' tabs drop out of workspaces, and terminals in the notes layout leave their tabs (they keep running, under Running terminals).
-  - **The terminals follow the notes** (built in a second stage): when a note opens, its workspace becomes current. That's the note's own (the workspace whose `note` it is), else the nearest above it: a folder note's (`Acme/Acme.md`) or a project overview's. With neither, nothing changes (later perhaps a generic workspace instead). Following never changes the view. A **lock** in the terminals' header (or the palette) keeps the current workspace (it was called a pin until 2026-11-06, when pinning came to mean keeping a workspace at the top of the list); the header names it and says whether it's following or locked, and its name switches workspace. **Picking** a workspace (the list, ⌘1–9, "Switch workspace…") opens its note on the left, if it has one. The rule is in `app/src/state/follow.ts`.
+  - **The terminals follow the notes** (built in a second stage): when a note opens, its workspace becomes current. That's the note's own (the workspace whose `note` it is), else its note's if it's a subnote (added 2026-11-09), else the nearest above it: a folder note's (`Acme/Acme.md`) or a project overview's. With neither, nothing changes (later perhaps a generic workspace instead). Following never changes the view. A **lock** in the terminals' header (or the palette) keeps the current workspace (it was called a pin until 2026-11-06, when pinning came to mean keeping a workspace at the top of the list); the header names it and says whether it's following or locked, and its name switches workspace. **Picking** a workspace (the list, ⌘1–9, "Switch workspace…") opens its note on the left, if it has one. The rule is in `app/src/state/follow.ts`.
 - Started 2026-11-04, without waiting for the Phase 4 checkpoint (the user's call). Built in two parts:
   1. **The model, API and CLI** *(built)*: config, repo locations, git worktrees, tickets, context, `code who`, actions.
   2. **The app** *(built)*: note workspaces and view modes, ticket creation, the tickets view and block, actions on ticket notes, close and restore.
 - Built in the first part:
-  - **Config** (`crates/core/src/config.rs`) is read fresh when needed, so edits in Obsidian or by Claude apply at once. A file that doesn't parse is an error naming it. Projects are found by walking the vault for `.groundwork.yml` (an empty one is fine). `config.yml` takes `work_folder` (default `Work`) for tickets no project claims.
-  - **Repo locations** are kept per vault in the data folder (`vaults/<key>/repos.json`, beside `workspaces.json`) rather than one `machine.json`. Locating takes any folder in the checkout and finds its top; worktrees default to `<checkout>-worktrees` beside it. Paths may start with `~`.
+  - **Config** (`crates/core/src/config.rs`) is read fresh when needed, so edits in Obsidian or by Claude apply at once. A file that doesn't parse is an error naming it. Projects are found by walking the vault for `.groundwork.yml` (an empty one is fine). `config.yml` takes `tickets_folder` (default `Tickets`) for every ticket note (until 2026-11-10, `work_folder` for tickets no project claimed, with each project's own work folder for the rest).
+  - **Repo locations** are kept per vault in the data folder (`vaults/<key>/repos.json`, beside `workspaces.json`) rather than one `machine.json`. Locating takes any folder in the checkout and finds its top; worktrees default to `<checkout>-worktrees` beside it (`dev/api` → `dev/api-worktrees`). From 2026-11-10 to 2026-11-13 a checkout in a folder of its own name (`dev/api/api`) put them in `dev/api/worktrees` instead, so the repo's folder could hold a `CLAUDE.md` for all of them; dropped because tools that expect repos side by side (`../other-repo`) need every checkout directly in one folder. Rules for a repo's checkout and worktrees now go in its `CLAUDE.local.md`, linked into each worktree (`link:`, §5.6), or in a `CLAUDE.md` above them all. Paths may start with `~`.
   - **Git** goes through the `git` command (`crates/core/src/git.rs`). A new worktree uses the local branch if there is one, else tracks `origin/<branch>`, else branches from `origin/<base>` (or the local base). Git state: uncommitted changes, commits on no remote, whether the branch is on the remote, commits behind the base.
   - **Tickets** (`crates/core/src/tickets.rs`): `create` works out the key (from a URL with a tracker's pattern), projects, code and repo from each other (the one repo the code or projects use; else it asks which), makes the worktree, writes the note from the template (the home project's `tickets.template`, else the tracker's, else `Templates/Ticket.md`) with `ticket.key`, `ticket.title`, `jira.url`, `project.name` tags, sets the frontmatter, and makes a workspace linked to the note. Setup isn't run by `create`: the CLI runs it in its output, and the app will run it in the workspace's first terminal, where it's visible. Frontmatter is edited in place (`crates/core/src/frontmatter.rs`), leaving other properties and comments as written.
-  - **Routing:** `tickets.match` rules aren't applied yet, since Groundwork can't read Jira itself; the agent flow (Phase 6) proposes projects. A ticket with no project goes to its repo's `home_project`, else the vault's work folder.
+  - **Routing:** `tickets.match` rules aren't applied yet, since Groundwork can't read Jira itself; the agent flow (Phase 6) proposes projects. A ticket with no project gets its repo's `home_project`, if it has one.
   - **Close** refuses, unless forced, when the worktree has uncommitted changes, unpushed commits or a branch missing from the remote. It ends terminals whose shell is inside the worktree, removes the worktree, deletes the workspace and drops `workspace:`, and sets `status: closed` and `closed:`. **Restore** brings the worktree back and makes a new workspace. **Strays** are worktrees of located repos that no ticket names; `create --adopt <path>` makes a note for one.
-  - **Context** for a note, or for a folder in a worktree, a checkout or the vault. **Actions** are resolved per context: built-ins (Open in VS Code with a worktree on disk, Open Jira ticket), then the vault's, the projects', the repo's and the components' (`component:` on a repo action scopes it), then each component's `commands` as terminal actions. `{{worktree.path}}`, `{{repo.path}}`, `{{component.path}}`, `{{component.commands.x}}`, `{{ticket.key}}`, `{{jira.url}}`, `{{project.folder}}`, `{{vault.path}}` are filled in; an action whose variables don't apply here is left out. `shell` actions run in the background through a login shell (`action.run`), `terminal` and `url` ones in the app. `agent` actions wait for Phase 6. `show_on` isn't used yet: every action shows wherever it applies.
+  - **Context** for a note, or for a folder in a worktree, a checkout or the vault. **Actions** are resolved per context: built-ins (Open in VS Code with a worktree on disk, Open Jira ticket), then the vault's, the projects', the repo's and the components' (`component:` on a repo action scopes it), then each component's `commands` as terminal actions. `{{worktree.path}}`, `{{repo.path}}`, `{{component.path}}`, `{{component.commands.x}}`, `{{ticket.key}}`, `{{jira.url}}`, `{{project.folder}}`, `{{vault.path}}` are filled in; an action whose variables don't apply here is left out. `shell` actions run in the background through a login shell (`action.run`), `terminal` and `url` ones in the app. `agent` actions wait for Phase 6. (2026-11-10) VS Code actions run the CLI inside the app bundle (`/Applications` or `~/Applications`), so they work without "Install 'code' command in PATH"; plain `code` only when VS Code isn't there. A `shell` action that fails within 3 seconds reports its error (its stderr) instead of "started". `show_on` isn't used yet: every action shows wherever it applies.
   - **Making projects:** a folder's menu has "New project…" (a new folder with an overview note named after it) and, on a folder that isn't one, "Make this a project" (its own note, like `Trip/Trip.md`, becomes the overview if it has one). Both write `.groundwork.yml` with the name (`project.create`, `groundwork project create <folder>`). Project folders have their own icon in the file tree.
   - **Workspaces** can belong to a note (`note` in the record, `workspace:` in the note). Deleting one removes the note's `workspace:`.
-  - **CLI:** `context`, `project list|show`, `repo list|show|locate`, `ticket create|list|show|close|restore|strays`, `code who`. The SessionStart hook adds `groundwork context` output when the terminal is in a ticket's worktree, a checkout or a project folder.
+  - **CLI:** `context`, `project list|show`, `repo list|show|locate`, `ticket create|list|show|add-repo|remove-repo|default-repo|close|restore|strays|gather`, `code who`. The SessionStart hook adds `groundwork context` output when the terminal is in a ticket's worktree, a checkout or a project folder.
 - Built in the second part:
-  - **The note bar** sits above the title of a ticket: key, status, branch and git state (refreshed every 15 seconds and on focus), Open Jira ticket and Open in VS Code, an Actions menu, and Close ticket… or Restore. A new ticket opens in Split.
+  - **The note bar** sits above the title of a ticket: key, status, branch and git state (refreshed every 15 seconds and on focus), Open Jira ticket and Open in VS Code (for a ticket in several repos, a menu: all its worktrees in one window, or one of them), an Actions menu, and Close ticket… or Restore. A new ticket opens in Split.
   - **New ticket** (palette, the Tickets view's +, a project folder's menu with the project chosen, "New worktree in…" with a repo chosen) is one dialog: key or Jira link, title, branch name, projects, repo (worked out from the projects and components unless chosen) and the components it touches. "Add worktree…" on any note makes that note the ticket, where it is. When the repo hasn't been located on this machine the app asks for its checkout and carries on. The setup runs in the workspace's first terminal.
   - **Close** in the app shows the git warnings and asks before forcing. **Strays** show under the Tickets view with Adopt, which opens the dialog for that worktree.
   - **The Tickets view** groups by project (the home project), repo or status, filters by text, hides closed tickets unless asked, and flags uncommitted changes, unpushed commits and commits behind. Rows open the note; their menu opens the workspace, the Jira ticket, or closes or restores.
   - **The `tickets` block** lists tickets live in any note. Lines: `project: this` (the note's project) or a project, `repo:`, `component:`, `status: active|closed|all`, `group: project|repo|status|none`.
   - **Any note can have a workspace** ("Open this note’s workspace", or "Open workspace" on a note in the file tree). It starts in the note's project folder, or the note's own folder.
-  - **The Workspaces view** groups workspaces by their note's project (or repo). Each row shows its ⌘1–9 shortcut, faintly, and its terminal tabs are folded under a chevron until you open them (remembered per machine), so the row's badge stands for them; decided 2026-11-05. A ticket's workspace menu has "New terminal in <component>" for each component it touches, and "New terminal in…" lists them first; that stands in for a new-tab menu.
+  - **The Workspaces view** groups workspaces by their note's project (or repo). Each row shows its ⌘1–9 shortcut, faintly, and its terminal tabs are folded under a chevron until you open them (remembered per machine), so the row's badge stands for them; decided 2026-11-05. Rows have room (decided 2026-11-10): a workspace's folder is a second line under its name, and each terminal tab has the repo its shell is in underneath, since a ticket's worktrees share one folder name. Running terminals is folded at the foot of the view until you open it (remembered per machine). A ticket's workspace menu has "New terminal in <component>" for each component it touches, and "New terminal in…" lists them first; that stands in for a new-tab menu.
 
 ### Phase 6 — Claude integration
 - Socket API plus the live CLI commands (open, workspace, tab, ask, notify)
@@ -860,10 +923,11 @@ Things built but not yet tried for real, to come back to:
 - Databases (Dataview/Bases-style or something richer); to be designed later
 - MCP server wrapper
 - Real Jira API integration (status and title sync)
-- Graph view, themes, plugin system, other agents (Codex…), multi-repo tickets (one worktree per repo)
+- Canvases (§5.17): show one in a note as a picture (`![[Name.excalidraw]]`), kept up to date; branded icon packs (AWS, Azure, Kubernetes…)
+- Graph view, themes, plugin system, other agents (Codex…)
+- **Clickable folder notes** (asked for 2026-11-09): a folder with its own note (`Acme/Acme.md`) is one row in the tree; clicking it opens the note, and its chevron opens the folder.
 - **A month view of the todo board** (§5.11), if the week isn't enough. `todo.board` already takes up to six weeks.
-- Workspaces and projects (discussed 2026-11-05; waiting until the user has seen how work is organised at the new job, since one repo per ticket and several projects per ticket may be enough):
-  - Attaching an existing workspace to a note or project ("Attach to note…", "Choose workspace…"); today a note's workspace is always a new one, and ⌘T's workspaces belong to no note.
+- Workspaces and projects (discussed 2026-11-05; on 2026-11-09 tickets became multi-repo with one workspace each, §5.6, and workspaces stay one per note, never shared):
   - Where a code project's own workspace starts: the main checkout rather than the project's vault folder.
   - Badges for a ticket's other projects in the Workspaces view (§5.5 describes them; the view only uses the home project).
   - Nested projects don't roll up: a parent project doesn't see its sub-projects' notes unless they list it in `projects:`.

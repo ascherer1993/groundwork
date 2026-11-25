@@ -1,10 +1,13 @@
 import type { TreeNode } from "../api/generated/TreeNode";
+import { CANVAS_EXT } from "./paths";
 
 /**
  * Subnotes (PLAN §5.15): `Name.key.md` beside `Name.md` belongs to it, like a
  * meeting's transcript. The key starts with a letter, so `Release 1.2` isn't
  * a subnote of `Release 1`. They nest: `Name.a.b.md` belongs to `Name.a.md`
- * when that exists, else to `Name.md`. Mirrors `crates/core/src/subnotes.rs`.
+ * when that exists, else to `Name.md`. A canvas (`Name.key.excalidraw`) can be
+ * a subnote too, but only notes have subnotes. Mirrors
+ * `crates/core/src/subnotes.rs`.
  */
 
 /** The key of `stem` as a subnote of `parent` ("Standup.transcript" → "transcript"). */
@@ -16,6 +19,14 @@ export function subkey(parent: string, stem: string): string | null {
 
 function noteStem(name: string): string | null {
   return /\.md$/i.test(name) && name.length > 3 ? name.slice(0, -3) : null;
+}
+
+/** The stem of a file that can be a subnote: a note or a canvas. */
+function subStem(node: TreeNode): string | null {
+  if (node.kind === "note") return noteStem(node.name);
+  if (node.kind !== "canvas") return null;
+  const stem = node.name.slice(0, -CANVAS_EXT.length);
+  return stem || null;
 }
 
 /** A folder's entry with the subnotes listed under it. */
@@ -51,7 +62,7 @@ export function groupSubnotes(children: TreeNode[]): Grouped[] {
   });
   const top: Grouped[] = [];
   for (const g of all) {
-    const stem = g.node.kind === "note" ? noteStem(g.node.name) : null;
+    const stem = subStem(g.node);
     const parent = stem ? parentStem(stem, stems) : null;
     if (stem && parent) {
       g.key = stem.slice(parent.length + 1);
@@ -105,7 +116,7 @@ export function allSubnotes(g: Grouped): TreeNode[] {
   return g.subnotes.flatMap((s) => [s.node, ...allSubnotes(s)]);
 }
 
-const stemOf = (name: string) => name.replace(/\.md$/i, "");
+const stemOf = (name: string) => name.replace(/\.(md|excalidraw)$/i, "");
 
 /**
  * How a subnote names itself in a tab: its key, and the note it belongs to

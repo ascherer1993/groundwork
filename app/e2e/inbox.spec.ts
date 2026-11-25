@@ -38,7 +38,7 @@ const inboxButton = (page: Page) => page.getByRole("button", { name: /^Inbox/ })
 const inbox = (page: Page) => page.getByRole("dialog", { name: "Inbox" });
 
 test("agents ask, tell and wait on you through the inbox", async ({ page }) => {
-  await page.keyboard.press("Meta+t");
+  await page.keyboard.press("Alt+Meta+t");
   await expect.poll(() => screen(page)).toMatch(/\$ ?$/m);
 
   // notify: something to know, with the note it's about.

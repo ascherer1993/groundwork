@@ -101,7 +101,7 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
       message: "Its terminals start in this folder.",
       fields: [
         { label: "Name", placeholder: "Name" },
-        { label: "Folder", value: useVault.getState().vault?.path ?? "" },
+        { label: "Folder", value: useVault.getState().vault?.path ?? "", type: "folder" },
       ],
       confirmLabel: "Create",
     });
@@ -140,7 +140,7 @@ export const useWorkspaces = create<WorkspacesState>((set, get) => ({
     const cwd = await formDialog({
       title: "Change folder",
       message: "New terminals start in this folder. Open ones stay where they are.",
-      fields: [{ label: "Folder", value: workspace?.cwd ?? "" }],
+      fields: [{ label: "Folder", value: workspace?.cwd ?? "", type: "folder" }],
       confirmLabel: "Change",
     }).then((values) => values?.[0]?.trim());
     if (!cwd || cwd === workspace?.cwd) return;
@@ -210,6 +210,33 @@ function leaveIfGone(list: Workspace[]) {
   if (!ws.workspace || list.some((w) => w.id === ws.workspace)) return;
   const next = list[0]?.id ?? null;
   ws.showWorkspace(next, next ? undefined : "note");
+}
+
+/** The vault's own workspace's name (PLAN §5.5). */
+export const VAULT_WORKSPACE = "Vault";
+
+/** The vault's own workspace, if it's been made: in the vault root, belonging to no note. */
+export function vaultWorkspace(list = useWorkspaces.getState().list): Workspace | undefined {
+  return list.find((w) => w.name === VAULT_WORKSPACE && !w.note);
+}
+
+/** Shows the vault's workspace, making it (pinned to the top, with a terminal) the first time. */
+export async function showVaultWorkspace() {
+  const found = vaultWorkspace();
+  if (found) {
+    useWorkspaces.getState().pick(found.id);
+    return;
+  }
+  try {
+    const made = await api.createWorkspace(VAULT_WORKSPACE, useVault.getState().vault?.path);
+    const pinned = await api.updateWorkspace(made.id, { pinned: true });
+    await useWorkspaces.getState().refresh();
+    if (!(await useWorkspaces.getState().ready(pinned.id))) return;
+    useWorkspaces.getState().pick(pinned.id);
+    await useWorkspace.getState().openTerminal();
+  } catch (err) {
+    useUi.getState().notify(message(err));
+  }
 }
 
 const baseName = (path: string) => path.replace(/\/+$/, "").split("/").pop() || path;

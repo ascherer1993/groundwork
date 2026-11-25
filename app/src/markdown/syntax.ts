@@ -65,7 +65,8 @@ export function hasScheme(href: string): boolean {
 
 /** `|300` or `|300x200` on an image embed sets its size. */
 export function imageSize(alias?: string): { width?: number; height?: number } {
-  const m = alias?.match(/^(\d+)(?:x(\d+))?$/);
+  // `300`, `300x200`, or after alt text: `diagram|300`.
+  const m = alias?.match(/(?:^|\|)\s*(\d+)(?:x(\d+))?\s*$/);
   if (!m) return {};
   return { width: Number(m[1]), height: m[2] ? Number(m[2]) : undefined };
 }
@@ -203,4 +204,30 @@ export function toggleTaskLine(line: string, date: string): string | null {
     ? `${trimmed.slice(0, block.index).trimEnd()} ✅ ${date}${trimmed.slice(block.index)}`
     : `${trimmed} ✅ ${date}`;
   return `${prefix}x${stamped}`;
+}
+
+/**
+ * Where a bare URL in a note goes: as written when it has a scheme,
+ * `https://` before `www.…`, `mailto:` before an email address; else `null`.
+ */
+export function urlHref(text: string): string | null {
+  const url = text.trim();
+  if (/^[a-z][a-z0-9+.-]*:\/\/\S+$/i.test(url) || /^mailto:\S+$/i.test(url)) return url;
+  if (/^www\.\S+$/i.test(url)) return `https://${url}`;
+  if (/^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/.test(url)) return `mailto:${url}`;
+  return null;
+}
+
+/** The bare URL in `line` around `offset`, for ⌘-click in source mode. */
+export function urlAt(line: string, offset: number): string | null {
+  for (const m of line.matchAll(/(?:[a-z][a-z0-9+.-]*:\/\/|www\.)[^\s<>]+/gi)) {
+    // Trailing punctuation ends the sentence, not the URL (as GFM has it).
+    const url = m[0].replace(/[.,;:!?'"*_~]+$/, "").replace(/\)+$/, (closing) => {
+      const opened = (m[0].match(/\(/g) ?? []).length;
+      const closed = (m[0].match(/\)/g) ?? []).length - closing.length;
+      return closing.slice(0, Math.max(0, opened - closed));
+    });
+    if (offset >= m.index && offset <= m.index + url.length) return urlHref(url);
+  }
+  return null;
 }

@@ -81,7 +81,7 @@ const noteTab = (page: Page, name: string | RegExp) =>
   page.locator(".notes-side:not([hidden]) .dv-tab").filter({ hasText: name });
 
 test("a terminal runs a shell in the vault and comes back after a reload", async ({ page }) => {
-  await page.keyboard.press("Meta+t");
+  await page.keyboard.press("Alt+Meta+t");
   await expect(tab(page, /^vault$/)).toBeVisible();
   await expect.poll(() => screen(page)).toMatch(prompt);
 
@@ -120,7 +120,7 @@ test("a terminal runs a shell in the vault and comes back after a reload", async
 });
 
 test("closing a terminal tab ends its shell; app shortcuts work from it", async ({ page }) => {
-  await page.keyboard.press("Meta+t");
+  await page.keyboard.press("Alt+Meta+t");
   await expect.poll(() => screen(page)).toMatch(prompt);
   await run(page, 'echo "pid=$$"');
   await expect.poll(() => screen(page)).toMatch(/^pid=\d+$/m);
@@ -135,7 +135,7 @@ test("closing a terminal tab ends its shell; app shortcuts work from it", async 
   await page.locator(`${TERMINALS} .dv-tab`).click({ button: "middle" });
   await expect(page.locator(`${TERMINALS} .terminal-view`)).toHaveCount(0);
 
-  await page.keyboard.press("Meta+t");
+  await page.keyboard.press("Alt+Meta+t");
   await expect.poll(() => screen(page)).toMatch(prompt);
   await run(page, `sleep 1; kill -0 ${pid} 2>/dev/null && echo alive || echo gone`);
   await expect.poll(() => screen(page), { timeout: 10_000 }).toMatch(/^gone$/m);
@@ -150,7 +150,7 @@ test("notes, notes beside terminals, or terminals alone", async ({ page }) => {
   // A terminal comes up beside the notes.
   await views.getByRole("button", { name: "Notes" }).click();
   await expect(terminals).toBeHidden();
-  await page.keyboard.press("Meta+t");
+  await page.keyboard.press("Alt+Meta+t");
   await expect.poll(() => screen(page)).toMatch(prompt);
   await expect(notes).toBeVisible();
   await expect(views.getByRole("button", { name: "Split" })).toHaveAttribute(
@@ -189,6 +189,63 @@ test("notes, notes beside terminals, or terminals alone", async ({ page }) => {
   await expect(noteTab(page, "Welcome")).toBeVisible();
   await page.keyboard.press("Control+Meta+1");
   await expect(terminals).toBeHidden();
+});
+
+test("⌘T opens a tab where you are: a note picker, or a page of places", async ({ page }) => {
+  // Among the notes: a blank tab, with the quick switcher over it.
+  await page.keyboard.press("Control+Meta+1");
+  await page.keyboard.press("Meta+t");
+  await expect(noteTab(page, "New tab")).toBeVisible();
+  const switcher = page.getByRole("dialog", { name: "Quick switcher" });
+  await expect(switcher).toBeVisible();
+  await page.getByLabel("Find a file").fill("Welcome");
+  await page.keyboard.press("Enter");
+  // The note takes the blank tab's place, which isn't somewhere to go back to.
+  await expect(noteTab(page, "Welcome").first()).toBeVisible();
+  await expect(noteTab(page, "New tab")).toHaveCount(0);
+  const panel = page.locator('.notes-side .file-panel[aria-label="Welcome.md"]').first();
+  await expect(panel.getByRole("button", { name: "Back" })).toBeDisabled();
+  // Closing the switcher leaves the blank tab, which offers it again.
+  await page.keyboard.press("Meta+t");
+  await page.keyboard.press("Escape");
+  await expect(noteTab(page, "New tab")).toBeVisible();
+  await expect(page.locator(".new-tab").getByRole("button", { name: /Open a file/ })).toBeVisible();
+  await page.keyboard.press("Meta+w");
+  await expect(noteTab(page, "New tab")).toHaveCount(0);
+
+  // Among the terminals: where to start, Claude at the vault root first and
+  // highlighted. Nothing starts until one is picked.
+  await page.keyboard.press("Alt+Meta+t");
+  await expect.poll(() => screen(page)).toMatch(prompt);
+  await page.keyboard.press("Meta+t");
+  const places = page.getByRole("listbox", { name: "New tab" });
+  await expect(places).toBeFocused();
+  await expect(places.getByRole("option")).toHaveText([
+    /^Claude at the vault root, with context/,
+    /^Terminal at the vault root/,
+  ]);
+  await expect(places.getByRole("option").first()).toHaveAttribute("aria-selected", "true");
+  await expect(tab(page, "New tab")).toBeVisible();
+  // ↓ and ↩: a terminal at the vault root, in the launcher's place.
+  await page.keyboard.press("ArrowDown");
+  await expect(places.getByRole("option").nth(1)).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Enter");
+  await expect(tab(page, "New tab")).toHaveCount(0);
+  await expect(tab(page, /^vault$/)).toHaveCount(2);
+  await expect.poll(() => screen(page)).toMatch(prompt);
+  await run(page, 'echo "in $(basename "$PWD")"');
+  await expect.poll(() => screen(page)).toMatch(/^in vault$/m);
+
+  // Escape closes the page without starting anything.
+  await page.keyboard.press("Meta+t");
+  await expect(places).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(tab(page, "New tab")).toHaveCount(0);
+  await expect(tab(page, /^vault$/)).toHaveCount(2);
+  for (let i = 0; i < 2; i++) {
+    await page.locator(VIEW).click();
+    await run(page, "exit");
+  }
 });
 
 test("workspaces keep their own terminals, with badges and a session manager", async ({ page }) => {
@@ -259,8 +316,10 @@ test("workspaces keep their own terminals, with badges and a session manager", a
     { timeout: 10_000 },
   );
 
-  // Every running terminal is listed with where it is.
+  // Every running terminal is listed with where it is, folded until you open it.
   const sessions = page.getByRole("region", { name: "Running terminals" });
+  await expect(sessions).toHaveCount(0);
+  await panel.getByRole("button", { name: /Running terminals/ }).click();
   await expect(sessions.locator(".session").filter({ hasText: "in Acme API" })).toHaveCount(1);
   await expect(sessions.locator(".session-meta").filter({ hasText: "in Acme API" })).toContainText(
     "vault/Projects/Acme",
@@ -423,7 +482,7 @@ test("terminals open in a chosen folder", async ({ page }) => {
   await change.getByLabel("Folder").fill(`${VAULT}/Daily`);
   await change.getByRole("button", { name: "Change" }).click();
   await expect(moving.locator(".area-folder")).toHaveText("vault/Daily");
-  await page.keyboard.press("Meta+t");
+  await page.keyboard.press("Alt+Meta+t");
   await isIn("Daily");
 
   await moving.locator(".area-row").click({ button: "right" });

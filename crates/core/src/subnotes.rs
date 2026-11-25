@@ -4,10 +4,11 @@
 //! renaming or moving the note takes its subnotes along. The key must start
 //! with a letter, so `Release 1.2` isn't taken for a subnote of `Release 1`.
 //! Subnotes nest: `Name.a.b.md` belongs to `Name.a.md` when that exists, else
-//! to `Name.md`.
+//! to `Name.md`. A canvas can be a subnote too (`Name.diagram.excalidraw`,
+//! PLAN §5.17), though only notes have subnotes.
 
 use crate::index::Index;
-use crate::tree::NodeKind;
+use crate::tree::{CANVAS_EXT, NodeKind};
 
 /// The key of `stem` as a subnote of `parent` ("Standup.transcript" of
 /// "Standup" → "transcript"), if it is one.
@@ -23,12 +24,25 @@ fn split(path: &str) -> (&str, &str) {
     path.rsplit_once('/').unwrap_or(("", path))
 }
 
-fn note_stem(name: &str) -> Option<&str> {
-    let cut = name.len().checked_sub(3)?;
+/// `name` without `ext`, matched without regard to case; never empty.
+fn strip_ext<'a>(name: &'a str, ext: &str) -> Option<&'a str> {
+    let cut = name.len().checked_sub(ext.len())?;
     name.get(cut..)
-        .is_some_and(|ext| ext.eq_ignore_ascii_case(".md"))
+        .is_some_and(|e| e.eq_ignore_ascii_case(ext))
         .then(|| &name[..cut])
         .filter(|s| !s.is_empty())
+}
+
+fn note_stem(name: &str) -> Option<&str> {
+    strip_ext(name, ".md")
+}
+
+/// A file that can be a subnote, a note or a canvas: its stem and extension
+/// as written ("Standup.diagram.excalidraw" → "Standup.diagram", ".excalidraw").
+fn sub_stem(name: &str) -> Option<(&str, &str)> {
+    [".md", CANVAS_EXT]
+        .iter()
+        .find_map(|ext| strip_ext(name, ext).map(|stem| (stem, &name[stem.len()..])))
 }
 
 fn join(folder: &str, name: &str) -> String {
@@ -43,10 +57,16 @@ fn is_note(index: &Index, path: &str) -> bool {
     index.get(path).is_some_and(|f| f.kind == NodeKind::Note)
 }
 
+fn can_be_subnote(index: &Index, path: &str) -> bool {
+    index
+        .get(path)
+        .is_some_and(|f| matches!(f.kind, NodeKind::Note | NodeKind::Canvas))
+}
+
 /// The note that `path` is a subnote of: the nearest `Name.md` beside it.
 pub fn parent_of(index: &Index, path: &str) -> Option<String> {
     let (folder, name) = split(path);
-    let stem = note_stem(name)?;
+    let (stem, _) = sub_stem(name)?;
     let mut end = stem.len();
     while let Some(dot) = stem[..end].rfind('.') {
         let candidate = &stem[..dot];
@@ -69,10 +89,10 @@ pub fn subnotes_of(index: &Index, path: &str) -> Vec<String> {
     };
     let mut found: Vec<String> = index
         .paths()
-        .filter(|p| *p != path && is_note(index, p))
+        .filter(|p| *p != path && can_be_subnote(index, p))
         .filter(|p| {
             let (f, n) = split(p);
-            f == folder && note_stem(n).is_some_and(|s| subkey(stem, s).is_some())
+            f == folder && sub_stem(n).is_some_and(|(s, _)| subkey(stem, s).is_some())
         })
         .map(str::to_string)
         .collect();
@@ -81,13 +101,14 @@ pub fn subnotes_of(index: &Index, path: &str) -> Vec<String> {
 }
 
 /// Where the subnote `sub` of `from` goes when `from` becomes `to`: beside
-/// it, with the same key.
+/// it, with the same key and extension.
 pub fn moved_subnote(sub: &str, from: &str, to: &str) -> Option<String> {
     let from_stem = note_stem(split(from).1)?;
     let (to_folder, to_name) = split(to);
     let to_stem = note_stem(to_name)?;
-    let key = subkey(from_stem, note_stem(split(sub).1)?)?;
-    Some(join(to_folder, &format!("{to_stem}.{key}.md")))
+    let (sub_stem, ext) = sub_stem(split(sub).1)?;
+    let key = subkey(from_stem, sub_stem)?;
+    Some(join(to_folder, &format!("{to_stem}.{key}{ext}")))
 }
 
 #[cfg(test)]
@@ -124,8 +145,10 @@ mod tests {
         let index = session.index();
         let meeting = "Projects/Acme/Meetings/2026-11-02 Kickoff.md";
         let transcript = "Projects/Acme/Meetings/2026-11-02 Kickoff.transcript.md";
+        let diagram = "Projects/Acme/Meetings/2026-11-02 Kickoff.diagram.excalidraw";
         assert_eq!(parent_of(&index, transcript).as_deref(), Some(meeting));
-        assert_eq!(subnotes_of(&index, meeting), [transcript]);
+        assert_eq!(parent_of(&index, diagram).as_deref(), Some(meeting));
+        assert_eq!(subnotes_of(&index, meeting), [diagram, transcript]);
     }
 
     #[test]
@@ -193,5 +216,43 @@ mod tests {
             Some("New.a.b.md")
         );
         assert_eq!(moved_subnote("Old.a.md", "Old.md", "Folder"), None);
+        assert_eq!(
+            moved_subnote("A/Old.diagram.excalidraw", "A/Old.md", "B/New.md").as_deref(),
+            Some("B/New.diagram.excalidraw")
+        );
+    }
+
+    #[test]
+    fn canvases_are_subnotes_of_notes() {
+        let v = TestVault::new(&[
+            ("M/Standup.md", ""),
+            ("M/Standup.diagram.excalidraw", "{}"),
+            ("M/Standup.transcript.md", ""),
+            ("M/Standup.transcript.flow.excalidraw", "{}"),
+            ("M/Board.excalidraw", "{}"),
+            ("M/Board.sketch.excalidraw", "{}"),
+            ("M/Board.notes.md", ""),
+        ]);
+        let index = v.session.index();
+        assert_eq!(
+            parent_of(&index, "M/Standup.diagram.excalidraw").as_deref(),
+            Some("M/Standup.md")
+        );
+        assert_eq!(
+            parent_of(&index, "M/Standup.transcript.flow.excalidraw").as_deref(),
+            Some("M/Standup.transcript.md")
+        );
+        assert_eq!(
+            subnotes_of(&index, "M/Standup.md"),
+            [
+                "M/Standup.diagram.excalidraw",
+                "M/Standup.transcript.flow.excalidraw",
+                "M/Standup.transcript.md",
+            ]
+        );
+        // Only notes have subnotes: a canvas's look-alikes stand alone.
+        assert_eq!(parent_of(&index, "M/Board.sketch.excalidraw"), None);
+        assert_eq!(parent_of(&index, "M/Board.notes.md"), None);
+        assert!(subnotes_of(&index, "M/Board.excalidraw").is_empty());
     }
 }

@@ -8,6 +8,11 @@ import type { AgentContext } from "./generated/AgentContext";
 import type { BarCommand } from "./generated/BarCommand";
 import type { CommandEntry } from "./generated/CommandEntry";
 import type { ProjectView } from "./generated/ProjectView";
+import type { Person } from "./generated/Person";
+import type { PropertyValue } from "./generated/PropertyValue";
+import type { Team } from "./generated/Team";
+import type { DailyFields } from "./generated/DailyFields";
+import type { DailyNoteSettings } from "./generated/DailyNoteSettings";
 import type { QmdStatus } from "./generated/QmdStatus";
 import type { SmartResult } from "./generated/SmartResult";
 import type { WhoKnows } from "./generated/WhoKnows";
@@ -20,6 +25,9 @@ import type { InboxItem } from "./generated/InboxItem";
 import type { RepoInfo } from "./generated/RepoInfo";
 import type { RepoLocation } from "./generated/RepoLocation";
 import type { StrayWorktree } from "./generated/StrayWorktree";
+import type { RemovedTicketRepo } from "./generated/RemovedTicketRepo";
+import type { MovedNote } from "./generated/MovedNote";
+import type { Refiled } from "./generated/Refiled";
 import type { Ticket } from "./generated/Ticket";
 import type { TicketFilter } from "./generated/TicketFilter";
 import type { CreatedNote } from "./generated/CreatedNote";
@@ -85,6 +93,7 @@ interface Results {
   "file.create": string;
   "file.createUntitled": string;
   "file.createFromLink": string;
+  "file.saveAttachment": string;
   "file.createFromTemplate": CreatedNote;
   "template.list": string[];
   "template.prompts": string[];
@@ -94,11 +103,14 @@ interface Results {
   "quickAdd.form": QuickAddForm;
   "quickAdd.run": QuickAdded;
   "daily.open": string;
+  "daily.settings": DailyNoteSettings;
+  "daily.saveSettings": DailyNoteSettings;
   "index.tags": TagCount[];
   "setup.status": SetupStatus;
   "setup.installCli": SetupStatus;
   "setup.installPlugin": SetupStatus;
   "setup.useVault": SetupStatus;
+  "setup.addClaudeMd": SetupStatus;
   "search.query": SearchResult[];
   "todo.list": Todo[];
   "todo.day": DayView;
@@ -135,8 +147,14 @@ interface Results {
   "workspace.forNote": Workspace;
   "repo.list": RepoInfo[];
   "repo.locate": RepoLocation;
+  "repo.add": RepoInfo;
   "project.list": ProjectInfo[];
   "project.view": ProjectView;
+  "people.list": Person[];
+  "frontmatter.setList": string;
+  "frontmatter.set": string;
+  "frontmatter.rename": string;
+  "teams.list": Team[];
   "search.smart": SmartResult[];
   "qmd.status": QmdStatus;
   "qmd.setup": QmdStatus;
@@ -159,12 +177,22 @@ interface Results {
   "ticket.create": CreatedTicket;
   "ticket.close": Ticket;
   "ticket.restore": CreatedTicket;
+  "ticket.addRepo": CreatedTicket;
+  "ticket.removeRepo": RemovedTicketRepo;
+  "ticket.gather": MovedNote[];
+  "vault.refile": Refiled;
+  "ticket.setDefaultRepo": Ticket;
   "ticket.strays": StrayWorktree[];
   "context.get": Context;
   "action.run": null;
   "agent.command": string;
   "bar.command": BarCommand;
   "commandLog.list": CommandEntry[];
+  "spelling.check": string[];
+  "spelling.suggest": string[];
+  "spelling.add": null;
+  "spelling.words": string[];
+  "spelling.remove": null;
 }
 
 type Method = Request["method"];
@@ -226,6 +254,8 @@ export const api = {
     call("crypt.changePassword", { path, oldPassword, password, hint }),
   createFile: (path: string, text?: string) => call("file.create", { path, text }),
   createUntitled: (folder: string) => call("file.createUntitled", { folder }),
+  saveAttachment: (source: string, name: string, data: string) =>
+    call("file.saveAttachment", { source, name, data }),
   createFromLink: (source: string, target: string) =>
     call("file.createFromLink", { source, target }),
   rename: (from: string, to: string) => call("file.rename", { from, to }),
@@ -247,6 +277,7 @@ export const api = {
   installCli: () => call("setup.installCli"),
   installPlugin: () => call("setup.installPlugin"),
   useVaultForCli: () => call("setup.useVault"),
+  addVaultClaudeMd: () => call("setup.addClaudeMd"),
   todos: (filter: TodoFilter = { tags: [] }) => call("todo.list", { filter }),
   todoDay: (path: string, own?: [number, number]) => call("todo.day", { path, own }),
   /** `days` days from `from` (`YYYY-MM-DD`). */
@@ -266,6 +297,8 @@ export const api = {
     opts: { date?: string; project?: string } = {},
   ) => call("quickAdd.run", { choice, answers, ...opts }),
   openDaily: (date?: string) => call("daily.open", { date }),
+  dailySettings: () => call("daily.settings"),
+  saveDailySettings: (settings: DailyFields) => call("daily.saveSettings", { settings }),
 
   reveal: (path: string) => call("os.reveal", { path }),
   openExternally: (path: string) => call("os.open", { path }),
@@ -304,6 +337,7 @@ export const api = {
   repos: () => call("repo.list"),
   locateRepo: (id: string, path: string, worktrees?: string) =>
     call("repo.locate", { id, path, worktrees }),
+  addRepo: (path: string, name?: string) => call("repo.add", { path, name }),
   projects: () => call("project.list"),
   /** Notes found by meaning (qmd); fails unless smart search is set up. */
   smartSearch: (query: string, limit?: number) => call("search.smart", { query, limit }),
@@ -317,6 +351,15 @@ export const api = {
   whoKnows: (topic: string, limit?: number) => call("who.knows", { topic, limit }),
   /** A project's events and people. */
   projectView: (project: string) => call("project.view", { project }),
+  people: () => call("people.list"),
+  setListProperty: (text: string, key: string, values: string[]) =>
+    call("frontmatter.setList", { text, key, values }),
+  /** `text` with property `key` set to `value`, or removed when it's null. */
+  setProperty: (text: string, key: string, value: PropertyValue | null) =>
+    call("frontmatter.set", { text, key, value }),
+  renameProperty: (text: string, from: string, to: string) =>
+    call("frontmatter.rename", { text, from, to }),
+  teams: () => call("teams.list"),
   inbox: () => call("inbox.list"),
   inboxHistory: () => call("inbox.history"),
   answerInbox: (id: string, answer?: string) => call("inbox.answer", { id, answer }),
@@ -327,6 +370,13 @@ export const api = {
   createTicket: (ticket: NewTicket) => call("ticket.create", { ticket }),
   closeTicket: (path: string, force?: boolean) => call("ticket.close", { path, force }),
   restoreTicket: (path: string) => call("ticket.restore", { path }),
+  addTicketRepo: (path: string, repo: string) => call("ticket.addRepo", { path, repo }),
+  removeTicketRepo: (path: string, repo: string, force?: boolean) =>
+    call("ticket.removeRepo", { path, repo, force }),
+  gatherTickets: () => call("ticket.gather"),
+  refileDatedNotes: (dryRun?: boolean) => call("vault.refile", { dryRun }),
+  setDefaultTicketRepo: (path: string, repo: string) =>
+    call("ticket.setDefaultRepo", { path, repo }),
   strayWorktrees: () => call("ticket.strays"),
   /** For a note, or an absolute folder. */
   context: (where: { note?: string; cwd?: string }) => call("context.get", where),
@@ -346,6 +396,13 @@ export const api = {
     call("bar.command", { prompt, context, shown }),
   /** The command bar's requests, newest first. */
   commandLog: (limit?: number) => call("commandLog.list", { limit }),
+  /** The words that aren't in the dictionary or the vault's own words. */
+  misspelled: (words: string[]) => call("spelling.check", { words }),
+  spellingSuggestions: (word: string) => call("spelling.suggest", { word }),
+  addToDictionary: (word: string) => call("spelling.add", { word }),
+  /** The vault's own words (`.groundwork/dictionary.txt`). */
+  dictionaryWords: () => call("spelling.words"),
+  removeFromDictionary: (word: string) => call("spelling.remove", { word }),
 };
 
 export { ApiCallError } from "./transport";

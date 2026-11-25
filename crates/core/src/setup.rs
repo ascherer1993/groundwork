@@ -1,6 +1,7 @@
 //! Connecting Groundwork to terminals and Claude Code: the `groundwork`
-//! command on PATH, the Claude Code plugin, and the vault the CLI uses by
-//! default.
+//! command on PATH, the Claude Code plugin, the vault the CLI uses by
+//! default, and a `CLAUDE.md` at the vault root pointing Claude Code at the
+//! plugin's skill.
 //!
 //! Each part reports whether it's set up, missing or stale, so the app can
 //! offer to fix it and notice when a pull, a move or another checkout has
@@ -23,6 +24,9 @@ use crate::{CoreError, Result};
 const MARKETPLACE: &str = "groundwork";
 const PLUGIN_ID: &str = "groundwork@groundwork";
 const CLI_SETTINGS: &str = "cli.json";
+const CLAUDE_MD: &str = "CLAUDE.md";
+/// What Groundwork writes to a vault without a `CLAUDE.md`.
+pub const VAULT_CLAUDE_MD: &str = include_str!("vault-claude.md");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -63,6 +67,9 @@ pub struct SetupStatus {
     pub plugin: SetupItem,
     /// The vault the CLI uses when nothing else says which.
     pub vault: SetupItem,
+    /// The `CLAUDE.md` at the vault root, which every Claude Code session
+    /// started in the vault reads.
+    pub claude_md: SetupItem,
 }
 
 /// Where everything lives on this machine. `detect` finds the real
@@ -120,6 +127,7 @@ impl SetupEnv {
             cli: self.cli_status(),
             plugin: self.plugin_status(),
             vault: self.vault_status(vault),
+            claude_md: claude_md_status(vault),
         }
     }
 
@@ -460,6 +468,81 @@ pub fn set_default_vault(data_dir: &Path, vault: &Path) -> Result<()> {
     Ok(())
 }
 
+// --- The vault's CLAUDE.md -------------------------------------------------
+
+/// The vault's own `CLAUDE.md`, whatever its case (macOS folders usually
+/// ignore case, so Claude Code reads `claude.md` too).
+fn vault_claude_md(vault: &Path) -> Option<PathBuf> {
+    fs::read_dir(vault)
+        .ok()?
+        .flatten()
+        .find(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case(CLAUDE_MD)
+        })
+        .map(|e| e.path())
+}
+
+/// `Ok` once the vault has a `CLAUDE.md`, ours or the user's. One that
+/// doesn't mention Groundwork is the user's to change, so it gets a note.
+fn claude_md_status(vault: Option<&Path>) -> SetupItem {
+    let item = |state, summary: &str, note: Option<&str>| SetupItem {
+        state,
+        summary: summary.into(),
+        note: note.map(Into::into),
+        manual: Vec::new(),
+    };
+    let Some(vault) = vault else {
+        return item(SetupState::Unavailable, "Open a vault first.", None);
+    };
+    let Some(path) = vault_claude_md(vault) else {
+        return item(
+            SetupState::Missing,
+            "None yet. Adding one tells every Claude Code session started in the vault to use the `groundwork` skill and command.",
+            None,
+        );
+    };
+    let text = fs::read_to_string(&path).unwrap_or_default();
+    if text.to_lowercase().contains("groundwork") {
+        item(
+            SetupState::Ok,
+            "Claude Code sessions started in the vault are told to use the `groundwork` skill and command.",
+            None,
+        )
+    } else {
+        item(
+            SetupState::Ok,
+            "The vault has its own CLAUDE.md, which Groundwork leaves alone.",
+            Some(
+                "It doesn't mention Groundwork. Add a line telling Claude to use the `groundwork` skill for this vault.",
+            ),
+        )
+    }
+}
+
+/// Writes Groundwork's `CLAUDE.md` to the vault root, unless the vault
+/// already has one, which is never changed.
+pub fn add_vault_claude_md(vault: &Path) -> Result<()> {
+    if vault_claude_md(vault).is_some() {
+        return Ok(());
+    }
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(vault.join(CLAUDE_MD));
+    match file {
+        Ok(mut file) => {
+            use std::io::Write;
+            file.write_all(VAULT_CLAUDE_MD.as_bytes())?;
+            Ok(())
+        }
+        // Made in the meantime: theirs wins.
+        Err(e) if e.kind() == ErrorKind::AlreadyExists => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
 /// `claude` on PATH or in the places its installers use. Apps opened from
 /// the Finder get a minimal PATH, hence the list.
 fn find_claude() -> Option<PathBuf> {
@@ -702,6 +785,38 @@ mod tests {
         assert!(other.summary.ends_with("not this vault."));
         fs::remove_dir(&vault).unwrap();
         assert_eq!(f.env.vault_status(None).state, SetupState::Stale);
+    }
+
+    #[test]
+    fn adds_a_claude_md_to_the_vault_but_never_replaces_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = dir.path();
+        assert_eq!(claude_md_status(None).state, SetupState::Unavailable);
+        assert_eq!(claude_md_status(Some(vault)).state, SetupState::Missing);
+
+        add_vault_claude_md(vault).unwrap();
+        let written = fs::read_to_string(vault.join("CLAUDE.md")).unwrap();
+        assert_eq!(written, VAULT_CLAUDE_MD);
+        let ok = claude_md_status(Some(vault));
+        assert_eq!(ok.state, SetupState::Ok);
+        assert_eq!(ok.note, None);
+
+        // The user's own, in any case, stays as it is.
+        fs::remove_file(vault.join("CLAUDE.md")).unwrap();
+        fs::write(vault.join("claude.md"), "Be brief.\n").unwrap();
+        add_vault_claude_md(vault).unwrap();
+        let names: Vec<_> = fs::read_dir(vault)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert_eq!(names, ["claude.md"]);
+        assert_eq!(
+            fs::read_to_string(vault.join("claude.md")).unwrap(),
+            "Be brief.\n"
+        );
+        let theirs = claude_md_status(Some(vault));
+        assert_eq!(theirs.state, SetupState::Ok);
+        assert!(theirs.note.unwrap().contains("doesn't mention Groundwork"));
     }
 
     #[test]

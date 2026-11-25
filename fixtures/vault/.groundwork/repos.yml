@@ -7,6 +7,10 @@ acme-platform:
     base_branch: main
     branch_format: "{{key}}-{{slug}}"
     worktree_name: "{{key}}-{{slug}}"
+  # Ignored by git, so copied into each new worktree, or linked to the main
+  # checkout's so they all share one (missing ones skipped).
+  copy: [.env, config/local]
+  link: [CLAUDE.local.md, .claude/settings.local.json]
   setup:
     - npm install
   docs: [CLAUDE.md]
@@ -28,3 +32,16 @@ acme-platform:
       kind: terminal
       run: npm run storybook -w apps/web
       component: acme-platform:web
+acme-infra:
+  name: Acme infra
+  description: Terraform for Acme's AWS accounts. Tickets that change both code and infrastructure have worktrees in both.
+  git:
+    base_branch: main
+    branch_format: "{{key}}-{{slug}}"
+    worktree_name: "{{key}}-{{slug}}"
+  setup:
+    - terraform init
+  components:
+    network:
+      path: network
+      description: VPCs, subnets and the load balancers.

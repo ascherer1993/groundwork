@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectInfo } from "../api/generated/ProjectInfo";
 import type { Workspace } from "../api/generated/Workspace";
-import { workspaceFor } from "./follow";
+import { subnoteParents, workspaceFor } from "./follow";
 
 const ws = (id: string, note?: string): Workspace => ({
   id,
@@ -15,7 +15,6 @@ const project = (folder: string, overview: string | null): ProjectInfo => ({
   name: folder,
   folder,
   overview,
-  workFolder: `${folder}/Work`,
   code: [],
 });
 
@@ -39,6 +38,13 @@ describe("workspaceFor", () => {
     expect(find("Projects/Acme/Meetings/2026-11-02 Kickoff.md")).toBe("acme");
   });
 
+  it("uses a subnote's note's workspace before the folder's", () => {
+    expect(find("Projects/Acme/Work/TEAM-1 Fix.web.md")).toBe("ticket");
+    expect(find("Projects/Acme/Work/TEAM-1 Fix.web.notes.md")).toBe("ticket");
+    // A version number isn't a subnote key.
+    expect(find("Projects/Acme/Work/TEAM-1 Fix.2.md")).toBe("acme");
+  });
+
   it("uses a project overview's workspace", () => {
     expect(find("Projects/Beta/Notes/Idea.md")).toBe("beta");
   });
@@ -47,5 +53,15 @@ describe("workspaceFor", () => {
     expect(find("Contacts/Jane Doe.md")).toBeUndefined();
     expect(find("Welcome.md")).toBeUndefined();
     expect(find("Projects/Gamma/Gamma.md")).toBeUndefined();
+  });
+});
+
+describe("subnoteParents", () => {
+  it("lists the notes a subnote could be under, nearest first", () => {
+    expect(subnoteParents("F/Name.a.b.md")).toEqual(["F/Name.a.md", "F/Name.md"]);
+    expect(subnoteParents("Name.transcript.md")).toEqual(["Name.md"]);
+    expect(subnoteParents("F/Release 1.2.md")).toEqual([]);
+    expect(subnoteParents("F/Plain.md")).toEqual([]);
+    expect(subnoteParents("F/page.key.html")).toEqual([]);
   });
 });

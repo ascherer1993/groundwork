@@ -39,7 +39,7 @@ const tabs = (page: Page) => page.locator(`${TERMINALS} .dv-tab`);
 const workspaceName = (page: Page) => page.locator(".terminals-header .terminals-name");
 
 test("the CLI opens notes, workspaces and tabs in the window", async ({ page }) => {
-  await page.keyboard.press("Meta+t");
+  await page.keyboard.press("Alt+Meta+t");
   await expect.poll(() => screen(page)).toMatch(prompt);
   const home = (await workspaceName(page).textContent()) ?? "";
 

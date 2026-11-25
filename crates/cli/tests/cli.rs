@@ -120,7 +120,11 @@ fn notes_links_and_search() {
     );
     assert!(!files.lines().any(|l| l == "Projects"), "{files}");
     let demos = v.ok(&["files", "--path", "Projects/Acme/demos/"]);
-    assert_eq!(demos.lines().count(), 4, "{demos}");
+    assert_eq!(demos.lines().count(), 5, "{demos}");
+    assert!(
+        demos.contains("Projects/Acme/demos/Architecture.excalidraw (canvas)\n"),
+        "{demos}"
+    );
     let all = v.ok(&["links", "--all"]);
     assert!(
         all.contains("Welcome.md -> Contacts/Jane Doe.md\n"),
@@ -808,14 +812,14 @@ fn tickets_from_create_to_close() {
     assert_eq!(
         created,
         format!(
-            "Projects/Acme/Work/TEAM-7 Fix signup.md\n  worktree: {}\n  branch: TEAM-7-fix-signup\n",
+            "Tickets/TEAM-7 Fix signup.md\n  branch: TEAM-7-fix-signup\n  worktree: {} [acme-platform]\n",
             wt.display()
         )
     );
     assert!(wt.join("apps/web/index.js").is_file());
     let list = v.ok(&["ticket", "list", "--project", "Acme"]);
     assert!(
-        list.contains("TEAM-7 Fix signup · Projects/Acme/Work/TEAM-7 Fix signup.md"),
+        list.contains("TEAM-7 Fix signup · Tickets/TEAM-7 Fix signup.md"),
         "{list}"
     );
 
@@ -840,6 +844,42 @@ fn tickets_from_create_to_close() {
         "{context}"
     );
     assert!(context.contains("Projects/Acme/Acme.md"), "{context}");
+    // Claude started at the vault root, in the ticket's workspace: its
+    // SessionStart hook gives the ticket's context, worktrees and all.
+    let note = v.read("Tickets/TEAM-7 Fix signup.md");
+    let workspace = note
+        .lines()
+        .find_map(|l| l.strip_prefix("workspace: "))
+        .unwrap()
+        .trim_matches('"');
+    let mut hook = Command::new(env!("CARGO_BIN_EXE_groundwork"))
+        .args(["hook", "session-start"])
+        .current_dir(v.root())
+        .env("GROUNDWORK_DATA_DIR", v.data.path())
+        .env("GROUNDWORK_VAULT", v.root())
+        .env("GROUNDWORK_SOCKET", v.data.path().join("none.sock"))
+        .env("GROUNDWORK_TAB_ID", "t1")
+        .env("GROUNDWORK_WORKSPACE_ID", workspace)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    hook.stdin
+        .take()
+        .unwrap()
+        .write_all(br#"{"session_id":"s-1"}"#)
+        .unwrap();
+    let started = String::from_utf8(hook.wait_with_output().unwrap().stdout).unwrap();
+    assert!(
+        started.contains("in the workspace “TEAM-7 Fix signup”, for Tickets/TEAM-7 Fix signup.md"),
+        "{started}"
+    );
+    assert!(started.contains("Ticket: TEAM-7 Fix signup"), "{started}");
+    assert!(
+        started.contains(&format!("worktree [acme-platform]: {}", wt.display())),
+        "{started}"
+    );
+
     let json: serde_json::Value =
         serde_json::from_str(&v.ok(&["context", "--note", "TEAM-7 Fix signup", "--json"])).unwrap();
     assert_eq!(json["ticket"]["branch"], "TEAM-7-fix-signup");
@@ -857,6 +897,37 @@ fn tickets_from_create_to_close() {
 
     let show = v.ok(&["ticket", "show", "TEAM-7 Fix signup"]);
     assert!(show.contains("git: not on the remote"), "{show}");
+
+    // A second repo, on the same branch; the default can change.
+    let infra_dir = code.path().join("infra");
+    fs::create_dir_all(&infra_dir).unwrap();
+    let infra = git_repo(&infra_dir);
+    v.ok(&["repo", "locate", "acme-infra", infra.to_str().unwrap()]);
+    let added = v.ok(&[
+        "ticket",
+        "add-repo",
+        "TEAM-7 Fix signup",
+        "acme-infra",
+        "--no-setup",
+    ]);
+    let infra_wt = infra
+        .with_file_name("acme-worktrees")
+        .join("TEAM-7-fix-signup");
+    assert!(
+        added.contains(&format!(
+            "  worktree: {} [acme-platform] (default)\n  worktree: {} [acme-infra]\n",
+            wt.display(),
+            infra_wt.display()
+        )),
+        "{added}"
+    );
+    assert!(infra_wt.is_dir());
+    let switched = v.ok(&["ticket", "default-repo", "TEAM-7 Fix signup", "acme-infra"]);
+    assert!(switched.contains("[acme-infra] (default)"), "{switched}");
+    assert!(
+        v.read("Tickets/TEAM-7 Fix signup.md")
+            .contains("repos: [acme-infra, acme-platform]\n")
+    );
     let (ok, _, err) = v.run(&["ticket", "close", "TEAM-7 Fix signup"]);
     assert!(
         !ok && err.contains("its branch isn't on the remote. Use --force"),
@@ -866,9 +937,9 @@ fn tickets_from_create_to_close() {
         v.ok(&["ticket", "close", "TEAM-7 Fix signup", "--force"])
             .starts_with("closed ")
     );
-    assert!(!wt.exists());
+    assert!(!wt.exists() && !infra_wt.exists());
     assert!(
-        v.read("Projects/Acme/Work/TEAM-7 Fix signup.md")
+        v.read("Tickets/TEAM-7 Fix signup.md")
             .contains("status: closed\n")
     );
     assert!(!v.ok(&["ticket", "list"]).contains("TEAM-7"));
@@ -878,7 +949,30 @@ fn tickets_from_create_to_close() {
     );
 
     v.ok(&["ticket", "restore", "TEAM-7 Fix signup", "--no-setup"]);
-    assert!(wt.is_dir());
+    assert!(wt.is_dir() && infra_wt.is_dir());
+
+    // A repo comes off; its branch stays for adding it back.
+    let removed = v.ok(&["ticket", "remove-repo", "TEAM-7 Fix signup", "acme-infra"]);
+    assert!(
+        removed.starts_with(&format!("removed {}\n", infra_wt.display())),
+        "{removed}"
+    );
+    assert!(!infra_wt.exists() && wt.is_dir());
+    assert!(
+        v.read("Tickets/TEAM-7 Fix signup.md")
+            .contains("repos: [acme-platform]\n")
+    );
+
+    // The fixture's ticket, still in its project's work folder, moves.
+    let gathered = v.ok(&["ticket", "gather"]);
+    assert_eq!(
+        gathered,
+        "Projects/Acme/Work/TEAM-123 Fix login.md → Tickets/TEAM-123 Fix login.md\n"
+    );
+    assert_eq!(
+        v.ok(&["ticket", "gather"]),
+        "every ticket is already in its folder\n"
+    );
 }
 
 #[test]

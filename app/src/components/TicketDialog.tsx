@@ -1,8 +1,9 @@
+import { Star } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { NewTicket } from "../api/generated/NewTicket";
-import { createTicket, useTickets } from "../state/tickets";
+import { addRepo, createTicket, useTickets } from "../state/tickets";
 
-/** "New ticket": key, title, projects, repo and the components it touches. */
+/** "New ticket": key, title, projects, its repos (one starred as the default) and the components it touches. */
 export function TicketDialog() {
   const draft = useTickets((s) => s.draft);
   return draft ? <TicketForm key={JSON.stringify(draft)} draft={draft} /> : null;
@@ -24,27 +25,28 @@ function TicketForm({ draft }: { draft: NewTicket }) {
   const [slug, setSlug] = useState(draft.slug ?? "");
   const [chosen, setChosen] = useState<string[]>(draft.projects ?? []);
   const [code, setCode] = useState<string[]>(draft.code ?? []);
-  const [repo, setRepo] = useState(draft.repo ?? "");
+  // Repos chosen, the default first; `null` until one is, when the projects decide.
+  const [picked, setPicked] = useState<string[] | null>(() => {
+    const given = [...(draft.repo ? [draft.repo] : []), ...(draft.repos ?? [])];
+    return given.length ? [...new Set(given)] : null;
+  });
   const [worktree, setWorktree] = useState(!draft.noWorktree);
   const [busy, setBusy] = useState(false);
   const fromNote = draft.note;
   const adopting = draft.adopt;
 
-  // The repo the backend would pick: chosen, else the one the code or projects use.
-  const autoRepo = useMemo(() => {
-    const unique = (ids: string[]) => {
-      const set = [...new Set(ids)];
-      return set.length === 1 ? set[0] : undefined;
-    };
-    return (
-      unique(code.map(repoOf)) ??
-      unique(projects.filter((p) => chosen.includes(p.id)).flatMap((p) => p.code.map(repoOf)))
-    );
-  }, [code, chosen, projects]);
-  const repoId = repo || autoRepo;
-  const repoInfo = repos.find((r) => r.id === repoId);
+  // Until repos are chosen: the one repo the projects use, if they use one.
+  const autoRepos = useMemo(() => {
+    const ids = [
+      ...new Set(projects.filter((p) => chosen.includes(p.id)).flatMap((p) => p.code.map(repoOf))),
+    ];
+    return ids.length === 1 ? ids : [];
+  }, [chosen, projects]);
+  const repoIds = picked ?? autoRepos;
+  const chosenRepos = repoIds.flatMap((id) => repos.filter((r) => r.id === id));
   const toggle = (list: string[], item: string, on: boolean) =>
     on ? [...list, item] : list.filter((x) => x !== item);
+  const several = repoIds.length > 1;
 
   const submit = async () => {
     setBusy(true);
@@ -53,11 +55,11 @@ function TicketForm({ draft }: { draft: NewTicket }) {
       title: title.trim() || undefined,
       slug: slug.trim() || undefined,
       projects: chosen,
-      code: code.filter((c) => !repoId || repoOf(c) === repoId),
-      repo: repo || undefined,
+      code: code.filter((c) => repoIds.includes(repoOf(c))),
+      repos: repoIds,
       note: fromNote,
       adopt: adopting,
-      noWorktree: !worktree || !repoId,
+      noWorktree: !worktree || !repoIds.length,
     });
     setBusy(false);
     if (ok) closeDraft();
@@ -114,7 +116,7 @@ function TicketForm({ draft }: { draft: NewTicket }) {
         )}
         {projects.length > 0 && (
           <fieldset className="dialog-field ticket-choices">
-            <legend>Projects (the first is its home)</legend>
+            <legend>Projects</legend>
             {projects.map((p) => (
               <label key={p.id} className="check">
                 <input
@@ -123,50 +125,93 @@ function TicketForm({ draft }: { draft: NewTicket }) {
                   onChange={(e) => setChosen(toggle(chosen, p.id, e.target.checked))}
                 />
                 {p.name}
-                {chosen[0] === p.id && chosen.length > 1 && <span className="muted"> · home</span>}
+                {chosen[0] === p.id && chosen.length > 1 && (
+                  <span className="muted"> · grouped under</span>
+                )}
               </label>
             ))}
           </fieldset>
         )}
-        {repos.length > 0 && (
-          <label className="dialog-field">
-            <span>Repo</span>
-            <select value={repo} onChange={(e) => setRepo(e.target.value)}>
-              <option value="">{autoRepo ? `Automatic (${autoRepo})` : "None"}</option>
-              {repos.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {repoInfo && repoInfo.components.length > 0 && (
-          <fieldset className="dialog-field ticket-choices">
-            <legend>Touches</legend>
-            {repoInfo.components.map((c) => {
-              const id = `${repoInfo.id}:${c}`;
-              return (
-                <label key={id} className="check">
+        <fieldset className="dialog-field ticket-choices">
+          <legend>{several ? "Repos (★ is the default)" : "Repos"}</legend>
+          {repos.map((r) => {
+            const on = repoIds.includes(r.id);
+            const isDefault = several && repoIds[0] === r.id;
+            return (
+              <div key={r.id} className="repo-choice">
+                <label className="check">
                   <input
                     type="checkbox"
-                    checked={code.includes(id)}
-                    onChange={(e) => setCode(toggle(code, id, e.target.checked))}
+                    checked={on}
+                    disabled={!!adopting && !on && repoIds.length > 0}
+                    onChange={(e) => setPicked(toggle(repoIds, r.id, e.target.checked))}
                   />
-                  {c}
+                  {r.name}
+                  {!r.location && <span className="muted"> · not located yet</span>}
                 </label>
-              );
-            })}
+                {on && several && (
+                  <button
+                    type="button"
+                    className={`icon repo-star${isDefault ? " is-default" : ""}`}
+                    aria-pressed={isDefault}
+                    aria-label={
+                      isDefault ? `${r.name} is the default` : `Make ${r.name} the default`
+                    }
+                    title={
+                      isDefault
+                        ? "The default: its worktree is where terminals start"
+                        : "Make this the default"
+                    }
+                    onClick={() => setPicked([r.id, ...repoIds.filter((x) => x !== r.id)])}
+                  >
+                    <Star size={12} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          {!adopting && (
+            <button
+              type="button"
+              className="link-button"
+              onClick={async () => {
+                const id = await addRepo();
+                if (id) setPicked([...repoIds, id]);
+              }}
+            >
+              Another repo…
+            </button>
+          )}
+        </fieldset>
+        {chosenRepos.some((r) => r.components.length > 0) && (
+          <fieldset className="dialog-field ticket-choices">
+            <legend>Touches</legend>
+            {chosenRepos.flatMap((r) =>
+              r.components.map((c) => {
+                const id = `${r.id}:${c}`;
+                return (
+                  <label key={id} className="check">
+                    <input
+                      type="checkbox"
+                      checked={code.includes(id)}
+                      onChange={(e) => setCode(toggle(code, id, e.target.checked))}
+                    />
+                    {several ? `${c} (${r.name})` : c}
+                  </label>
+                );
+              }),
+            )}
           </fieldset>
         )}
-        {repoInfo && !adopting && (
+        {chosenRepos.length > 0 && !adopting && (
           <label className="check dialog-field">
             <input
               type="checkbox"
               checked={worktree}
               onChange={(e) => setWorktree(e.target.checked)}
             />
-            Make a worktree{repoInfo.location ? "" : " (you'll be asked where the repo is)"}
+            {several ? "Make a worktree in each" : "Make a worktree"}
+            {chosenRepos.every((r) => r.location) ? "" : " (you'll be asked where the repo is)"}
           </label>
         )}
         <div className="dialog-buttons">

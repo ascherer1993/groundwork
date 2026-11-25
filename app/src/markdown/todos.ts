@@ -11,9 +11,11 @@ import type { TodoFilter } from "../api/generated/TodoFilter";
 import { todoField } from "../editor/todoField";
 import { confirmDialog, promptDialog, useUi } from "../state/ui";
 import { message, onVaultChange } from "../state/vault";
+import { useWorkspace } from "../state/workspace";
 import { isoDate, parseNatural } from "./dates";
 import { hydrate } from "./hydrate";
 import { renderInline } from "./render";
+import { mountTodoEdit } from "./todoEdit";
 import { escapeHtml } from "./syntax";
 import { hasMeta, parseTaskMeta, type TaskMeta, taskMetaHtml } from "./tasks";
 
@@ -38,15 +40,33 @@ function ownOf(el: HTMLElement): [number, number] | undefined {
   return m ? [Number(m[1]), Number(m[2])] : undefined;
 }
 
+/** How an agenda groups its todos: by the note they're in, priority or due date. */
+export type TodoGrouping = "note" | "priority" | "due";
+
+export const TODO_GROUPINGS: TodoGrouping[] = ["note", "priority", "due"];
+
 export type TodosSpec =
   | { kind: "day" }
-  | { kind: "agenda"; filter: TodoFilter }
+  | {
+      kind: "agenda";
+      filter: TodoFilter;
+      /** Due date when left out. */
+      group?: TodoGrouping;
+      /**
+       * Which sections are folded, by id. Given, the sections' headings fold
+       * and unfold them (Option-click: all of them) and update it, then call
+       * `onFold`; the set outlives the list, so a new filter keeps them.
+       */
+      folded?: Set<string>;
+      onFold?: () => void;
+    }
   | { kind: "list"; filter: TodoFilter; title?: string };
 
 /**
  * Reads a `todos` block. `day` shows the note's day; otherwise each line is
  * a `key: value` filter (`tag`, `path`, `due`, `status`, `priority`, `text`,
- * `title`), and a first line of `agenda` groups the results by date.
+ * `title`), and a first line of `agenda` groups the results by date (or,
+ * with `group: note` or `group: priority`, by note or priority).
  */
 export function parseTodosSpec(source: string): TodosSpec {
   const lines = source
@@ -57,6 +77,7 @@ export function parseTodosSpec(source: string): TodosSpec {
   const agenda = lines[0]?.toLowerCase() === "agenda";
   const filter: TodoFilter = { tags: [] };
   let title: string | undefined;
+  let group: TodoGrouping | undefined;
   for (const line of agenda ? lines.slice(1) : lines) {
     const m = line.match(/^(\w+)\s*:\s*(.*)$/);
     if (!m) continue;
@@ -92,9 +113,14 @@ export function parseTodosSpec(source: string): TodosSpec {
       case "title":
         title = value;
         break;
+      case "group": {
+        const g = value.toLowerCase();
+        if ((TODO_GROUPINGS as string[]).includes(g)) group = g as TodoGrouping;
+        break;
+      }
     }
   }
-  return agenda ? { kind: "agenda", filter } : { kind: "list", filter, title };
+  return agenda ? { kind: "agenda", filter, group } : { kind: "list", filter, title };
 }
 
 /** `Mon, Nov 2`-style short date. */
@@ -137,11 +163,15 @@ export function todoSource(todo: Todo): string {
 }
 
 const ICON_CALENDAR = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>`;
+const ICON_CHEVRON = `<svg class="todos-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
+const ICON_PENCIL = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/></svg>`;
 const ICON_X = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>`;
 
 interface Section {
   id: string;
   title: string;
+  /** Shown on hover over the heading (a note's path). */
+  hint?: string;
   todos: Todo[];
   /** Extra text after the source, per todo (e.g. "5d"). */
   note?: (todo: Todo) => string | null;
@@ -153,6 +183,19 @@ interface Drawing {
   notePath: string;
   /** A day view's date, when it isn't today: dates are told from it, as dates. */
   day?: string;
+  /** Sections are a note each, so todos don't name where they're from. */
+  byNote?: boolean;
+  /** Folded sections, when headings fold them. */
+  folded?: Set<string>;
+}
+
+/**
+ * Whether a click on a todo should open its note: not one on its checkbox,
+ * a link or a button (they do their own thing), nor the end of selecting text.
+ */
+export function opensNote(e: { target: EventTarget | null }): boolean {
+  const target = e.target as HTMLElement;
+  return !target.closest("input, a, button") && !!window.getSelection()?.isCollapsed;
 }
 
 function itemHtml(todo: Todo, section: Section, drawing: Drawing): string {
@@ -160,8 +203,9 @@ function itemHtml(todo: Todo, section: Section, drawing: Drawing): string {
   const checked = todo.status === "done";
   const source = todo.daily ? shortDate(todo.daily) : noteTitle(todo.path);
   const extra = section.note?.(todo);
+  const elsewhere = todo.path !== drawing.notePath;
   const origin =
-    todo.path === drawing.notePath
+    !elsewhere || drawing.byNote
       ? ""
       : `<span class="todo-origin"><a class="internal-link todo-source" href="#" data-href="${escapeHtml(todo.path)}" data-resolved="${escapeHtml(todo.path)}" data-line="${todo.line}">${todo.daily ? "from " : ""}${escapeHtml(source)}</a>${extra ? ` · ${escapeHtml(extra)}` : ""}</span>`;
   const meta = hasMeta(metaOf(todo))
@@ -169,13 +213,14 @@ function itemHtml(todo: Todo, section: Section, drawing: Drawing): string {
       ? taskMetaHtml(metaOf(todo), open, parseDay(drawing.day), { words: false })
       : taskMetaHtml(metaOf(todo), open)
     : "";
-  return `<li class="todo-item${open ? "" : " is-closed"}" data-id="${escapeHtml(todo.id)}" data-status="${todo.status}">
+  return `<li class="todo-item${open ? "" : " is-closed"}${elsewhere ? " opens-note" : ""}" data-id="${escapeHtml(todo.id)}" data-status="${todo.status}">
   <input type="checkbox" class="todo-checkbox" aria-label="Done: ${escapeHtml(todo.text)}"${checked ? " checked" : ""}${todo.status === "cancelled" ? " disabled" : ""}>
   <div class="todo-body">
     <span class="todo-text">${renderInline(todo.text)}</span>
     <span class="todo-details">${meta}${origin}</span>
   </div>
   <span class="todo-actions">
+    <button type="button" class="icon" data-action="edit" title="Edit" aria-label="Edit">${ICON_PENCIL}</button>
     <button type="button" class="icon" data-action="reschedule" title="Reschedule" aria-label="Reschedule">${ICON_CALENDAR}</button>
     <button type="button" class="icon" data-action="cancel" title="Cancel" aria-label="Cancel">${ICON_X}</button>
   </span>
@@ -190,35 +235,115 @@ function itemHtml(todo: Todo, section: Section, drawing: Drawing): string {
 const FIRST_SHOWN = 50;
 const MORE = 200;
 
+/** Likewise for sections, which grouped by note can be hundreds. */
+const SECTIONS = "sections";
+const FIRST_SECTIONS = 40;
+const MORE_SECTIONS = 100;
+
+function headingHtml(s: Section, drawing: Drawing): string {
+  const title = `${escapeHtml(s.title)} <span class="todos-count">${s.todos.length}</span>`;
+  const hint = s.hint ? ` title="${escapeHtml(s.hint)}"` : "";
+  if (!drawing.folded) return `<h4${hint}>${title}</h4>`;
+  const open = !drawing.folded.has(s.id);
+  return `<h4><button type="button" class="todos-fold" data-action="fold" data-section="${escapeHtml(s.id)}" aria-expanded="${open}"${hint}>${ICON_CHEVRON}<span class="todos-title">${title}</span></button></h4>`;
+}
+
 function sectionsHtml(
   sections: Section[],
   empty: string,
   limit: (id: string) => number,
   drawing: Drawing,
 ): string {
-  const shown = sections.filter((s) => s.todos.length);
-  if (!shown.length) return `<p class="todos-empty muted">${escapeHtml(empty)}</p>`;
-  return shown
-    .map((s) => {
-      const max = limit(s.id);
-      const hidden = s.todos.length - max;
-      const more =
-        hidden > 0
-          ? `<button type="button" class="link-button todos-more" data-action="more" data-section="${s.id}">Show ${Math.min(hidden, MORE)} more of ${hidden}</button>`
-          : "";
-      return `<section class="todos-section" data-section="${s.id}">
-  <h4>${escapeHtml(s.title)} <span class="todos-count">${s.todos.length}</span></h4>
+  const all = sections.filter((s) => s.todos.length);
+  if (!all.length) return `<p class="todos-empty muted">${escapeHtml(empty)}</p>`;
+  const maxSections = limit(SECTIONS);
+  const shown = all.slice(0, maxSections);
+  const hiddenSections = all.length - shown.length;
+  const moreSections =
+    hiddenSections > 0
+      ? `<button type="button" class="link-button todos-more" data-action="more" data-section="${SECTIONS}">Show ${Math.min(hiddenSections, MORE_SECTIONS)} more ${drawing.byNote ? "notes" : "groups"} of ${hiddenSections}</button>`
+      : "";
+  return (
+    shown
+      .map((s) => {
+        const id = escapeHtml(s.id);
+        if (drawing.folded?.has(s.id)) {
+          return `<section class="todos-section is-folded" data-section="${id}">${headingHtml(s, drawing)}</section>`;
+        }
+        const max = limit(s.id);
+        const hidden = s.todos.length - max;
+        const more =
+          hidden > 0
+            ? `<button type="button" class="link-button todos-more" data-action="more" data-section="${id}">Show ${Math.min(hidden, MORE)} more of ${hidden}</button>`
+            : "";
+        return `<section class="todos-section" data-section="${id}">
+  ${headingHtml(s, drawing)}
   <ul>${s.todos
     .slice(0, max)
     .map((t) => itemHtml(t, s, drawing))
     .join("")}</ul>${more}
 </section>`;
-    })
-    .join("");
+      })
+      .join("") + moreSections
+  );
 }
 
-/** Groups open todos by when they're due, relative to today. */
-function agendaSections(todos: Todo[]): Section[] {
+const dueKey = (t: Todo) => t.due ?? "9999";
+
+function byPlace(a: Todo, b: Todo): number {
+  return a.path < b.path ? -1 : a.path > b.path ? 1 : a.line - b.line;
+}
+
+/** Most important first, then soonest due. */
+function byPriority(a: Todo, b: Todo): number {
+  return a.priority - b.priority || dueKey(a).localeCompare(dueKey(b)) || byPlace(a, b);
+}
+
+/** Soonest due first, then most important. */
+function byDue(a: Todo, b: Todo): number {
+  return dueKey(a).localeCompare(dueKey(b)) || a.priority - b.priority || byPlace(a, b);
+}
+
+/**
+ * Groups todos by the note they're in, each note's most important first.
+ * Notes come in the order of their most important todo, so the note with a
+ * p0 heads the list.
+ */
+function noteSections(todos: Todo[]): Section[] {
+  const notes = new Map<string, Section>();
+  for (const t of [...todos].sort(byPriority)) {
+    let section = notes.get(t.path);
+    if (!section) {
+      section = { id: `note:${t.path}`, title: noteTitle(t.path), hint: t.path, todos: [] };
+      notes.set(t.path, section);
+    }
+    section.todos.push(t);
+  }
+  return [...notes.values()];
+}
+
+const PRIORITY_TITLES = [
+  "P0 · Highest",
+  "P1 · High",
+  "P2 · Medium",
+  "P3 · Normal",
+  "P4 · Low",
+  "P5 · Lowest",
+];
+
+/** Groups todos by priority, each group soonest due first. */
+function prioritySections(todos: Todo[]): Section[] {
+  const sections: Section[] = PRIORITY_TITLES.map((title, p) => ({
+    id: `p${p}`,
+    title,
+    todos: [],
+  }));
+  for (const t of [...todos].sort(byDue)) sections[t.priority]?.todos.push(t);
+  return sections;
+}
+
+/** Groups open todos by when they're due, relative to today; each group most important first. */
+function dueSections(todos: Todo[]): Section[] {
   const today = isoDate(new Date());
   const week = isoDate(new Date(Date.now() + 7 * 86_400_000));
   const sections: Section[] = [
@@ -235,7 +360,7 @@ function agendaSections(todos: Todo[]): Section[] {
     Section,
     Section,
   ];
-  for (const t of todos) {
+  for (const t of [...todos].sort(byPriority)) {
     if (!t.due) undated.todos.push(t);
     else if (t.due < today) overdue.todos.push(t);
     else if (t.due === today) due.todos.push(t);
@@ -280,7 +405,8 @@ async function update(id: string, change: Parameters<typeof api.updateTodo>[1]) 
   }
 }
 
-async function reschedule(todo: Todo) {
+/** Asks for a todo's new due date (`fri`, `+3d`…; empty clears it) and sets it. */
+export async function rescheduleTodo(todo: Todo) {
   const value = await promptDialog({
     title: "Reschedule",
     value: todo.due ?? "",
@@ -294,6 +420,17 @@ async function reschedule(todo: Todo) {
     return;
   }
   return update(todo.id, { kind: "due", date });
+}
+
+/** Asks before cancelling a todo. */
+export async function cancelTodo(todo: Todo) {
+  const ok = await confirmDialog({
+    title: "Cancel this todo?",
+    message: todo.text,
+    confirmLabel: "Cancel todo",
+    danger: true,
+  });
+  if (ok) await update(todo.id, { kind: "cancel" });
 }
 
 /**
@@ -352,18 +489,50 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
   let empty = "";
   const limits = new Map<string, number>();
 
+  const grouping = spec.kind === "agenda" ? (spec.group ?? "due") : undefined;
+  if (grouping) el.dataset.group = grouping;
+  else delete el.dataset.group;
+  const folded = spec.kind === "agenda" ? spec.folded : undefined;
+
   const paint = async () => {
     const drawing: Drawing = {
       notePath,
       day: spec.kind === "day" && date && date !== isoDate(new Date()) ? date : undefined,
+      byNote: grouping === "note",
+      folded,
     };
-    list.innerHTML = sectionsHtml(sections, empty, (id) => limits.get(id) ?? FIRST_SHOWN, drawing);
+    const first = (id: string) => (id === SECTIONS ? FIRST_SECTIONS : FIRST_SHOWN);
+    list.innerHTML = sectionsHtml(sections, empty, (id) => limits.get(id) ?? first(id), drawing);
     await hydrate(list, notePath || "");
     el.dispatchEvent(new Event(CONTENT_RESIZED, { bubbles: true }));
     refocus(field, notePath);
   };
 
+  // A todo being edited: the list waits to redraw until it's done.
+  let editing: (() => void) | null = null;
+  const startEdit = (item: HTMLElement, todo: Todo) => {
+    editing?.();
+    const text = item.querySelector<HTMLElement>(".todo-text");
+    if (!text) return;
+    const box = document.createElement("div");
+    box.className = "todo-edit";
+    text.after(box);
+    text.hidden = true;
+    item.classList.add("is-editing");
+    const cancel = mountTodoEdit(box, todo, () => {
+      if (editing !== stopEditing) return;
+      editing = null;
+      void render();
+    });
+    const stopEditing = () => {
+      cancel();
+      editing = null;
+    };
+    editing = stopEditing;
+  };
+
   const render = async () => {
+    if (editing) return;
     const mine = ++generation;
     let all: Todo[];
     let next: Section[];
@@ -389,9 +558,19 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
       } else {
         all = await api.todos(spec.filter);
         next =
-          spec.kind === "agenda"
-            ? agendaSections(all)
-            : [{ id: "list", title: spec.title ?? "Todos", todos: all }];
+          grouping === "note"
+            ? noteSections(all)
+            : grouping === "priority"
+              ? prioritySections(all)
+              : grouping === "due"
+                ? dueSections(all)
+                : [
+                    {
+                      id: "list",
+                      title: spec.kind === "list" ? (spec.title ?? "Todos") : "Todos",
+                      todos: all,
+                    },
+                  ];
         nextEmpty = "No todos.";
       }
     } catch (err) {
@@ -412,10 +591,37 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
       e.stopPropagation();
       e.preventDefault();
       const id = more.dataset.section!;
-      limits.set(id, (limits.get(id) ?? FIRST_SHOWN) + MORE);
+      limits.set(
+        id,
+        id === SECTIONS
+          ? (limits.get(id) ?? FIRST_SECTIONS) + MORE_SECTIONS
+          : (limits.get(id) ?? FIRST_SHOWN) + MORE,
+      );
       void paint();
       return;
     }
+    const fold = target.closest<HTMLElement>("[data-action=fold]");
+    if (fold && folded) {
+      e.stopPropagation();
+      e.preventDefault();
+      const id = fold.dataset.section!;
+      const folding = !folded.has(id);
+      // Option-click folds or unfolds every section, like the clicked one.
+      const ids = e.altKey ? sections.filter((s) => s.todos.length).map((s) => s.id) : [id];
+      for (const i of ids) {
+        if (folding) folded.add(i);
+        else folded.delete(i);
+      }
+      if (spec.kind === "agenda") spec.onFold?.();
+      void paint().then(() =>
+        list
+          .querySelector<HTMLElement>(`[data-action=fold][data-section="${CSS.escape(id)}"]`)
+          ?.focus(),
+      );
+      return;
+    }
+    // Clicks in the edit field are the field's.
+    if (target.closest(".todo-edit")) return;
     const item = target.closest<HTMLElement>(".todo-item");
     const todo = item && todosById.get(item.dataset.id!);
     if (!todo) return;
@@ -427,22 +633,28 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
       return;
     }
     const action = target.closest<HTMLElement>("[data-action]")?.dataset.action;
-    if (action === "reschedule") void reschedule(todo);
+    if (action === "reschedule") void rescheduleTodo(todo);
+    if (action === "edit") {
+      e.stopPropagation();
+      e.preventDefault();
+      startEdit(item, todo);
+      return;
+    }
     if (action === "cancel") {
-      void confirmDialog({
-        title: "Cancel this todo?",
-        message: todo.text,
-        confirmLabel: "Cancel todo",
-        danger: true,
-      }).then((ok) => {
-        if (ok) void update(todo.id, { kind: "cancel" });
-      });
+      void cancelTodo(todo);
+      return;
+    }
+    // Anywhere else on a todo from another note opens it, at the todo's line.
+    if (!action && todo.path !== notePath && opensNote(e)) {
+      e.stopPropagation();
+      e.preventDefault();
+      useWorkspace.getState().open(todo.path, { newTab: e.metaKey || e.ctrlKey, line: todo.line });
     }
   };
 
   // Keys typed in the add field belong to it, not to an editor around it.
   const onKey = (e: KeyboardEvent) => {
-    if ((e.target as HTMLElement).closest(".todo-add")) e.stopPropagation();
+    if ((e.target as HTMLElement).closest(".todo-add, .todo-edit")) e.stopPropagation();
   };
 
   const onRefresh = () => void render();
@@ -463,6 +675,7 @@ export function mountTodos(el: HTMLElement, spec: TodosSpec, notePath: string): 
     el.removeEventListener("click", onClick, true);
     el.removeEventListener("keydown", onKey);
     el.removeEventListener(TODOS_REFRESH, onRefresh);
+    editing?.();
     field?.destroy();
   }
   void render();

@@ -38,7 +38,7 @@ Groundwork is a desktop app. It shows the vault as a file tree, notes in tabs (l
 - **Never touch `.obsidian/`.** It belongs to Obsidian. Groundwork's own config is in `.groundwork/`; don't edit that either unless asked.
 - **Links are wikilinks:** `[[Note name]]`, `[[Note#Heading]]`, `[[Note|shown text]]`, `![[image.png]]`. Use the note's file name without `.md`. Check that a name exists with `groundwork note path "<name>"` before linking to it, unless you mean to link to a note that doesn't exist yet.
 - **Don't rename or move notes by hand.** Other notes link to them, and a plain `mv` breaks those links. Ask the user to rename in the app, which rewrites links.
-- **Add todos with `groundwork todo add`**, not by writing the line yourself. It adds the `➕ created` stamp, places the todo under the note's `## Todos` heading, and logs it. Change todos with `todo done|cancel|reopen|reschedule|priority <id>`. A todo for another day goes in today's note with `--due` (`--due tomorrow`), not in that day's note: each daily note shows everything due that day, wherever it's written. Use `--note` for a note the todo belongs to, such as a project's or a ticket's.
+- **Add todos with `groundwork todo add`**, not by writing the line yourself. It adds the `➕ created` stamp, places the todo under the note's `## Todos` heading, and logs it. Change todos with `todo done|cancel|reopen|reschedule|priority|edit <id>` (`edit` rewrites the text and keeps the dates and priority). A todo for another day goes in today's note with `--due` (`--due tomorrow`), not in that day's note: each daily note shows everything due that day, wherever it's written. Use `--note` for a note the todo belongs to, such as a project's or a ticket's.
 - **Create notes from templates with `groundwork note create --template`** when a template fits (`groundwork template list`). Templates fill in dates, titles and the `created:` property.
 - **Make people and events with `groundwork add person|event`** (see "People and events" below), so they land where the user's Quick add puts them.
 - New notes get a `created: YYYY-MM-DDTHH:mm` property. `note create` adds it; add it yourself if you write a new file directly.
@@ -70,6 +70,7 @@ groundwork daily [--date today|yesterday|fri|+1d|nov 12|YYYY-MM-DD]   # prints t
 groundwork add                          # the choices and what each asks for
 groundwork add event --var Title="Vendor call" [--date fri] [--project Acme]
 groundwork add person --var Name="Jane Doe" [--project Acme]
+groundwork refile [--dry-run]           # move daily notes and events into the date folders the settings now give them
 
 # Todos
 groundwork todo list [--due overdue|today|week|any|none] [--priority p0-p1] [--tag t]... [--path p] [--status open|done|cancelled|all] [--stale 14d] [--text t]
@@ -77,6 +78,7 @@ groundwork todo add "text" [--due fri] [--priority p2] [--note <note>]   # defau
 groundwork todo done|cancel|reopen <id>
 groundwork todo reschedule <id> <date|none>
 groundwork todo priority <id> p1
+groundwork todo edit <id> "new text"            # keeps dates and priority; the id changes
 
 # HTML pages
 groundwork page state <page> [--set <json>|-]   # what a page saved; --set replaces it
@@ -154,7 +156,7 @@ It can also run unattended, from cron or a scheduler: `claude -p "Triage my todo
 
 ## People and events
 
-People and events are notes in top-level folders, `Contacts/` and `Events/`, never inside a project. They belong to projects through their `projects:` property, so nothing needs moving later.
+People and events are notes in top-level folders, `Contacts/` and `Events/`, never inside a project. They belong to projects through their `projects:` property, so nothing needs moving later. `Events/` may be split into year and month folders (`Events/2026/11-November/`) when the user's Event choice files them by date: anywhere under `Events/` counts, and `groundwork add event` picks the folder. Find a note by its name (`groundwork note path "2026-11-12 Vendor call"`), not by guessing its folder.
 
 ```yaml
 # Contacts/Jane Doe.md
@@ -173,12 +175,12 @@ projects: ["[[Acme]]"]
 - Make them with `groundwork add` (the user's Quick add, ⇧⌘A in the app). It names the note, uses the user's template, and sets `projects:` from `--project`. Pass the project whenever you know it.
 - Older meeting notes may live in a project's folder with `type: meeting`. They count as events of that project; leave them where they are.
 - Link people from events and notes as `[[Jane Doe]]`, and list who attended in the event's `people:`.
-- Something that belongs to a note, like a meeting's transcript or raw notes, is a **subnote**: a Markdown note beside it named `<note name>.<key>.md`, such as `Events/2026-11-12 Vendor call.transcript.md`. The key starts with a letter. The app lists it under the note and moves it when the note is renamed. Don't give a subnote `type: event`; it's part of the event, not another one. Link to it from the note if that helps: `[[2026-11-12 Vendor call.transcript]]`.
+- Something that belongs to a note, like a meeting's transcript or raw notes, is a **subnote**: a Markdown note in the same folder as it, named `<note name>.<key>.md`, such as `Events/2026-11-12 Vendor call.transcript.md` beside `Events/2026-11-12 Vendor call.md`. The key starts with a letter. The app lists it under the note and moves it when the note is renamed. Don't give a subnote `type: event`; it's part of the event, not another one. Link to it from the note if that helps: `[[2026-11-12 Vendor call.transcript]]`.
 - `groundwork project show <project>` lists a project's events (newest first) and people: members (their `projects:` names it) and anyone its notes link to, with how many notes mention them. Use it to answer "who's on X" or "when did we last meet about X". The user sees the same in the app's project view.
 
 ## Daily notes
 
-Daily notes live in the daily notes folder (often `Daily/`), named by date. They usually contain a `todos` block:
+Daily notes live in the daily notes folder (often `Daily/`), named by date, possibly in year and month folders (`Daily/2026/11-November/2026-11-12.md`). Get a day's path from `groundwork daily --date <day>` rather than building it; link to it by name, `[[2026-11-12]]`. They usually contain a `todos` block:
 
 ````markdown
 ```todos
@@ -215,11 +217,15 @@ await groundwork.navigate("[[Plan]]")    // open a note in Groundwork
 
 A typical flow: build the page, ask the user to open it in Groundwork and tell you when they're done, then run `groundwork page state`.
 
+## Canvases
+
+A canvas is a drawing on an infinite canvas: `Name.excalidraw`, Excalidraw's own JSON (`{"type": "excalidraw", "version": 2, "elements": [...], "appState": {...}, "files": {}}`). `groundwork files` lists them as `(canvas)`. `Note.key.excalidraw` beside `Note.md` is a canvas subnote of that note. The user draws these by hand; if you're asked to sketch one, write the JSON directly (rectangles, ellipses, `arrow`s with `startBinding`/`endBinding`, `text` with a `containerId` to sit inside a shape). An open canvas shows your changes once it has nothing unsaved. Link with the extension: `[[Name.excalidraw]]`.
+
 ## Projects, repos and tickets
 
-- **A project** is any folder with a `.groundwork.yml` (name, overview note, work folder, the `code` it uses). Make one with `groundwork project create`. A note belongs to the projects linked in its `projects:` frontmatter (`projects: ["[[Acme]]"]`, links to overview notes) plus the project folder it's in.
-- **Repos** are defined once in `.groundwork/repos.yml`, with optional components (a part of a monorepo with its own path, setup, commands and docs). Code is named `repo` or `repo:component`. Where a repo is checked out is per machine: `groundwork repo locate`.
-- **A ticket** is a note with `type: ticket` frontmatter (`ticket`, `jira`, `projects`, `code`, `repo`, `worktree`, `branch`, `status`, `workspace`). It usually has a git worktree in the repo's worktree folder and a workspace in the app whose terminals open there.
+- **A project** is any folder with a `.groundwork.yml` (name, overview note, the `code` it uses). Make one with `groundwork project create`. A note belongs to the projects linked in its `projects:` frontmatter (`projects: ["[[Acme]]"]`, links to overview notes) plus the project folder it's in.
+- **Repos** are defined once in `.groundwork/repos.yml`, with optional components (a part of a monorepo with its own path, setup, commands and docs). Code is named `repo` or `repo:component`. Where a repo is checked out is per machine: `groundwork repo locate`. Its worktrees go beside the checkout in `<checkout>-worktrees` (`dev/api` → `dev/api-worktrees/<name>`) unless located elsewhere; files git ignores reach new worktrees through `copy:` (copied) and `link:` (symlinked to the checkout's) in `repos.yml`.
+- **A ticket** is a note with `type: ticket` frontmatter (`ticket`, `jira`, `projects`, `code`, `repos`, `worktree`, `branch`, `status`, `workspace`; older tickets have `repo` instead of `repos`). It usually has a git worktree in each repo it touches, all on one branch with one folder name, and one workspace in the app whose terminals open in any of them. The first of `repos` is the default, where the workspace starts.
 - **Find your bearings with `groundwork context`** before working on code or a ticket: run in a worktree, it names the ticket, its projects, the components involved with their commands and docs to read first, the actions, and notes worth reading. The repo's own `CLAUDE.md` and READMEs stay the source of truth for how its code works.
 - **Make tickets with `groundwork ticket create`**, never by hand: it makes the branch and worktree, runs setup, writes the note from the ticket template and links everything. Fill in the note's summary afterwards. Don't edit `.groundwork.yml` or `repos.yml` unless asked.
 
@@ -229,16 +235,23 @@ groundwork project list | show <project>   # show: folders, code, tickets, event
 groundwork project create <folder>     # makes a folder (new or existing) a project
 groundwork repo list | show <repo>
 groundwork repo locate <repo> <path> [--worktrees <dir>]
-groundwork ticket create [--key INT-123|<url>] [--title "Fix login"] [--slug fix-login] [--project <p>]... [--code repo:component]... [--repo <r>] [--note <existing note>] [--no-worktree] [--no-setup]
+groundwork repo add <checkout> [--name "Billing API"] [--worktrees <dir>]   # a repo not in repos.yml yet
+groundwork ticket create [--key INT-123|<url>] [--title "Fix login"] [--slug fix-login] [--project <p>]... [--code repo:component]... [--repo <r>]... [--note <existing note>] [--no-worktree] [--no-setup]
+groundwork ticket add-repo <note> <repo> [--no-setup]   # a worktree in another repo, on the ticket's branch
+groundwork ticket remove-repo <note> <repo> [--force]  # remove that worktree (the branch stays); refuses with uncommitted changes
+groundwork ticket default-repo <note> <repo>            # where its workspace's terminals start
+groundwork ticket gather                                # move ticket notes kept in project folders into Tickets/
 groundwork ticket list [--repo r] [--project p] [--status active|closed|all] [--component repo:c]
-groundwork ticket show <note>          # details and the worktree's git state
-groundwork ticket close <note> [--force]   # removes the worktree; refuses if work would be lost
+groundwork ticket show <note>          # details, each worktree, and their git state
+groundwork ticket close <note> [--force]   # removes every worktree; refuses if work would be lost
 groundwork ticket restore <note>
 groundwork ticket strays               # worktrees without a ticket note (adopt with create --adopt <path>)
 groundwork code who <path|repo:path>   # components, projects and open tickets touching it
 ```
 
-The first project in `--project` is the ticket's home: its note goes in that project's work folder. A ticket that affects two projects gets both. Ask the user which projects and components a ticket touches when the request doesn't say.
+Every ticket note goes in the vault's tickets folder (`Tickets/`), whatever its projects; never move one into a project folder. The first project in `--project` is the ticket's home. A ticket that affects two projects gets both, and projects can be added or taken out of its `projects:` later. Ask the user which projects and components a ticket touches when the request doesn't say.
+
+Run in one of a multi-repo ticket's worktrees, `groundwork context` lists every worktree's path; read the others' code there when the repos meet (an API contract, a shared schema), asking for access with `/add-dir` if you don't have it. A ticket that changes several repos gets a worktree in each: pass every `--repo` (the first is the default), or `--code` components from each repo, which picks the repos from them. When a ticket turns out to need another repo later, use `ticket add-repo`, never a second ticket; when it no longer needs one, `ticket remove-repo`. A ticket always has exactly one workspace. Notes about one repo's part can be subnotes of the ticket (`INT-123 Fix login.web.md`, beside the ticket), which share the ticket's workspace.
 
 ## Asking the user
 

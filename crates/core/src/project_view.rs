@@ -60,6 +60,31 @@ pub struct ProjectPerson {
     pub last_seen: Option<String>,
 }
 
+/// A contact: a note with `type: person` (or `contact`), or in `Contacts/`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Person {
+    pub path: String,
+    pub name: String,
+    pub role: Option<String>,
+    pub company: Option<String>,
+}
+
+/// A team: a note with `type: team`, or in `Teams/`. Contacts pick theirs
+/// in their `team:` property.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Team {
+    pub path: String,
+    pub name: String,
+}
+
+pub(crate) fn is_team(path: &str, fm: Option<&Value>) -> bool {
+    note_type(fm) == "team" || path.starts_with("Teams/")
+}
+
 fn note_type(fm: Option<&Value>) -> String {
     fm_str(fm, "type").unwrap_or_default().to_lowercase()
 }
@@ -82,13 +107,13 @@ pub(crate) fn is_person(path: &str, fm: Option<&Value>) -> bool {
 }
 
 /// A `YYYY-MM-DD` at the start of `text`.
-fn leading_date(text: &str) -> Option<&str> {
+pub(crate) fn leading_date(text: &str) -> Option<&str> {
     let head = text.get(..10)?;
     NaiveDate::parse_from_str(head, "%Y-%m-%d").ok()?;
     Some(head)
 }
 
-fn event_date(path: &str, fm: Option<&Value>) -> Option<String> {
+pub(crate) fn event_date(path: &str, fm: Option<&Value>) -> Option<String> {
     let field = |key| fm_str(fm, key).and_then(|d| leading_date(&d).map(str::to_string));
     field("date")
         .or_else(|| leading_date(file_stem(path)).map(str::to_string))
@@ -110,6 +135,47 @@ fn event_title(path: &str) -> String {
 }
 
 impl Session {
+    /// Every contact in the vault (templates left out), by name.
+    pub fn people(&self) -> Vec<Person> {
+        let templates = format!("{}/", TemplateSettings::read(self.vault().root()).folder);
+        let index = self.index();
+        let mut people: Vec<Person> = index
+            .notes()
+            .filter(|(path, note)| {
+                !path.starts_with(&templates) && is_person(path, note.frontmatter.as_ref())
+            })
+            .map(|(path, note)| {
+                let fm = note.frontmatter.as_ref();
+                Person {
+                    path: path.to_string(),
+                    name: file_stem(path).to_string(),
+                    role: fm_str(fm, "role"),
+                    company: fm_str(fm, "company"),
+                }
+            })
+            .collect();
+        people.sort_by_key(|p| p.name.to_lowercase());
+        people
+    }
+
+    /// Every team in the vault (templates left out), by name.
+    pub fn teams(&self) -> Vec<Team> {
+        let templates = format!("{}/", TemplateSettings::read(self.vault().root()).folder);
+        let index = self.index();
+        let mut teams: Vec<Team> = index
+            .notes()
+            .filter(|(path, note)| {
+                !path.starts_with(&templates) && is_team(path, note.frontmatter.as_ref())
+            })
+            .map(|(path, _)| Team {
+                path: path.to_string(),
+                name: file_stem(path).to_string(),
+            })
+            .collect();
+        teams.sort_by_key(|t| t.name.to_lowercase());
+        teams
+    }
+
     /// A project's events and people.
     pub fn project_view(&self, project: &str) -> Result<ProjectView> {
         let config = self.config()?;
@@ -310,6 +376,33 @@ mod tests {
             ]
         );
         assert_eq!(view.people[0].role.as_deref(), Some("Staff Engineer"));
+    }
+
+    #[test]
+    fn people_are_every_contact_by_name() {
+        let (_dir, s) = session();
+        let names: Vec<String> = s.people().into_iter().map(|p| p.name).collect();
+        assert_eq!(names, ["Jane Doe", "Lee Park", "Priya Shah", "Sam Lee"]);
+        let jane = &s.people()[0];
+        assert_eq!(jane.path, "Contacts/Jane Doe.md");
+        assert_eq!(jane.role.as_deref(), Some("Staff Engineer"));
+    }
+
+    #[test]
+    fn teams_are_notes_in_teams_or_typed_team() {
+        let (_dir, s) = session();
+        let teams: Vec<(String, String)> =
+            s.teams().into_iter().map(|t| (t.name, t.path)).collect();
+        assert_eq!(
+            teams,
+            [
+                ("Design".to_string(), "Teams/Design.md".to_string()),
+                ("Platform".to_string(), "Teams/Platform.md".to_string()),
+            ]
+        );
+        let typed = serde_json::json!({ "type": "Team" });
+        assert!(is_team("Elsewhere/Web.md", Some(&typed)));
+        assert!(!is_team("Contacts/Jane Doe.md", None));
     }
 
     #[test]

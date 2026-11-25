@@ -11,7 +11,14 @@ import { api } from "../api/client";
 import type { FileChange } from "../api/generated/FileChange";
 import type { TabInfo } from "../api/generated/TabInfo";
 import type { TerminalInfo } from "../api/generated/TerminalInfo";
-import { displayName, isPagePath, projectOfView, TODO_BOARD } from "../lib/paths";
+import {
+  displayName,
+  isCanvasPath,
+  isPagePath,
+  NEW_TAB,
+  projectOfView,
+  TODO_BOARD,
+} from "../lib/paths";
 import { splitTarget } from "../markdown/syntax";
 import { message, newNoteFolder, onVaultChange, useVault } from "./vault";
 import { useUi } from "./ui";
@@ -146,6 +153,11 @@ interface WorkspaceState {
   openTerminal(cwd?: string, opts?: TerminalOptions): Promise<void>;
   /** `openTerminal` for callers that want the tab, or the error. */
   newTerminal(cwd?: string, opts?: TerminalOptions): Promise<TabInfo>;
+  /**
+   * A new tab among the current workspace's terminals that asks where to
+   * start (`components/NewTab.tsx`); a plain terminal when there's no workspace.
+   */
+  openLauncher(): Promise<void>;
   /** Shows a running terminal in a new tab of the current workspace (or `opts.workspace`). */
   addTerminal(info: TerminalInfo, opts?: TerminalOptions): Promise<TabInfo | null>;
   /** The notes dock's tab showing `path`, if one does. */
@@ -170,7 +182,9 @@ function titleOf(path: string): string {
   const project = projectOfView(path);
   if (project) return project;
   if (path === TODO_BOARD) return "Todo board";
+  if (path === NEW_TAB) return "New tab";
   const name = path.slice(path.lastIndexOf("/") + 1);
+  if (isCanvasPath(name)) return displayName(name, "canvas").base;
   const ext = name.toLowerCase().endsWith(".md") ? "" : null;
   return ext === null ? name : displayName(name, "note").base;
 }
@@ -430,7 +444,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           : {
               ...current,
               path,
-              back: [...current.back, current.path].slice(-50),
+              // A blank tab isn't somewhere to go back to.
+              back:
+                current.path === NEW_TAB
+                  ? current.back
+                  : [...current.back, current.path].slice(-50),
               forward: [],
               focus,
               editTitle: opts.editTitle,
@@ -551,6 +569,28 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     } catch (err) {
       useUi.getState().notify(message(err));
     }
+  },
+
+  async openLauncher() {
+    const id = get().workspace;
+    const dock = id ? get().docks[id] : undefined;
+    if (!id || !dock) return get().openTerminal();
+    get().showWorkspace(id);
+    get().setFocused("terminals");
+    // One at a time: a second ⌘T goes back to it.
+    const open = dock.panels.find((p) => "launcher" in (p.params ?? {}));
+    if (open) {
+      open.api.setActive();
+      return;
+    }
+    const active = dock.activePanel;
+    dock.addPanel({
+      id: `tab-${++panelCounter}`,
+      component: "launcher",
+      title: "New tab",
+      params: { launcher: id },
+      position: active ? { referencePanel: active, direction: "within" } : undefined,
+    });
   },
 
   async newTerminal(cwd, opts = {}) {
